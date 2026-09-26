@@ -310,15 +310,7 @@ fn extract_content_string(msg: &Value) -> String {
 }
 
 fn format_as_uuid(input: &str) -> String {
-    let trimmed = input.trim();
-    if let Ok(parsed) = uuid::Uuid::parse_str(trimmed) {
-        return parsed.to_string();
-    }
-    let mut hasher = std::hash::DefaultHasher::new();
-    std::hash::Hash::hash(trimmed, &mut hasher);
-    let h = std::hash::Hasher::finish(&hasher);
-    let u128_val = ((h as u128) << 64) | (h as u128 ^ 0xa5a5_a5a5_a5a5_a5a5);
-    uuid::Uuid::from_u128(u128_val).to_string()
+    openproxy_types::format_as_v4_uuid(input)
 }
 
 fn resolve_commandcode_thread_id(val: &Value, messages: &[Value]) -> String {
@@ -370,6 +362,6 @@ fn resolve_commandcode_thread_id(val: &Value, messages: &[Value]) -> String {
         }
     }
     let h = std::hash::Hasher::finish(&hasher);
-    let u128_val = ((h as u128) << 64) | (h as u128 ^ 0xa5a5_a5a5_a5a5_a5a5);
-    uuid::Uuid::from_u128(u128_val).to_string()
+    openproxy_types::u64_to_v4_uuid(h).to_string()
 }
+

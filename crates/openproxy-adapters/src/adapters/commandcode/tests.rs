@@ -317,7 +317,9 @@ fn test_commandcode_deterministic_thread_id() {
 
     // Conversation turns with same root system and user prompt MUST produce identical threadId
     assert_eq!(tid1, tid2);
-    assert!(uuid::Uuid::parse_str(tid1).is_ok());
+    let u1 = uuid::Uuid::parse_str(tid1).expect("valid uuid");
+    assert_eq!(u1.get_version(), Some(uuid::Version::Random));
+    assert_eq!(u1.get_variant(), uuid::Variant::RFC4122);
 
     // Explicit session_id takes precedence
     let mut val_explicit = json!({
@@ -328,6 +330,8 @@ fn test_commandcode_deterministic_thread_id() {
     });
     let env3 = transform_openai_to_commandcode(&mut val_explicit, "claude-sonnet-5");
     let tid3 = env3["threadId"].as_str().expect("has threadId");
-    assert!(uuid::Uuid::parse_str(tid3).is_ok());
+    let u3 = uuid::Uuid::parse_str(tid3).expect("valid uuid");
+    assert_eq!(u3.get_version(), Some(uuid::Version::Random));
+    assert_eq!(u3.get_variant(), uuid::Variant::RFC4122);
     assert_ne!(tid1, tid3);
 }

@@ -143,6 +143,34 @@ impl_numeric_id!(ModelRowId);
 impl_numeric_id!(UsageId);
 impl_numeric_id!(ApiKeyId);
 
+/// Deterministically converts a 64-bit integer into an RFC 4122 compliant UUID v4.
+pub fn u64_to_v4_uuid(h: u64) -> Uuid {
+    let mut bytes = [0u8; 16];
+    bytes[0..8].copy_from_slice(&h.to_be_bytes());
+    let h2 = h ^ 0xa5a5_a5a5_a5a5_a5a5;
+    bytes[8..16].copy_from_slice(&h2.to_be_bytes());
+    // RFC 4122 Version 4 (0100 in bits 12-15 of time_hi_and_version)
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    // RFC 4122 Variant 1 (10 in bits 6-7 of clock_seq_hi_and_reserved)
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Uuid::from_bytes(bytes)
+}
+
+/// Helper to convert any session or thread identifier deterministically into an RFC 4122 compliant UUID v4 string.
+pub fn format_as_v4_uuid(input: &str) -> String {
+    let trimmed = input.trim().trim_matches('"');
+    if let Ok(parsed) = Uuid::parse_str(trimmed)
+        && parsed.get_variant() == uuid::Variant::RFC4122
+        && parsed.get_version().is_some()
+    {
+        return parsed.to_string();
+    }
+    let mut hasher = std::hash::DefaultHasher::new();
+    std::hash::Hash::hash(trimmed, &mut hasher);
+    let h = std::hash::Hasher::finish(&hasher);
+    u64_to_v4_uuid(h).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,5 +225,37 @@ mod tests {
         assert_eq!(map.get("openrouter"), Some(&123));
         let borrowed: &str = pid.borrow();
         assert_eq!(borrowed, "openrouter");
+    }
+
+    #[test]
+    fn test_u64_to_v4_uuid_rfc4122_compliance() {
+        let test_cases = [0u64, 1, 42, u64::MAX, 0x1234_5678_9abc_def0];
+        for val in test_cases {
+            let u = u64_to_v4_uuid(val);
+            assert_eq!(u.get_version(), Some(uuid::Version::Random));
+            assert_eq!(u.get_variant(), uuid::Variant::RFC4122);
+            let s = u.to_string();
+            assert_eq!(s.len(), 36);
+            assert_eq!(&s[14..15], "4");
+            let c8 = s.chars().nth(19).unwrap();
+            assert!(c8 == '8' || c8 == '9' || c8 == 'a' || c8 == 'b');
+        }
+    }
+
+    #[test]
+    fn test_format_as_v4_uuid_stability_and_validity() {
+        // String that is already a valid UUID v4
+        let valid_v4 = "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d";
+        assert_eq!(format_as_v4_uuid(valid_v4), valid_v4);
+
+        // Arbitrary non-UUID string
+        let s = "sess-openproxy-abc-123";
+        let formatted = format_as_v4_uuid(s);
+        let u = Uuid::parse_str(&formatted).expect("valid uuid");
+        assert_eq!(u.get_version(), Some(uuid::Version::Random));
+        assert_eq!(u.get_variant(), uuid::Variant::RFC4122);
+
+        // Idempotence: formatting the formatted UUID returns the same
+        assert_eq!(format_as_v4_uuid(&formatted), formatted);
     }
 }

@@ -48,7 +48,7 @@ pub use embeddings::{
 pub use error::{CancelReason, CoreError, ErrorContext, OptionExt, Result, ResultExt};
 pub use ids::{
     AccountId, ApiKeyId, ComboId, ComboTargetId, ModelId, ModelRowId, ProviderId, RequestId,
-    TraceId, UsageId,
+    TraceId, UsageId, format_as_v4_uuid, u64_to_v4_uuid,
 };
 pub use message::{
     OpenAIChoice, OpenAIMessage, OpenAIRequest, OpenAIRequestView, OpenAIResponse, OpenAIUsage,

@@ -41,16 +41,9 @@ pub fn get_header_val<'a>(headers: &'a BTreeMap<String, String>, key: &str) -> O
 }
 
 /// Helper to convert any session string deterministically into a standard UUID v4 string.
+#[inline]
 pub fn format_as_uuid(input: &str) -> String {
-    let trimmed = input.trim();
-    if let Ok(parsed) = uuid::Uuid::parse_str(trimmed) {
-        return parsed.to_string();
-    }
-    let mut hasher = DefaultHasher::new();
-    trimmed.hash(&mut hasher);
-    let h = hasher.finish();
-    let u128_val = ((h as u128) << 64) | (h as u128 ^ 0xa5a5_a5a5_a5a5_a5a5);
-    uuid::Uuid::from_u128(u128_val).to_string()
+    openproxy_types::format_as_v4_uuid(input)
 }
 
 /// Derives a deterministic conversation affinity identifier from the root prompt invariant.
@@ -540,6 +533,26 @@ mod tests {
         assert!(find_header(&cmd_headers, "x-session-id").is_some());
         assert_eq!(find_header(&cmd_headers, "x-session-id"), find_header(&cmd_headers, "x-conversation-id"));
         assert_eq!(find_header(&cmd_headers, "x-session-id"), find_header(&cmd_headers, "x-session-affinity"));
+    }
+
+    #[test]
+    fn test_format_as_uuid_rfc4122() {
+        let non_uuids = [
+            "arbitrary-session-token",
+            "sess-openproxy-12345",
+            "",
+        ];
+        for case in non_uuids {
+            let res = format_as_uuid(case);
+            let u = uuid::Uuid::parse_str(&res).expect("valid uuid");
+            assert_eq!(u.get_variant(), uuid::Variant::RFC4122);
+            assert_eq!(u.get_version(), Some(uuid::Version::Random));
+        }
+
+        // Existing valid UUID is preserved
+        let existing = "123e4567-e89b-12d3-a456-426614174000";
+        let res = format_as_uuid(existing);
+        assert_eq!(res, existing);
     }
 }
 
