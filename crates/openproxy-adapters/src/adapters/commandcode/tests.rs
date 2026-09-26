@@ -84,8 +84,13 @@ fn test_commandcode_wrap_request_body() {
     assert!(v.get("config").is_some());
     assert!(v.get("threadId").is_some());
     let params = v.get("params").unwrap();
-    assert_eq!(params["model"].as_str(), Some("claude-sonnet-5"));
-    assert_eq!(params["system"].as_str(), Some("You are helpful."));
+    let sys_blocks = params["system"].as_array().expect("system is array");
+    assert_eq!(sys_blocks[0]["type"].as_str(), Some("text"));
+    assert_eq!(sys_blocks[0]["text"].as_str(), Some("You are helpful."));
+    assert_eq!(
+        sys_blocks[0]["cache_control"]["type"].as_str(),
+        Some("ephemeral")
+    );
     assert_eq!(params["stream"].as_bool(), Some(true));
     assert_eq!(params["temperature"].as_f64(), Some(0.7));
 }

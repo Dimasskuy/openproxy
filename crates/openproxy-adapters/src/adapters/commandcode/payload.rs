@@ -185,7 +185,18 @@ pub fn transform_openai_to_commandcode(val: &mut Value, model_name: &str) -> Val
     params_obj.insert("stream".into(), json!(true));
 
     if !system_prompt.is_empty() {
-        params_obj.insert("system".into(), json!(system_prompt));
+        params_obj.insert(
+            "system".into(),
+            json!([
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {
+                        "type": "ephemeral"
+                    }
+                }
+            ]),
+        );
     }
 
     if let Some(tools) = val.get("tools").and_then(Value::as_array) {
