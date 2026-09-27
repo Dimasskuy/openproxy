@@ -216,4 +216,3 @@ fn bench_compression(c: &mut Criterion) {
 
 criterion_group!(benches, bench_compression);
 criterion_main!(benches);
-

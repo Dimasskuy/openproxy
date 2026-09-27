@@ -114,10 +114,7 @@ pub fn resolve_client_ip(
         }
 
         // 3. RFC 7239 Forwarded: for=192.0.2.60;proto=http;by=203.0.113.43
-        if let Some(forwarded) = headers
-            .get("forwarded")
-            .and_then(|v| v.to_str().ok())
-        {
+        if let Some(forwarded) = headers.get("forwarded").and_then(|v| v.to_str().ok()) {
             for part in forwarded.split(';') {
                 let part = part.trim();
                 if let Some(val) = part.strip_prefix("for=")
@@ -208,10 +205,7 @@ mod tests {
         let trusted: Vec<String> = Vec::new();
 
         let resolved = resolve_client_ip(&headers, Some(&peer), &trusted);
-        assert_eq!(
-            resolved,
-            Some(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 42)))
-        );
+        assert_eq!(resolved, Some(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 42))));
     }
 
     #[test]
@@ -226,9 +220,6 @@ mod tests {
 
         let resolved = resolve_client_ip(&headers, Some(&untrusted_peer), &trusted);
         // Must ignore spoofed headers and return the untrusted peer's actual IP
-        assert_eq!(
-            resolved,
-            Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 50)))
-        );
+        assert_eq!(resolved, Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 50))));
     }
 }

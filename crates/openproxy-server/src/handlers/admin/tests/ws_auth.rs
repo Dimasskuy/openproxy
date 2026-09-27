@@ -199,7 +199,11 @@ async fn admin_middleware_resolves_real_ip_behind_proxy() {
     );
     assert_eq!(
         identity.remote_addr,
-        Some("198.51.100.42:12345".parse::<std::net::SocketAddr>().unwrap())
+        Some(
+            "198.51.100.42:12345"
+                .parse::<std::net::SocketAddr>()
+                .unwrap()
+        )
     );
 }
 
@@ -207,7 +211,9 @@ async fn admin_middleware_resolves_real_ip_behind_proxy() {
 async fn admin_middleware_rejects_spoofed_real_ip_from_untrusted_peer() {
     let tmp = tempdir();
     let (state, key) = make_state_with_key(tmp.path()).await;
-    let untrusted_addr = "203.0.113.10:12345".parse::<std::net::SocketAddr>().unwrap();
+    let untrusted_addr = "203.0.113.10:12345"
+        .parse::<std::net::SocketAddr>()
+        .unwrap();
     let mut headers = HeaderMap::new();
     headers.insert("authorization", format!("Bearer {key}").parse().unwrap());
     headers.insert("x-real-ip", "1.1.1.1".parse().unwrap());
@@ -222,4 +228,3 @@ async fn admin_middleware_rejects_spoofed_real_ip_from_untrusted_peer() {
     );
     assert_eq!(identity.remote_addr, Some(untrusted_addr));
 }
-

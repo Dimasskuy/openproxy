@@ -6,10 +6,9 @@ use super::{
 
 pub mod models;
 pub use models::{
-    MINIMAX_UPSTREAM_CONFIG_RAW_URL, current_dynamic_minimax_models,
-    fetch_minimax_models_pipeline, merge_minimax_models, minimax_builtin_models,
-    parse_minimax_config_ts, reset_dynamic_minimax_models, set_dynamic_minimax_models,
-    try_fetch_upstream_minimax_models,
+    MINIMAX_UPSTREAM_CONFIG_RAW_URL, current_dynamic_minimax_models, fetch_minimax_models_pipeline,
+    merge_minimax_models, minimax_builtin_models, parse_minimax_config_ts,
+    reset_dynamic_minimax_models, set_dynamic_minimax_models, try_fetch_upstream_minimax_models,
 };
 
 pub use crate::spoofer::{

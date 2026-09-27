@@ -213,7 +213,10 @@ fn test_detail_by_id_includes_account_label() {
 
     let detail1 = detail_by_id(&conn, 1).unwrap().expect("row 1 exists");
     assert_eq!(detail1.account_id.map(|a| a.0), Some(205));
-    assert_eq!(detail1.account_label.as_deref(), Some("My Custom Account Label"));
+    assert_eq!(
+        detail1.account_label.as_deref(),
+        Some("My Custom Account Label")
+    );
 
     let detail2 = detail_by_id(&conn, 2).unwrap().expect("row 2 exists");
     assert_eq!(detail2.account_id, None);

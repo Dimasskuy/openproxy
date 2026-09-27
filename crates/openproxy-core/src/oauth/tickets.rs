@@ -258,7 +258,7 @@ mod tests {
         mark_consumed(&conn, "DEV-4").expect("first consume");
         let res = mark_consumed(&conn, "DEV-4");
         // The raw OAuth body reaches these helpers, so a missing parameter must
-    // reach the caller as a typed error rather than a panic.
+        // reach the caller as a typed error rather than a panic.
         let Err(CoreError::NotFound { .. }) = res else {
             panic!("expected NotFound on double consume, got {res:?}");
         };

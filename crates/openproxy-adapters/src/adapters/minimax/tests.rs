@@ -379,7 +379,10 @@ export const MINIMAX_API_MODEL_CATALOG: Record<string, ModelConfig> = MINIMAX_MO
     let parsed = parse_minimax_config_ts(ts_sample).expect("successfully parsed models");
     assert_eq!(parsed.len(), 4);
 
-    let m3 = parsed.iter().find(|m| m.model_id.as_str() == "MiniMax-M3").unwrap();
+    let m3 = parsed
+        .iter()
+        .find(|m| m.model_id.as_str() == "MiniMax-M3")
+        .unwrap();
     assert_eq!(m3.display_name.as_deref(), Some("MiniMax-M3"));
     assert_eq!(m3.context_length, Some(1_000_000)); // picked max from contextWindowOptions [512000, 1000000]
     assert_eq!(m3.max_output_tokens, Some(128_000));
@@ -391,12 +394,18 @@ export const MINIMAX_API_MODEL_CATALOG: Record<string, ModelConfig> = MINIMAX_MO
     assert!(in_mods.contains(&"image".to_string()));
     assert!(in_mods.contains(&"video".to_string()));
 
-    let m27_hs = parsed.iter().find(|m| m.model_id.as_str() == "MiniMax-M2.7-highspeed").unwrap();
+    let m27_hs = parsed
+        .iter()
+        .find(|m| m.model_id.as_str() == "MiniMax-M2.7-highspeed")
+        .unwrap();
     assert_eq!(m27_hs.context_length, Some(200_000));
     assert_eq!(m27_hs.max_output_tokens, Some(128_000));
     assert!(!m27_hs.capabilities.as_ref().unwrap().vision.unwrap());
 
-    let m4 = parsed.iter().find(|m| m.model_id.as_str() == "MiniMax-M4").unwrap();
+    let m4 = parsed
+        .iter()
+        .find(|m| m.model_id.as_str() == "MiniMax-M4")
+        .unwrap();
     assert_eq!(m4.display_name.as_deref(), Some("MiniMax-M4 Ultra"));
     assert_eq!(m4.context_length, Some(2_000_000));
     assert_eq!(m4.max_output_tokens, Some(256_000));
@@ -427,11 +436,17 @@ fn test_merge_minimax_models_preserves_base_and_appends_new() {
     // Base had 6 models; M3 was updated in-place; M4 was added => total 7
     assert_eq!(merged.len(), 7);
 
-    let m3 = merged.iter().find(|m| m.model_id.as_str() == "MiniMax-M3").unwrap();
+    let m3 = merged
+        .iter()
+        .find(|m| m.model_id.as_str() == "MiniMax-M3")
+        .unwrap();
     assert_eq!(m3.display_name.as_deref(), Some("MiniMax-M3 (Updated)"));
     assert_eq!(m3.context_length, Some(2_000_000));
 
-    let m4 = merged.iter().find(|m| m.model_id.as_str() == "MiniMax-M4").unwrap();
+    let m4 = merged
+        .iter()
+        .find(|m| m.model_id.as_str() == "MiniMax-M4")
+        .unwrap();
     assert_eq!(m4.context_length, Some(3_000_000));
 
     // Legacy models preserved

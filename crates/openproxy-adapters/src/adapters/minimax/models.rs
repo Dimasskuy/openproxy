@@ -72,14 +72,7 @@ pub fn minimax_builtin_models() -> Vec<DiscoveredModel> {
             true,
             true,
         ),
-        build_minimax_builtin_model(
-            "MiniMax-M3",
-            "MiniMax-M3",
-            1_000_000,
-            128_000,
-            true,
-            true,
-        ),
+        build_minimax_builtin_model("MiniMax-M3", "MiniMax-M3", 1_000_000, 128_000, true, true),
         build_minimax_builtin_model(
             "MiniMax-M2.7-highspeed",
             "MiniMax-M2.7-highspeed",
@@ -104,14 +97,7 @@ pub fn minimax_builtin_models() -> Vec<DiscoveredModel> {
             false,
             true,
         ),
-        build_minimax_builtin_model(
-            "MiniMax-M2",
-            "MiniMax-M2",
-            200_000,
-            128_000,
-            false,
-            true,
-        ),
+        build_minimax_builtin_model("MiniMax-M2", "MiniMax-M2", 200_000, 128_000, false, true),
     ]
 }
 
@@ -222,7 +208,11 @@ pub fn parse_minimax_config_ts(content: &str) -> Option<Vec<DiscoveredModel>> {
         i += 1;
     }
 
-    if models.is_empty() { None } else { Some(models) }
+    if models.is_empty() {
+        None
+    } else {
+        Some(models)
+    }
 }
 
 fn clean_model_key(raw: &str) -> String {

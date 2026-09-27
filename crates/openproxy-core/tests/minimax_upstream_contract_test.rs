@@ -467,11 +467,24 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
     assert_eq!(m27.context_length, Some(200_000));
     assert_eq!(m27.max_output_tokens, Some(128_000));
 
-    let dynamically_parsed = openproxy_adapters::adapters::minimax::parse_minimax_config_ts(&config_ts)
-        .expect("dynamically parse upstream MINIMAX_MODELS");
-    assert!(dynamically_parsed.iter().any(|m| m.model_id.as_str() == "MiniMax-M3"));
-    assert!(dynamically_parsed.iter().any(|m| m.model_id.as_str() == "MiniMax-M2.7-highspeed"));
-    assert!(dynamically_parsed.iter().any(|m| m.model_id.as_str() == "MiniMax-M2.7"));
+    let dynamically_parsed =
+        openproxy_adapters::adapters::minimax::parse_minimax_config_ts(&config_ts)
+            .expect("dynamically parse upstream MINIMAX_MODELS");
+    assert!(
+        dynamically_parsed
+            .iter()
+            .any(|m| m.model_id.as_str() == "MiniMax-M3")
+    );
+    assert!(
+        dynamically_parsed
+            .iter()
+            .any(|m| m.model_id.as_str() == "MiniMax-M2.7-highspeed")
+    );
+    assert!(
+        dynamically_parsed
+            .iter()
+            .any(|m| m.model_id.as_str() == "MiniMax-M2.7")
+    );
 
     assert!(
         config_ts.contains("authMode: \"managed-login\""),

@@ -281,7 +281,6 @@ fn test_codebuddy_builtin_seed_and_registration() {
     );
 }
 
-
 #[tokio::test]
 async fn test_codebuddy_remote_upstream_live_contract_parity() {
     let _lock = CODEBUDDY_ASYNC_TEST_LOCK.lock().await;
