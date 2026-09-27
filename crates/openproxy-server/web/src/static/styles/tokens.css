@@ -157,7 +157,8 @@
   --font-serif:   "Times New Roman", Times, serif;
   --font-mono:    "Courier New", "Lucida Console", "Courier", monospace;
 
-  --fs-xs:   0.72rem;
+  --fs-2xs:  0.68rem;
+  --fs-xs:   0.75rem;
   --fs-sm:   0.85rem;
   --fs-md:   0.95rem;
   --fs-lg:   1.1rem;

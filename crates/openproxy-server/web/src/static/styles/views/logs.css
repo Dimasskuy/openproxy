@@ -89,7 +89,7 @@ body[data-view="logs"] #main {
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   user-select: none;
   flex-shrink: 0;
 }
@@ -115,7 +115,7 @@ body[data-view="logs"] #main {
   border: 1px solid var(--color-border);
   padding: 0.1rem 0.5rem;
   border-radius: 10px;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   font-family: var(--font-mono);
   color: var(--color-text-muted);
 }
@@ -172,7 +172,7 @@ body[data-view="logs"] #main {
 .log-row.loser { opacity: 0.65; }
 .log-row.predict-skipped { opacity: 0.55; background: var(--color-surface-2); }
 .log-row.predict-skipped:hover { opacity: 0.85; background: var(--color-surface-2); }
-.log-status--skipped { color: var(--color-text-muted); font-weight: 500; text-transform: uppercase; font-size: 0.75rem; }
+.log-status--skipped { color: var(--color-text-muted); font-weight: 500; text-transform: uppercase; font-size: var(--fs-xs); }
 
 .log-row > span {
   box-sizing: border-box;
@@ -333,7 +333,7 @@ body[data-view="logs"] #main {
   gap: 3px;
   padding: 1px 5px;
   border-radius: 4px;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: lowercase;
   background: var(--color-surface-2);
@@ -409,7 +409,7 @@ body[data-view="logs"] #main {
   overflow: hidden;
 }
 .log-phase-sub {
-  font-size: 0.7rem;
+  font-size: var(--fs-2xs);
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   max-width: 100%;
@@ -536,7 +536,7 @@ body[data-view="logs"] #main {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   color: var(--color-text-muted);
   pointer-events: none;
   z-index: 1;
@@ -551,7 +551,7 @@ body[data-view="logs"] #main {
   height: 100%;
   box-sizing: border-box;
   padding: 0 1.8rem 0 2rem;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   font-family: var(--font-sans);
   background: var(--color-bg);
   border: var(--border-w) var(--border-style) var(--color-border);
@@ -587,7 +587,7 @@ body[data-view="logs"] #main {
   padding: 0;
   width: 18px;
   height: 100%;
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   z-index: 1;
 }
 .logs-search-clear:hover {

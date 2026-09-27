@@ -148,7 +148,7 @@
   .log-detail-summary strong {
     display: block;
     color: var(--color-text-muted);
-    font-size: 0.68rem;
+    font-size: var(--fs-2xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     margin-bottom: 2px;
@@ -234,7 +234,7 @@
 
   .log-detail-modal .modal-header h2,
   .log-detail-modal .modal-header h3 {
-    font-size: 0.8rem;
+    font-size: var(--fs-sm);
     max-width: 170px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -264,12 +264,12 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    font-size: 0.7rem;
+    font-size: var(--fs-xs);
     overflow: hidden;
   }
 
   .m-kpi-card .kpi-label {
-    font-size: 0.62rem;
+    font-size: var(--fs-2xs);
     color: var(--color-text-muted);
     text-transform: uppercase;
     font-weight: 600;
@@ -278,7 +278,7 @@
 
   .m-kpi-card .kpi-val {
     font-family: var(--font-mono);
-    font-size: 0.74rem;
+    font-size: var(--fs-xs);
     color: var(--color-text);
     white-space: nowrap;
     overflow: hidden;
@@ -287,7 +287,7 @@
   }
 
   .m-kpi-card .kpi-sub {
-    font-size: 0.65rem;
+    font-size: var(--fs-2xs);
     color: var(--color-text-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -321,7 +321,7 @@
     border-radius: 0;
     padding: 8px;
     font-family: var(--font-mono);
-    font-size: 0.7rem;
+    font-size: var(--fs-xs);
     line-height: 1.4;
     overflow: auto;
     color: var(--color-text);

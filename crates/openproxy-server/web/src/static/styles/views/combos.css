@@ -193,7 +193,7 @@
   background: var(--color-warn-soft);
   color: var(--color-warn);
   border: 1px solid var(--color-warn);
-  font-size: 0.7rem;
+  font-size: var(--fs-2xs);
   font-weight: 600;
   padding: 0 4px;
   border-radius: var(--radius-sm);
@@ -330,7 +330,7 @@
   color: var(--chart-indigo, #6366f1);
   border: 1px solid rgba(99, 102, 241, 0.35);
   font-weight: 600;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   padding: 1px 7px;
   border-radius: 999px;
   letter-spacing: 0.02em;
@@ -346,13 +346,13 @@
   color: var(--color-text);
 }
 .chip-strategy {
-  font-size: 0.68rem;
+  font-size: var(--fs-2xs);
   padding: 1px 5px;
   background: var(--color-surface-2);
   color: var(--color-text-muted);
 }
 .chip-pm {
-  font-size: 0.68rem;
+  font-size: var(--fs-2xs);
   padding: 1px 5px;
   background: rgba(56, 189, 248, 0.12);
   color: #0284c7;
@@ -362,7 +362,7 @@
   color: #38bdf8;
 }
 .chip-targets-count {
-  font-size: 0.68rem;
+  font-size: var(--fs-2xs);
   padding: 1px 5px;
   background: var(--color-surface-2);
   color: var(--color-text-muted);
@@ -484,7 +484,7 @@
   border-bottom: 1px solid var(--color-border-soft);
   color: var(--color-text-muted);
   font-weight: 600;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
 }
 .subcombo-nested-table td {
@@ -651,7 +651,7 @@
   .target-actions-wrap button.reorder-btn {
     flex: 0 0 40px;
     font-weight: bold;
-    font-size: 0.9rem;
+    font-size: var(--fs-sm);
   }
   .target-actions-wrap button.danger {
     flex: 0 0 44px;

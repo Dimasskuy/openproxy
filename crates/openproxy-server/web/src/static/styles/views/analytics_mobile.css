@@ -38,7 +38,7 @@
   }
 
   .analytics-header p {
-    font-size: 0.72rem;
+    font-size: var(--fs-xs);
     color: var(--color-text-muted);
     margin: 2px 0 0;
   }
@@ -71,7 +71,7 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    font-size: 0.68rem;
+    font-size: var(--fs-2xs);
     color: var(--color-text-muted);
     min-width: 0;
     max-width: 100%;
@@ -83,7 +83,7 @@
   .analytics-filter-field select,
   select.filter-dropdown {
     height: 28px;
-    font-size: 0.7rem;
+    font-size: var(--fs-sm);
     padding: 0 4px;
     border-radius: 0;
     background: var(--color-surface);
@@ -119,7 +119,7 @@
   .time-range-picker button,
   .preset-btn {
     height: 24px;
-    font-size: 0.68rem;
+    font-size: var(--fs-xs);
     padding: 0 6px;
     border-radius: 0;
     white-space: nowrap;
@@ -159,7 +159,7 @@
   }
 
   .analytics-metric-label {
-    font-size: 0.65rem;
+    font-size: var(--fs-2xs);
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -177,7 +177,7 @@
 
   .analytics-metric-subtext,
   .analytics-metric-meta {
-    font-size: 0.64rem;
+    font-size: var(--fs-2xs);
     color: var(--color-text-muted);
     font-family: var(--font-mono);
   }
@@ -253,7 +253,7 @@
 
   .e-card-status-pill {
     font-family: var(--font-mono);
-    font-size: 0.62rem;
+    font-size: var(--fs-2xs);
     font-weight: 700;
     padding: 1px 4px;
     border-radius: 3px;
@@ -264,7 +264,7 @@
   }
 
   .e-card-provider {
-    font-size: 0.74rem;
+    font-size: var(--fs-xs);
     font-weight: 700;
     color: var(--color-text);
     flex-shrink: 0;
@@ -272,7 +272,7 @@
 
   .e-card-model {
     font-family: var(--font-mono);
-    font-size: 0.7rem;
+    font-size: var(--fs-xs);
     color: var(--color-text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -325,7 +325,7 @@
 
   .e-card-msg-text {
     font-family: var(--font-mono);
-    font-size: 0.66rem;
+    font-size: var(--fs-2xs);
     color: var(--color-text);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -337,7 +337,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 0.6rem;
+    font-size: var(--fs-2xs);
     color: var(--color-text-muted);
     font-family: var(--font-mono);
   }

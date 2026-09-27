@@ -54,7 +54,8 @@
 
 /* Inputs and selects: subtle radius + focus ring */
 input[type="text"], input[type="number"], input[type="password"],
-input[type="email"], input[type="url"], select, textarea {
+input[type="email"], input[type="url"], input[type="search"], select, textarea {
+  font-size: var(--fs-sm);
   border-radius: var(--radius-sm);
   border-color: var(--color-border);
   transition: border-color var(--t-fast), box-shadow var(--t-fast);

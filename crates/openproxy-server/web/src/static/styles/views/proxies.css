@@ -18,7 +18,7 @@
   color: var(--color-text);
   padding: 2px 6px;
   border-radius: 4px;
-  font-size: 10px;
+  font-size: var(--fs-2xs);
   font-weight: bold;
 }
 .spinner {
@@ -95,7 +95,7 @@
 
   .actions:has(button) button {
     height: 28px;
-    font-size: 0.7rem;
+    font-size: var(--fs-xs);
     padding: 0 4px;
     border-radius: 0;
     display: inline-flex;
@@ -128,7 +128,7 @@
   }
 
   .kpi-card .kpi-title {
-    font-size: 0.65rem;
+    font-size: var(--fs-2xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--color-text-muted);
@@ -165,7 +165,7 @@
 
   .filter-search input {
     height: 28px;
-    font-size: 0.72rem;
+    font-size: var(--fs-sm);
     padding: 0 6px;
     border-radius: 0;
     background: var(--color-surface);
@@ -184,7 +184,7 @@
 
   .filter-selects select {
     height: 26px;
-    font-size: 0.68rem;
+    font-size: var(--fs-sm);
     padding: 0 4px;
     border-radius: 0;
     background: var(--color-surface);
@@ -208,7 +208,7 @@
   .pagination button {
     height: 28px;
     padding: 0 10px;
-    font-size: 0.72rem;
+    font-size: var(--fs-xs);
     border-radius: 0;
   }
 
@@ -287,12 +287,12 @@
     cursor: grab;
     display: flex;
     align-items: center;
-    font-size: 0.8rem;
+    font-size: var(--fs-sm);
   }
 
   .s-card-name {
     font-family: var(--font-mono);
-    font-size: 0.8rem;
+    font-size: var(--fs-sm);
     font-weight: 700;
     color: var(--color-text);
     overflow: hidden;
@@ -302,7 +302,7 @@
 
   .s-card-priority {
     font-family: var(--font-mono);
-    font-size: 0.62rem;
+    font-size: var(--fs-2xs);
     padding: 1px 4px;
     background: var(--color-surface-2);
     border: 1px solid var(--color-border);
@@ -346,7 +346,7 @@
 
   .s-card-url {
     font-family: var(--font-mono);
-    font-size: 0.66rem;
+    font-size: var(--fs-2xs);
     color: var(--color-primary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -361,7 +361,7 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    font-size: 0.66rem;
+    font-size: var(--fs-2xs);
     color: var(--color-text-muted);
   }
 
@@ -373,7 +373,7 @@
 
   .s-card-stat-pill {
     font-family: var(--font-mono);
-    font-size: 0.62rem;
+    font-size: var(--fs-2xs);
     padding: 1px 5px;
     border-radius: 0;
     background: var(--color-surface-2);
@@ -393,7 +393,7 @@
 
   .s-card-updated {
     font-family: var(--font-mono);
-    font-size: 0.64rem;
+    font-size: var(--fs-2xs);
   }
 
   /* Línea 4: Acciones */
@@ -409,7 +409,7 @@
 
   .s-card-line-4 button {
     height: 26px;
-    font-size: 0.7rem;
+    font-size: var(--fs-xs);
     padding: 0 6px;
     border-radius: 0;
     display: inline-flex;

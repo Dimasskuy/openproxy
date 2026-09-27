@@ -147,7 +147,7 @@
   padding: 1px 5px;
   border-radius: 3px;
   font-family: var(--font-mono);
-  font-size: 0.65rem;
+  font-size: var(--fs-2xs);
   font-weight: normal;
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
@@ -215,7 +215,7 @@
   gap: var(--space-2);
 }
 .system-tag {
-  font-size: 0.65rem;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   letter-spacing: 0.05em;
   background: var(--color-warn-soft);
@@ -228,7 +228,7 @@
   font-weight: 600;
 }
 .collapse-icon {
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   color: var(--color-text-muted);
 }
 .playground-system-textarea {
@@ -290,7 +290,7 @@
   text-transform: uppercase;
 }
 .msg-token-badge {
-  font-size: 0.7rem;
+  font-size: var(--fs-2xs);
   font-family: var(--font-mono);
   color: var(--color-text-muted);
   background: var(--color-surface-2);
@@ -298,7 +298,7 @@
   border-radius: 3px;
 }
 .msg-index-num {
-  font-size: 0.7rem;
+  font-size: var(--fs-2xs);
   color: var(--color-text-muted);
   font-family: var(--font-mono);
 }
@@ -310,7 +310,7 @@
 .icon-btn {
   background: none;
   border: none;
-  font-size: 0.8rem;
+  font-size: var(--fs-sm);
   cursor: pointer;
   padding: 2px 4px;
   border-radius: 3px;
@@ -345,7 +345,7 @@
   padding: 2px 0;
 }
 .directives-label {
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--color-text-muted);
@@ -406,7 +406,7 @@
   margin-top: var(--space-2);
 }
 .composer-shortcut-hint {
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   color: var(--color-text-muted);
 }
 .composer-actions {

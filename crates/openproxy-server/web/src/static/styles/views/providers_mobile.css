@@ -53,7 +53,7 @@
   .actions.provider-detail-actions button,
   .provider-detail-actions button {
     height: 28px;
-    font-size: 0.72rem;
+    font-size: var(--fs-xs);
     padding: 0 6px;
     border-radius: 0;
   }
@@ -147,7 +147,7 @@
 
   .card-model-title {
     font-family: var(--font-mono);
-    font-size: 0.76rem;
+    font-size: var(--fs-sm);
     font-weight: 700;
     color: var(--color-text);
     overflow: hidden;
@@ -163,7 +163,7 @@
   }
 
   .card-status-pill {
-    font-size: 0.62rem;
+    font-size: var(--fs-2xs);
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -188,7 +188,7 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 4px;
-    font-size: 0.68rem;
+    font-size: var(--fs-xs);
   }
 
   .meta-chip {
@@ -198,7 +198,7 @@
     border-radius: 0;
     background: var(--color-surface-2);
     border: 1px solid var(--color-border);
-    font-size: 0.64rem;
+    font-size: var(--fs-2xs);
     color: var(--color-text-muted);
     font-family: var(--font-mono);
   }
@@ -211,7 +211,7 @@
   }
 
   .capability-badge {
-    font-size: 0.62rem;
+    font-size: var(--fs-2xs);
     padding: 1px 4px;
     border-radius: 0;
     background: var(--color-surface-2);
@@ -236,7 +236,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 6px;
-    font-size: 0.68rem;
+    font-size: var(--fs-2xs);
   }
 
   .config-val-upstream {
@@ -247,7 +247,7 @@
     white-space: nowrap;
     text-align: left;
     width: 100%;
-    font-size: 0.68rem;
+    font-size: var(--fs-2xs);
   }
 
   .config-label {
@@ -280,7 +280,7 @@
     border: 1px solid var(--color-border);
     border-radius: 0;
     color: var(--color-text);
-    font-size: 0.7rem;
+    font-size: var(--fs-xs);
     padding: 0 4px;
   }
 
@@ -300,7 +300,7 @@
     justify-content: center;
     gap: 4px;
     border-radius: 0;
-    font-size: 0.72rem;
+    font-size: var(--fs-xs);
     font-weight: 600;
     cursor: pointer;
     transition: all var(--t-fast);
@@ -367,7 +367,7 @@
     flex: 1 1 auto;
     justify-content: center;
     padding: 6px 8px;
-    font-size: 0.75rem;
+    font-size: var(--fs-xs);
   }
   .playground-studio-actions {
     width: 100%;
@@ -612,11 +612,11 @@
     margin-right: var(--space-2);
   }
   .format-chip {
-    font-size: 0.7rem;
+    font-size: var(--fs-2xs);
     padding: 1px 6px;
   }
   .model-spec-val {
-    font-size: 0.75rem;
+    font-size: var(--fs-xs);
     color: var(--color-text-muted);
     background: var(--color-surface-2);
     padding: 1px 6px;
@@ -645,7 +645,7 @@
     flex-wrap: wrap;
   }
   .model-family-tag {
-    font-size: 0.7rem;
+    font-size: var(--fs-2xs);
   }
 
   /* Test Status */
@@ -677,7 +677,7 @@
     width: 100%;
     max-width: 100%;
     min-height: 36px;
-    font-size: 11px;
+    font-size: var(--fs-xs);
     padding: 0 4px;
     text-overflow: ellipsis;
   }

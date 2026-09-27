@@ -44,7 +44,7 @@
 
   .logs-connection-badge,
   .logs-recording-toggle {
-    font-size: 0.68rem;
+    font-size: var(--fs-2xs);
     padding: 2px 6px;
     height: 24px;
     display: inline-flex;
@@ -65,7 +65,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.72rem;
+    font-size: var(--fs-xs);
     padding: 4px 6px;
     height: 28px;
     border-radius: var(--radius-sm);
@@ -102,7 +102,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.74rem;
+    font-size: var(--fs-xs);
     font-family: var(--font-sans);
     color: var(--color-text);
     cursor: pointer;
@@ -163,7 +163,7 @@
     max-height: 32px !important;
     box-sizing: border-box !important;
     padding: 0 1.8rem 0 2rem !important;
-    font-size: 0.78rem !important;
+    font-size: var(--fs-sm) !important;
     font-family: var(--font-sans) !important;
     border-radius: var(--radius-sm) !important;
     line-height: normal !important;
@@ -199,7 +199,7 @@
     height: 28px !important;
     min-height: 28px !important;
     max-height: 28px !important;
-    font-size: 0.72rem !important;
+    font-size: var(--fs-xs) !important;
     font-family: var(--font-sans) !important;
     font-weight: 500 !important;
     border-radius: var(--radius-pill) !important;
@@ -232,7 +232,7 @@
 
   .logs-section-inflight .logs-section-header {
     padding: 4px 12px;
-    font-size: 0.72rem;
+    font-size: var(--fs-xs);
     border-bottom: 1px solid var(--color-border);
   }
 
@@ -247,7 +247,7 @@
 
   .logs-section-finished .logs-section-header {
     padding: 4px 12px;
-    font-size: 0.72rem;
+    font-size: var(--fs-xs);
     background: var(--color-surface-2);
     border-bottom: 1px solid var(--color-border);
   }
@@ -330,7 +330,7 @@
   }
 
   .log-status-badge {
-    font-size: 0.72rem;
+    font-size: var(--fs-xs);
     font-weight: 700;
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
@@ -341,7 +341,7 @@
   }
 
   .log-type-tag {
-    font-size: 0.68rem;
+    font-size: var(--fs-2xs);
     padding: 1px 4px;
     min-width: auto;
     text-align: center;
@@ -350,7 +350,7 @@
   .log-time-short {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 0.7rem;
+    font-size: var(--fs-xs);
     color: var(--color-text-muted);
     min-width: 4.2rem;
   }
@@ -358,7 +358,7 @@
   .log-tokens-tag {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 0.7rem;
+    font-size: var(--fs-xs);
     color: var(--color-text-muted);
     min-width: 5.4rem;
     text-align: right;
@@ -367,7 +367,7 @@
   .log-latency-tag {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 0.72rem;
+    font-size: var(--fs-xs);
     font-weight: 600;
     color: var(--color-text);
     min-width: 3.8rem;
@@ -377,7 +377,7 @@
   .log-model-prov {
     display: block;
     font-family: var(--font-mono);
-    font-size: 0.73rem;
+    font-size: var(--fs-xs);
     color: var(--color-text);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -410,12 +410,12 @@
     min-width: 34px;
     height: 28px;
     padding: 0 8px;
-    font-size: 0.74rem;
+    font-size: var(--fs-xs);
     border-radius: 0;
   }
 
   .mobile-pag-row-controls .page-info {
-    font-size: 0.74rem;
+    font-size: var(--fs-xs);
     font-family: var(--font-mono);
     margin: 0 6px;
   }
@@ -425,7 +425,7 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    font-size: 0.72rem;
+    font-size: var(--fs-xs);
     color: var(--color-text-muted);
   }
 }

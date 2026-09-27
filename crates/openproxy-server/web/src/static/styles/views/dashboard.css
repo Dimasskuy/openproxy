@@ -84,7 +84,7 @@
 }
 .page-eyebrow {
   color: var(--color-primary);
-  font-size: 0.68rem;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -543,12 +543,12 @@
   .home-activity-time {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 0.72rem;
+    font-size: var(--fs-xs);
     color: var(--color-text-muted);
   }
 
   .home-activity-status .status-pill {
-    font-size: 0.7rem;
+    font-size: var(--fs-xs);
     font-weight: 700;
     font-family: var(--font-mono);
     padding: 1px 5px;
@@ -557,7 +557,7 @@
 
   .home-activity-model-prov {
     font-family: var(--font-mono);
-    font-size: 0.74rem;
+    font-size: var(--fs-xs);
     color: var(--color-text);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -574,7 +574,7 @@
   .home-activity-tokens {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 0.7rem;
+    font-size: var(--fs-xs);
     color: var(--color-text-muted);
     min-width: 4.8rem;
     text-align: right;
@@ -583,7 +583,7 @@
   .home-activity-latency {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 0.72rem;
+    font-size: var(--fs-xs);
     font-weight: 600;
     color: var(--color-text);
     min-width: 3.6rem;
@@ -593,7 +593,7 @@
   .home-activity-cost {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    font-size: 0.68rem;
+    font-size: var(--fs-2xs);
     color: var(--color-primary);
     font-weight: 600;
   }

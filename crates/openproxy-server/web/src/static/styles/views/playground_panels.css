@@ -56,7 +56,7 @@
   color: #fff;
   padding: 2px 6px;
   border-radius: 3px;
-  font-size: 0.65rem;
+  font-size: var(--fs-2xs);
   opacity: 0;
   transition: opacity var(--t-fast);
 }
@@ -218,7 +218,7 @@
 .preset-pill {
   flex: 1;
   padding: 2px 0;
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   font-family: var(--font-mono);
   background: var(--color-surface-2);
   border: var(--border-w) var(--border-style) var(--color-border-soft);
@@ -348,7 +348,7 @@
   gap: 2px;
 }
 .playground-metric .metric-label {
-  font-size: 0.65rem;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   color: var(--color-text-muted);
   letter-spacing: 0.04em;

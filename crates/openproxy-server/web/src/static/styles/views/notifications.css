@@ -24,7 +24,7 @@
   /* Collapsed sidebar: badge sits next to the icon. Smaller, no
      text overflow. */
   margin-left: 0.25rem;
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   min-width: 1rem;
   padding: 0 0.25rem;
 }
@@ -317,7 +317,7 @@
 }
 .dnd-target-provider {
   color: var(--color-text-muted);
-  font-size: 10px;
+  font-size: var(--fs-xs);
 }
 .dnd-drop-indicator {
   display: flex;
@@ -335,7 +335,7 @@
   transition: background var(--t-fast), height var(--t-fast);
 }
 .dnd-drop-indicator-hint {
-  font-size: 10px;
+  font-size: var(--fs-2xs);
   color: transparent;
   transition: color var(--t-fast);
   white-space: nowrap;

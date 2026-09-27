@@ -50,7 +50,7 @@
   color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  font-size: 0.65rem;
+  font-size: var(--fs-2xs);
 }
 .provider-card-footer .stat value { font-family: var(--font-display); font-size: var(--fs-md); }
 .provider-card-footer .stat .badge { margin-top: var(--space-1); align-self: flex-start; }
@@ -192,7 +192,7 @@
   .cap-badge {
   display: inline-block;
   padding: 0.05rem 0.4rem;
-  font-size: 0.65rem;
+  font-size: var(--fs-2xs);
   font-family: var(--font-mono);
   background: var(--color-info-soft);
   color: var(--color-info);
@@ -204,7 +204,7 @@
   color: var(--color-warn);
   border-color: var(--color-warn);
   margin-left: var(--space-1);
-  font-size: 0.65rem;
+  font-size: var(--fs-2xs);
   padding: 0.05rem 0.4rem;
 }
 
@@ -226,10 +226,10 @@
 .quota-cell { display: flex; flex-direction: column; gap: 0.15rem; min-width: 175px; }
 .quota-cell.muted { color: var(--color-text-muted); }
 .quota-cell.error { color: var(--color-error); }
-.quota-cell .quota-plan { color: var(--color-text-muted); font-size: 0.7rem; }
+.quota-cell .quota-plan { color: var(--color-text-muted); font-size: var(--fs-xs); }
 .quota-cell .quota-plan-row { display: flex; align-items: center; gap: var(--space-2, 0.5rem); }
 .quota-cell .quota-meta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin-top: 0.2rem; }
-.quota-cell .quota-tag { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.68rem; font-weight: 500; line-height: 1.3; }
+.quota-cell .quota-tag { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: var(--fs-2xs); font-weight: 500; line-height: 1.3; }
 .quota-cell .quota-tag.credits { background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25); }
 .quota-cell .quota-tag.checkin-done { background: rgba(34, 197, 94, 0.12); color: var(--color-success, #22c55e); border: 1px solid rgba(34, 197, 94, 0.25); }
 .quota-cell .quota-tag.checkin-pending { background: rgba(234, 179, 8, 0.12); color: var(--color-warn, #eab308); border: 1px solid rgba(234, 179, 8, 0.25); }
@@ -287,7 +287,7 @@
 }
 .quota-model-text {
   color: var(--color-text-muted);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   flex-shrink: 0;
@@ -337,10 +337,10 @@
 .model-name-wrapper { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .model-usage-code { cursor: pointer; padding: 2px 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); font-family: var(--font-mono); }
 .model-modality-block { display: flex; flex-direction: column; gap: 4px; }
-.model-type-select { padding: 2px 4px; font-size: 11px; font-weight: 600; border-radius: 4px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
+.model-type-select { padding: 2px 4px; font-size: var(--fs-xs); font-weight: 600; border-radius: 4px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
 .model-actions-block { display: flex; flex-direction: column; gap: 4px; }
 .model-test-selectors { display: flex; flex-direction: column; gap: 4px; margin-bottom: 2px; }
-.model-account-select, .model-proxy-select { padding: 2px 4px; font-size: 11px; background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); border-radius: 4px; max-width: 140px; }
+.model-account-select, .model-proxy-select { padding: 2px 4px; font-size: var(--fs-xs); background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); border-radius: 4px; max-width: 140px; }
 .model-btn-group { display: flex; gap: 4px; align-items: center; }
 
 .cooldown-banner {
