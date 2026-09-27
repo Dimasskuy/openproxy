@@ -2,6 +2,7 @@ use super::{AccountId, ApiError, AppState, CoreError, ProviderId, core_oauth};
 use axum::{
     Json,
     extract::{ConnectInfo, Path, Query, State},
+    http::HeaderMap,
 };
 
 use openproxy_core::accounts as core_accounts;
@@ -186,13 +187,20 @@ async fn save_oauth_token_and_notify(
 pub async fn oauth_exchange(
     State(s): State<AppState>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
     Path(provider): Path<String>,
     Json(input): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     // Rate limit OAuth exchange to prevent authorization code brute-forcing
     // and upstream resource exhaustion. We use the client's IP since they
     // don't have an account/API key yet in this flow.
-    if !s.rate_limiter().check(RateLimitKey::Ip(addr.ip())) {
+    let client_ip = crate::client_ip::resolve_client_ip(
+        &headers,
+        Some(&addr),
+        &s.config().server.trusted_proxies,
+    )
+    .unwrap_or_else(|| addr.ip());
+    if !s.rate_limiter().check(RateLimitKey::Ip(client_ip)) {
         return Err(ApiError(CoreError::RateLimited {
             provider: "oauth_exchange".into(),
             retry_after_ms: 60_000,

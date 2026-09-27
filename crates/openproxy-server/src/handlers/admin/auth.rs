@@ -1,6 +1,6 @@
 use super::{ApiError, AppState, CoreError, HeaderMap, IntoResponse};
 use openproxy_core::api_keys as core_api_keys;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 /// Who is calling an admin endpoint, as resolved by [`admin_auth_middleware`],
@@ -11,12 +11,18 @@ use std::sync::Arc;
 pub struct AdminIdentity {
     pub key: Option<Arc<core_api_keys::ApiKey>>,
     pub remote_addr: Option<SocketAddr>,
+    pub client_ip: Option<IpAddr>,
 }
 
 impl AdminIdentity {
     /// Numeric key id for audit logs (`None` under dev bypass).
     pub fn key_id(&self) -> Option<i64> {
         self.key.as_ref().map(|k| k.id.0)
+    }
+
+    /// Resolved client IP for audit logs, rate limits, and security tracking.
+    pub fn client_ip(&self) -> Option<IpAddr> {
+        self.client_ip.or_else(|| self.remote_addr.map(|a| a.ip()))
     }
 }
 
@@ -37,7 +43,7 @@ pub(crate) fn audit_secret_read(identity: &Identity, secret_kind: &str, subject:
         key_prefix = id
             .and_then(|i| i.key.as_ref())
             .and_then(|k| k.key_prefix.as_deref()),
-        ip = id.and_then(|i| i.remote_addr).map(|a| a.ip().to_string()),
+        ip = id.and_then(AdminIdentity::client_ip).map(|a| a.to_string()),
         secret = secret_kind,
         subject,
         "secret disclosed via admin api"
@@ -59,7 +65,10 @@ fn check_dev_auth_bypass(
     // when the request came through a reverse proxy: behind a proxy on
     // the same host every remote client looks like loopback at the TCP
     // layer, so the peer-address check below would be meaningless.
-    if headers.contains_key("x-forwarded-for") || headers.contains_key("forwarded") {
+    if headers.contains_key("x-forwarded-for")
+        || headers.contains_key("forwarded")
+        || headers.contains_key("x-real-ip")
+    {
         tracing::error!(
             target: "openproxy::security",
             "OPENPROXY_DASHBOARD_AUTH_BYPASS refused: request carries proxy forwarding headers"
@@ -121,11 +130,22 @@ pub(crate) fn authenticate_admin(
     headers: &HeaderMap,
     remote_addr: Option<&SocketAddr>,
 ) -> Result<AdminIdentity, ApiError> {
+    let client_ip = crate::client_ip::resolve_client_ip(
+        headers,
+        remote_addr,
+        &state.config().server.trusted_proxies,
+    );
+    let effective_remote_addr = client_ip
+        .zip(remote_addr)
+        .map(|(ip, peer)| SocketAddr::new(ip, peer.port()))
+        .or_else(|| remote_addr.copied());
+
     #[cfg(debug_assertions)]
     if check_dev_auth_bypass(headers, remote_addr)? {
         return Ok(AdminIdentity {
             key: None,
-            remote_addr: remote_addr.copied(),
+            remote_addr: effective_remote_addr,
+            client_ip,
         });
     }
 
@@ -134,7 +154,8 @@ pub(crate) fn authenticate_admin(
     let key = crate::middleware::auth::verify_key_credentials(state, token, "manage")?;
     Ok(AdminIdentity {
         key: Some(key),
-        remote_addr: remote_addr.copied(),
+        remote_addr: effective_remote_addr,
+        client_ip,
     })
 }
 
@@ -170,11 +191,22 @@ pub(crate) fn authenticate_admin_ws(
     ticket: Option<&str>,
     remote_addr: Option<&SocketAddr>,
 ) -> Result<AdminIdentity, ApiError> {
+    let client_ip = crate::client_ip::resolve_client_ip(
+        headers,
+        remote_addr,
+        &state.config().server.trusted_proxies,
+    );
+    let effective_remote_addr = client_ip
+        .zip(remote_addr)
+        .map(|(ip, peer)| SocketAddr::new(ip, peer.port()))
+        .or_else(|| remote_addr.copied());
+
     #[cfg(debug_assertions)]
     if check_dev_auth_bypass(headers, remote_addr)? {
         return Ok(AdminIdentity {
             key: None,
-            remote_addr: remote_addr.copied(),
+            remote_addr: effective_remote_addr,
+            client_ip,
         });
     }
 
@@ -191,7 +223,8 @@ pub(crate) fn authenticate_admin_ws(
     };
     Ok(AdminIdentity {
         key: Some(key),
-        remote_addr: remote_addr.copied(),
+        remote_addr: effective_remote_addr,
+        client_ip,
     })
 }
 

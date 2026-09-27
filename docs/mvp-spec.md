@@ -775,6 +775,14 @@ prefixed `OPENPROXY_`. The schema is versioned.
 [server]
 bind = "0.0.0.0:8080"
 admin_bind = "127.0.0.1:8081"   # admin API on a separate port
+trusted_proxies = ["127.0.0.1", "::1"] # optional: trusted proxy CIDRs/IPs for X-Forwarded-For / X-Real-IP resolution
+
+# Reverse proxy client IP resolution:
+# When running behind a reverse proxy (Nginx, Caddy, HAProxy, Cloudflare), openproxy
+# extracts the client IP from `X-Real-IP`, `X-Forwarded-For`, or RFC 7239 `Forwarded`
+# only when the immediate TCP peer is a trusted proxy. Loopback addresses (127.0.0.0/8, ::1)
+# are trusted by default. Additional CIDR ranges or IPs can be listed in `trusted_proxies`.
+# Requests from untrusted peers ignore forwarding headers to prevent IP spoofing in audit logs.
 
 [storage]
 path = "./openproxy.db"

@@ -98,6 +98,10 @@ via `rust-embed`, serving both the API and the admin UI on a single port.
   bundled by esbuild, embedded via `rust-embed`).
 - Wires together the request pipeline: parse → translate → select combo → pick account
   → forward → stream response → record usage.
+- Reverse proxy and client IP resolution: evaluates trusted proxies (loopback by default,
+  or `trusted_proxies` CIDRs) to safely parse `X-Real-IP`, `X-Forwarded-For`, and RFC 7239
+  `Forwarded` with anti-spoofing protection for audit logs (`openproxy::security::audit`)
+  and unauthenticated rate limits.
 - The frontend source tree lives in `crates/openproxy-server/web/` and is built by `pnpm build`.
 
 ### `openproxy-api-client`

@@ -21,6 +21,8 @@ pub struct ServerConfig {
     pub rate_limit_requests_per_minute: u32,
     #[serde(default = "default_allow_anonymous")]
     pub allow_anonymous: bool,
+    #[serde(default)]
+    pub trusted_proxies: Vec<String>,
 }
 
 fn default_rate_limit_requests() -> u32 {
@@ -38,6 +40,7 @@ impl Default for ServerConfig {
             request_max_body_bytes: 10 * 1024 * 1024,
             rate_limit_requests_per_minute: 1000,
             allow_anonymous: false,
+            trusted_proxies: Vec::new(),
         }
     }
 }

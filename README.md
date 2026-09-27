@@ -91,6 +91,31 @@ cp config.example.toml config.toml
 docker compose up -d
 ```
 
+#### Reverse Proxy (Nginx, Caddy, Cloudflare)
+
+When deploying behind a reverse proxy, forward client IP headers:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8787;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # For WebSocket live logs (/admin/ws)
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+```
+
+Loopback proxies (`127.0.0.0/8`, `::1`) are trusted automatically. If your proxy resides in a Docker bridge or private subnet, configure `server.trusted_proxies` in `config.toml`:
+```toml
+[server]
+trusted_proxies = ["172.16.0.0/12", "10.0.0.0/8"]
+```
+
 ---
 
 ### Option B: Pre-Built Binary

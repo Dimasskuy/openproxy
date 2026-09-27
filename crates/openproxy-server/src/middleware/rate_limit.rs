@@ -14,7 +14,13 @@ pub async fn rate_limit_middleware(
     let rl_key = if let Some(t) = auth_result {
         RateLimitKey::Key(t.key_id)
     } else {
-        RateLimitKey::Ip(addr.ip())
+        let client_ip = crate::client_ip::resolve_client_ip(
+            req.headers(),
+            Some(&addr),
+            &state.config().server.trusted_proxies,
+        )
+        .unwrap_or_else(|| addr.ip());
+        RateLimitKey::Ip(client_ip)
     };
 
     if !state.rate_limiter().check(rl_key) {

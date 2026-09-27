@@ -14,6 +14,7 @@
 /// module.
 pub mod admin_ui;
 pub mod background;
+pub mod client_ip;
 /// In-memory ring buffer of recent `tracing` events, exposed to the
 /// dashboard via `GET /admin/debug/logs`. See `debug_log.rs` for the
 /// full design rationale.

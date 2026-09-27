@@ -101,3 +101,39 @@ where
         )))
     }
 }
+
+/// Axum extractor that resolves the true client IP address.
+///
+/// If the request comes from a trusted reverse proxy (loopback by default, or
+/// listed in `config.server.trusted_proxies`), checks `X-Real-IP`,
+/// `X-Forwarded-For`, and RFC 7239 `Forwarded`. Otherwise, falls back to the
+/// peer address from [`axum::extract::ConnectInfo`] to prevent IP spoofing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClientIp(pub std::net::IpAddr);
+
+impl<S> FromRequestParts<S> for ClientIp
+where
+    AppState: FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        state: &S,
+    ) -> impl std::future::Future<Output = Result<Self, Self::Rejection>> + Send {
+        let app_state = AppState::from_ref(state);
+        let peer_addr = parts
+            .extensions
+            .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>();
+        let ip = crate::client_ip::resolve_client_ip(
+            &parts.headers,
+            peer_addr.map(|ci| &ci.0),
+            &app_state.config().server.trusted_proxies,
+        )
+        .or_else(|| peer_addr.map(|ci| ci.0.ip()))
+        .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+        std::future::ready(Ok(ClientIp(ip)))
+    }
+}
+

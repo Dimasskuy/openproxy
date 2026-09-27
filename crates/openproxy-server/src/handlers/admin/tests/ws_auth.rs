@@ -180,3 +180,46 @@ async fn admin_middleware_exposes_identity_to_handlers() {
             .any(|s| s == "manage")
     );
 }
+
+#[tokio::test]
+async fn admin_middleware_resolves_real_ip_behind_proxy() {
+    let tmp = tempdir();
+    let (state, key) = make_state_with_key(tmp.path()).await;
+    let addr = "127.0.0.1:12345".parse::<std::net::SocketAddr>().unwrap();
+    let mut headers = HeaderMap::new();
+    headers.insert("authorization", format!("Bearer {key}").parse().unwrap());
+    headers.insert("x-real-ip", "198.51.100.42".parse().unwrap());
+
+    let identity: AdminIdentity =
+        crate::handlers::admin::auth::authenticate_admin(&state, &headers, Some(&addr))
+            .expect("valid key");
+    assert_eq!(
+        identity.client_ip(),
+        Some("198.51.100.42".parse::<std::net::IpAddr>().unwrap())
+    );
+    assert_eq!(
+        identity.remote_addr,
+        Some("198.51.100.42:12345".parse::<std::net::SocketAddr>().unwrap())
+    );
+}
+
+#[tokio::test]
+async fn admin_middleware_rejects_spoofed_real_ip_from_untrusted_peer() {
+    let tmp = tempdir();
+    let (state, key) = make_state_with_key(tmp.path()).await;
+    let untrusted_addr = "203.0.113.10:12345".parse::<std::net::SocketAddr>().unwrap();
+    let mut headers = HeaderMap::new();
+    headers.insert("authorization", format!("Bearer {key}").parse().unwrap());
+    headers.insert("x-real-ip", "1.1.1.1".parse().unwrap());
+
+    let identity: AdminIdentity =
+        crate::handlers::admin::auth::authenticate_admin(&state, &headers, Some(&untrusted_addr))
+            .expect("valid key");
+    // Must NOT be 1.1.1.1 — must be the actual peer IP 203.0.113.10
+    assert_eq!(
+        identity.client_ip(),
+        Some("203.0.113.10".parse::<std::net::IpAddr>().unwrap())
+    );
+    assert_eq!(identity.remote_addr, Some(untrusted_addr));
+}
+
