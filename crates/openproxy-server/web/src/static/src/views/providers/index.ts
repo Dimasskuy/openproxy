@@ -7,7 +7,7 @@
 // in list.ts and detail.ts; this file owns only the lifecycle.
 
 import { state } from '../../state/index.js';
-import { api } from '../../state/api.js';
+import { api, fetchFormats } from '../../state/api.js';
 import { mountView, requestUpdate } from '../../state/reactive.js';
 import type { Account, Model, Provider, FreeProxy } from '../../lib/types/api.js';
 import { setDetailProviderId, setLoadError } from './shared.js';
@@ -23,6 +23,8 @@ export async function mountProviders(
 ): Promise<(() => void) | void> {
   const main = document.getElementById('main');
   if (!main) return;
+
+  void fetchFormats();
 
   if (opts.detailId) {
     setDetailProviderId(opts.detailId);

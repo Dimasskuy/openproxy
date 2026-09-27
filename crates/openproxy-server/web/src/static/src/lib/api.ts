@@ -13,6 +13,8 @@
 import { state } from "../state/index.js";
 import { getToken, clearToken } from "../state/auth.js";
 import type { DebugLogsResponse } from "./types/api.js";
+import type { FormatsMetadata } from "./types/common.js";
+import { FALLBACK_TARGET_FORMATS, FALLBACK_PROVIDER_FORMATS } from "./types/common.js";
 
 export interface ApiOptions {
   method?: string;
@@ -98,4 +100,23 @@ export async function fetchDebugLogs(opts: FetchDebugLogsOpts = {}): Promise<Deb
 export async function clearDebugLogs(): Promise<void> {
   // The server returns `{"cleared": true}`; discarded.
   await api("/debug/clear", { method: "POST" });
+}
+
+/** `GET /admin/api/formats` — fetch introspectable target wire formats and provider formats
+ *  auto-indexed by the backend engine as single source of truth. */
+export async function fetchFormats(): Promise<FormatsMetadata> {
+  if (state.formats) return state.formats;
+  try {
+    const data = (await api("/formats")) as FormatsMetadata;
+    if (data && Array.isArray(data.target_formats) && Array.isArray(data.provider_formats)) {
+      state.formats = data;
+      return data;
+    }
+  } catch (err: unknown) {
+    console.error("Failed to fetch formats metadata from /admin/api/formats:", err);
+  }
+  return {
+    target_formats: [...FALLBACK_TARGET_FORMATS],
+    provider_formats: [...FALLBACK_PROVIDER_FORMATS],
+  };
 }

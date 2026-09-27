@@ -11,6 +11,8 @@
 
 import { html, render, type TemplateResult } from "lit-html";
 import { state } from "../state/index.js";
+import { fetchFormats } from "../lib/api.js";
+import { FALLBACK_TARGET_FORMATS } from "../lib/types/common.js";
 import { createCustomModel } from "../handlers/model-handlers/index.js";
 import { ensureModalRoot } from "../lib/ui-utils.js";
 import type { Provider } from "../lib/types/api.js";
@@ -18,6 +20,7 @@ import type { Provider } from "../lib/types/api.js";
 function customModelFormTemplate(providerId: string): TemplateResult {
   const provider: Provider | undefined = state.providers.find((p) => p.id === providerId);
   const defaultFormat: string = provider && provider.format && provider.format !== "mixed" ? provider.format : "openai";
+  const targetFormats = state.formats?.target_formats ?? FALLBACK_TARGET_FORMATS;
   return html`
     <div class="modal-bg" id="custom-model-modal" @click=${(e: Event) => { if (e.target === e.currentTarget) closeCustomModelForm(); }}>
       <div class="modal">
@@ -49,13 +52,13 @@ function customModelFormTemplate(providerId: string): TemplateResult {
             <div class="field">
               <label for="custom-model-format">Target format</label>
               <select id="custom-model-format" name="target_format">
-                <option value="openai" ?selected=${defaultFormat === "openai"}>OpenAI Chat Completions (/v1/chat/completions)</option>
-                <option value="responses" ?selected=${defaultFormat === "responses"}>OpenAI Responses (/v1/responses)</option>
-                <option value="anthropic" ?selected=${defaultFormat === "anthropic"}>Anthropic Messages (/v1/messages)</option>
-                <option value="gemini" ?selected=${defaultFormat === "gemini"}>Google Gemini (generateContent)</option>
-                <option value="systemone" ?selected=${defaultFormat === "systemone"}>SystemOne (Decision / Fast Engine)</option>
-                <option value="atomesus" ?selected=${defaultFormat === "atomesus"}>Atomesus</option>
-                <option value="commandcodego" ?selected=${defaultFormat === "commandcodego"}>CommandCodeGo</option>
+                ${targetFormats.map(
+                  (fmt) => html`
+                    <option value=${fmt.id} ?selected=${defaultFormat === fmt.id} title=${fmt.description}>
+                      ${fmt.label}
+                    </option>
+                  `
+                )}
               </select>
             </div>
             <div class="field">
@@ -80,6 +83,13 @@ export function showCustomModelForm(providerId: string): void {
   const wrapper = document.createElement("div");
   root.appendChild(wrapper);
   render(customModelFormTemplate(providerId), wrapper);
+  if (!state.formats) {
+    void fetchFormats().then(() => {
+      if (wrapper.parentElement) {
+        render(customModelFormTemplate(providerId), wrapper);
+      }
+    });
+  }
 }
 
 export function closeCustomModelForm(): void {

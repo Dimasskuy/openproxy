@@ -2,6 +2,7 @@ use crate::capabilities::ModelCapabilities;
 use crate::ids::ModelId;
 use crate::message::TargetFormat;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveredModel {
@@ -57,6 +58,17 @@ impl_string_enum! {
 }
 
 impl ProviderFormat {
+    pub const ALL: &'static [Self] = &[
+        Self::Openai,
+        Self::Responses,
+        Self::Anthropic,
+        Self::Gemini,
+        Self::Mixed,
+        Self::SystemOne,
+        Self::Atomesus,
+        Self::CommandCodeGo,
+    ];
+
     /// Return the default target format for this provider format.
     #[inline]
     pub const fn default_target_format(&self) -> TargetFormat {
@@ -68,6 +80,98 @@ impl ProviderFormat {
             Self::CommandCodeGo => TargetFormat::CommandCodeGo,
             Self::SystemOne => TargetFormat::SystemOne,
             Self::Openai | Self::Mixed => TargetFormat::Openai,
+        }
+    }
+
+    #[inline]
+    pub const fn descriptor(&self) -> ProviderFormatDescriptor {
+        match self {
+            Self::Openai => ProviderFormatDescriptor {
+                id: Self::Openai,
+                name: Cow::Borrowed("OpenAI Chat Completions"),
+                label: Cow::Borrowed("OpenAI Chat Completions (/v1/chat/completions)"),
+                default_target_format: TargetFormat::Openai,
+                description: Cow::Borrowed("OpenAI Chat Completions protocol"),
+            },
+            Self::Responses => ProviderFormatDescriptor {
+                id: Self::Responses,
+                name: Cow::Borrowed("OpenAI Responses"),
+                label: Cow::Borrowed("OpenAI Responses (/v1/responses)"),
+                default_target_format: TargetFormat::Responses,
+                description: Cow::Borrowed("OpenAI Responses protocol"),
+            },
+            Self::Anthropic => ProviderFormatDescriptor {
+                id: Self::Anthropic,
+                name: Cow::Borrowed("Anthropic Messages"),
+                label: Cow::Borrowed("Anthropic Messages (/v1/messages)"),
+                default_target_format: TargetFormat::Anthropic,
+                description: Cow::Borrowed("Anthropic Claude Messages protocol"),
+            },
+            Self::Gemini => ProviderFormatDescriptor {
+                id: Self::Gemini,
+                name: Cow::Borrowed("Google Gemini"),
+                label: Cow::Borrowed("Google Gemini (generateContent)"),
+                default_target_format: TargetFormat::Gemini,
+                description: Cow::Borrowed("Google Gemini native API protocol"),
+            },
+            Self::Mixed => ProviderFormatDescriptor {
+                id: Self::Mixed,
+                name: Cow::Borrowed("Mixed"),
+                label: Cow::Borrowed("Mixed (per-model target format)"),
+                default_target_format: TargetFormat::Openai,
+                description: Cow::Borrowed("Multi-protocol provider with model-level routing"),
+            },
+            Self::SystemOne => ProviderFormatDescriptor {
+                id: Self::SystemOne,
+                name: Cow::Borrowed("SystemOne Decision"),
+                label: Cow::Borrowed("SystemOne (Decision / Fast Engine)"),
+                default_target_format: TargetFormat::SystemOne,
+                description: Cow::Borrowed("SystemOne fast decision engine protocol"),
+            },
+            Self::Atomesus => ProviderFormatDescriptor {
+                id: Self::Atomesus,
+                name: Cow::Borrowed("Atomesus"),
+                label: Cow::Borrowed("Atomesus"),
+                default_target_format: TargetFormat::Atomesus,
+                description: Cow::Borrowed("Atomesus upstream protocol"),
+            },
+            Self::CommandCodeGo => ProviderFormatDescriptor {
+                id: Self::CommandCodeGo,
+                name: Cow::Borrowed("CommandCodeGo"),
+                label: Cow::Borrowed("CommandCodeGo"),
+                default_target_format: TargetFormat::CommandCodeGo,
+                description: Cow::Borrowed("CommandCode Go bridge protocol"),
+            },
+        }
+    }
+
+    pub fn all_descriptors() -> Vec<ProviderFormatDescriptor> {
+        Self::ALL.iter().map(|fmt| fmt.descriptor()).collect()
+    }
+}
+
+/// Detailed descriptor of a provider format for API introspection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderFormatDescriptor {
+    pub id: ProviderFormat,
+    pub name: Cow<'static, str>,
+    pub label: Cow<'static, str>,
+    pub default_target_format: TargetFormat,
+    pub description: Cow<'static, str>,
+}
+
+/// Unified API metadata payload exposing introspectable formats.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormatsMetadata {
+    pub target_formats: Vec<crate::message::TargetFormatDescriptor>,
+    pub provider_formats: Vec<ProviderFormatDescriptor>,
+}
+
+impl FormatsMetadata {
+    pub fn current() -> Self {
+        Self {
+            target_formats: TargetFormat::all_descriptors(),
+            provider_formats: ProviderFormat::all_descriptors(),
         }
     }
 }
@@ -320,5 +424,33 @@ mod tests {
         let serialized = serde_json::to_string(&p).expect("serialize provider");
         assert!(serialized.contains(r#""has_favicon":true"#));
         assert!(!serialized.contains("favicon_base64"));
+    }
+
+    #[test]
+    fn test_formats_metadata_and_descriptors() {
+        let meta = FormatsMetadata::current();
+        assert_eq!(meta.target_formats.len(), TargetFormat::ALL.len());
+        assert_eq!(meta.provider_formats.len(), ProviderFormat::ALL.len());
+
+        let openai_tf = meta
+            .target_formats
+            .iter()
+            .find(|d| d.id == TargetFormat::Openai)
+            .expect("openai target format");
+        assert_eq!(openai_tf.endpoint.as_deref(), Some("/v1/chat/completions"));
+
+        let responses_tf = meta
+            .target_formats
+            .iter()
+            .find(|d| d.id == TargetFormat::Responses)
+            .expect("responses target format");
+        assert_eq!(responses_tf.endpoint.as_deref(), Some("/v1/responses"));
+
+        let mixed_pf = meta
+            .provider_formats
+            .iter()
+            .find(|d| d.id == ProviderFormat::Mixed)
+            .expect("mixed provider format");
+        assert_eq!(mixed_pf.default_target_format, TargetFormat::Openai);
     }
 }

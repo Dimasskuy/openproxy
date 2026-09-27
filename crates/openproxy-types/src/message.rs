@@ -17,6 +17,89 @@ impl_string_enum! {
     core_error: "target_format"
 }
 
+use std::borrow::Cow;
+
+/// Detailed descriptor of a target wire format for API introspection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TargetFormatDescriptor {
+    pub id: TargetFormat,
+    pub name: Cow<'static, str>,
+    pub label: Cow<'static, str>,
+    pub endpoint: Option<Cow<'static, str>>,
+    pub description: Cow<'static, str>,
+}
+
+impl TargetFormat {
+    pub const ALL: &'static [Self] = &[
+        Self::Openai,
+        Self::Responses,
+        Self::Anthropic,
+        Self::Gemini,
+        Self::SystemOne,
+        Self::Atomesus,
+        Self::CommandCodeGo,
+    ];
+
+    #[inline]
+    pub const fn descriptor(&self) -> TargetFormatDescriptor {
+        match self {
+            Self::Openai => TargetFormatDescriptor {
+                id: Self::Openai,
+                name: Cow::Borrowed("OpenAI Chat Completions"),
+                label: Cow::Borrowed("OpenAI Chat Completions (/v1/chat/completions)"),
+                endpoint: Some(Cow::Borrowed("/v1/chat/completions")),
+                description: Cow::Borrowed("Standard OpenAI chat completions API wire format"),
+            },
+            Self::Responses => TargetFormatDescriptor {
+                id: Self::Responses,
+                name: Cow::Borrowed("OpenAI Responses"),
+                label: Cow::Borrowed("OpenAI Responses (/v1/responses)"),
+                endpoint: Some(Cow::Borrowed("/v1/responses")),
+                description: Cow::Borrowed("OpenAI Responses API wire format"),
+            },
+            Self::Anthropic => TargetFormatDescriptor {
+                id: Self::Anthropic,
+                name: Cow::Borrowed("Anthropic Messages"),
+                label: Cow::Borrowed("Anthropic Messages (/v1/messages)"),
+                endpoint: Some(Cow::Borrowed("/v1/messages")),
+                description: Cow::Borrowed("Anthropic Claude Messages API wire format"),
+            },
+            Self::Gemini => TargetFormatDescriptor {
+                id: Self::Gemini,
+                name: Cow::Borrowed("Google Gemini"),
+                label: Cow::Borrowed("Google Gemini (generateContent)"),
+                endpoint: Some(Cow::Borrowed("v1beta/models/...:generateContent")),
+                description: Cow::Borrowed("Google Gemini REST API generateContent wire format"),
+            },
+            Self::SystemOne => TargetFormatDescriptor {
+                id: Self::SystemOne,
+                name: Cow::Borrowed("SystemOne Decision"),
+                label: Cow::Borrowed("SystemOne (Decision / Fast Engine)"),
+                endpoint: Some(Cow::Borrowed("/v1/decisions")),
+                description: Cow::Borrowed("SystemOne fast decision engine wire format"),
+            },
+            Self::Atomesus => TargetFormatDescriptor {
+                id: Self::Atomesus,
+                name: Cow::Borrowed("Atomesus"),
+                label: Cow::Borrowed("Atomesus"),
+                endpoint: None,
+                description: Cow::Borrowed("Atomesus upstream wire format"),
+            },
+            Self::CommandCodeGo => TargetFormatDescriptor {
+                id: Self::CommandCodeGo,
+                name: Cow::Borrowed("CommandCodeGo"),
+                label: Cow::Borrowed("CommandCodeGo"),
+                endpoint: None,
+                description: Cow::Borrowed("CommandCode Go bridge wire format"),
+            },
+        }
+    }
+
+    pub fn all_descriptors() -> Vec<TargetFormatDescriptor> {
+        Self::ALL.iter().map(|fmt| fmt.descriptor()).collect()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenAIMessage {
     /// "system" | "user" | "assistant" | "tool" | "function" | "developer"

@@ -11,6 +11,7 @@ import type {
   ProxySource,
   ApiKey,
 } from "../lib/types/api.js";
+import type { FormatsMetadata } from "../lib/types/common.js";
 
 // Defined here so the `state` shape can name them without a circular import
 // (router.ts and ws.ts import from state/, not the reverse).
@@ -172,6 +173,9 @@ export interface DashboardState {
   // Live-logs state. Heavy enough to warrant a sub-object.
   logs: LogsState;
 
+  // Introspected API wire formats and provider formats from GET /admin/api/formats
+  formats: FormatsMetadata | null;
+
   // Latency tracker for the last `api()` call (used by the health
   // pill in the sidebar).
   lastApiLatencyMs: number;
@@ -190,6 +194,7 @@ export interface DashboardState {
 
 export const state: DashboardState = {
   ui: { sidebarCollapsed: false },
+  formats: null,
   // Cached server data, refreshed on navigate() and on bgPoll.
   providers: [],
   accounts: [],

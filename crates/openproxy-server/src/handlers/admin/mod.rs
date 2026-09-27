@@ -45,6 +45,7 @@ pub fn admin_api_routes() -> axum::Router<AppState> {
         .nest("/proxy-sources", proxy_sources::router())
         .nest("/notifications", notifications::router())
         .nest("/oauth", oauth::router())
+        .route("/formats", axum::routing::get(get_formats))
         .route("/ws-ticket", axum::routing::post(usage_ws::issue_ws_ticket))
         .fallback(|| async {
             (
@@ -53,6 +54,10 @@ pub fn admin_api_routes() -> axum::Router<AppState> {
                 r#"{"error":{"code":"not_found","message":"endpoint not found"}}"#,
             )
         })
+}
+
+async fn get_formats() -> axum::Json<openproxy_types::FormatsMetadata> {
+    axum::Json(openproxy_types::FormatsMetadata::current())
 }
 
 pub use accounts::AccountListQuery;

@@ -52,11 +52,12 @@ pub use ids::{
 };
 pub use message::{
     OpenAIChoice, OpenAIMessage, OpenAIRequest, OpenAIRequestView, OpenAIResponse, OpenAIUsage,
-    PromptTokensDetails, TargetFormat, extract_content_part_text, extract_content_text,
+    PromptTokensDetails, TargetFormat, TargetFormatDescriptor, extract_content_part_text,
+    extract_content_text,
 };
 pub use providers::{
-    AuthType, DiscoveredModel, NewProvider, Provider, ProviderFormat, ProviderMetadata,
-    RateLimitScope,
+    AuthType, DiscoveredModel, FormatsMetadata, NewProvider, Provider, ProviderFormat,
+    ProviderFormatDescriptor, ProviderMetadata, RateLimitScope,
 };
 pub mod combos;
 pub use capabilities::{

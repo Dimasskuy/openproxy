@@ -3,7 +3,8 @@
 
 import { navigate } from "../../state/router.js";
 import { state } from "../../state/index.js";
-import { api } from "../../state/api.js";
+import { api, fetchFormats } from "../../state/api.js";
+import { FALLBACK_PROVIDER_FORMATS } from "../../lib/types/common.js";
 import { html, render, type TemplateResult } from "lit-html";
 import { syncModelRowActive, updateFilterTabCounts } from "../../components/model-table.js";
 import { requestUpdate } from "../../state/reactive.js";
@@ -83,6 +84,7 @@ export async function refreshAllProviders(): Promise<void> {
 // ── Create provider ────────────────────────────────────────────────────────
 
 function createProviderTemplate(wrapper: HTMLElement): TemplateResult {
+  const providerFormats = state.formats?.provider_formats ?? FALLBACK_PROVIDER_FORMATS;
   return html`
     <div class="modal-bg" id="create-provider-modal"
          @click=${(e: Event) => { if (e.target === e.currentTarget) wrapper.remove(); }}>
@@ -115,14 +117,13 @@ function createProviderTemplate(wrapper: HTMLElement): TemplateResult {
             <div class="field">
               <label for="provider-format">Format</label>
               <select id="provider-format" name="format">
-                <option value="openai">OpenAI Chat Completions (/v1/chat/completions)</option>
-                <option value="responses">OpenAI Responses (/v1/responses)</option>
-                <option value="anthropic">Anthropic Messages (/v1/messages)</option>
-                <option value="gemini">Google Gemini (generateContent)</option>
-                <option value="mixed">Mixed (per-model target format)</option>
-                <option value="systemone">SystemOne (Decision / Fast Engine)</option>
-                <option value="atomesus">Atomesus</option>
-                <option value="commandcodego">CommandCodeGo</option>
+                ${providerFormats.map(
+                  (fmt) => html`
+                    <option value=${fmt.id} title=${fmt.description}>
+                      ${fmt.label}
+                    </option>
+                  `
+                )}
               </select>
             </div>
             <div class="field">
@@ -144,6 +145,13 @@ export function showCreateProvider(): void {
   const wrapper = document.createElement("div");
   ensureModalRoot().appendChild(wrapper);
   render(createProviderTemplate(wrapper), wrapper);
+  if (!state.formats) {
+    void fetchFormats().then(() => {
+      if (wrapper.parentElement) {
+        render(createProviderTemplate(wrapper), wrapper);
+      }
+    });
+  }
 }
 
 export function closeCreateProvider(): void {
