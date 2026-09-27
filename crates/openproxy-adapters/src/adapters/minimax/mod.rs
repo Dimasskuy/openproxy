@@ -1,7 +1,15 @@
 use super::{
     AdapterAuthType, AdapterFormat, Arc, CancellationToken, CoreError, DiscoveredModel, ModelId,
     ProviderAdapterConfig, ProviderId, Result, TargetFormat, TimeoutProfile, UpstreamClient,
-    UpstreamRequest, fetch_openai_models,
+    UpstreamRequest,
+};
+
+pub mod models;
+pub use models::{
+    MINIMAX_UPSTREAM_CONFIG_RAW_URL, current_dynamic_minimax_models,
+    fetch_minimax_models_pipeline, merge_minimax_models, minimax_builtin_models,
+    parse_minimax_config_ts, reset_dynamic_minimax_models, set_dynamic_minimax_models,
+    try_fetch_upstream_minimax_models,
 };
 
 pub use crate::spoofer::{
@@ -127,27 +135,7 @@ impl ProviderAdapter for MiniMaxAdapter {
         upstream_client: &Arc<UpstreamClient>,
         api_key: &str,
     ) -> Result<Vec<DiscoveredModel>> {
-        let trimmed = api_key.trim();
-        if !trimmed.starts_with("sk-") {
-            return Ok(minimax_builtin_models());
-        }
-
-        let url = self.models_url().ok_or_else(|| {
-            CoreError::Internal("minimax: models_url is None (impossible)".into())
-        })?;
-
-        match fetch_openai_models(
-            &url,
-            upstream_client,
-            trimmed,
-            "minimax",
-            openproxy_types::TargetFormat::Anthropic,
-        )
-        .await
-        {
-            Ok(models) if !models.is_empty() => Ok(models),
-            Ok(_) | Err(_) => Ok(minimax_builtin_models()),
-        }
+        models::fetch_minimax_models_pipeline(upstream_client, api_key).await
     }
 
     async fn fetch_quota(
@@ -483,47 +471,6 @@ fn parse_minimax_meta(
         .and_then(serde_json::Value::as_str)
         .map(std::string::ToString::to_string);
     (op_group, region, tier)
-}
-
-pub fn minimax_builtin_models() -> Vec<DiscoveredModel> {
-    use crate::adapters::discovery::build_discovered_model_full;
-    vec![
-        build_discovered_model_full(
-            "MiniMax-M3".into(),
-            Some("MiniMax-M3".into()),
-            TargetFormat::Anthropic,
-            Some(1_000_000),
-            Some(128_000),
-        ),
-        build_discovered_model_full(
-            "MiniMax-M2.7-highspeed".into(),
-            Some("MiniMax-M2.7-highspeed".into()),
-            TargetFormat::Anthropic,
-            Some(200_000),
-            Some(128_000),
-        ),
-        build_discovered_model_full(
-            "MiniMax-M2.7".into(),
-            Some("MiniMax-M2.7".into()),
-            TargetFormat::Anthropic,
-            Some(200_000),
-            Some(128_000),
-        ),
-        build_discovered_model_full(
-            "minimax-m2.1".into(),
-            Some("MiniMax-M2.1".into()),
-            TargetFormat::Anthropic,
-            Some(200_000),
-            Some(128_000),
-        ),
-        build_discovered_model_full(
-            "MiniMax-M2".into(),
-            Some("MiniMax-M2".into()),
-            TargetFormat::Anthropic,
-            Some(200_000),
-            Some(128_000),
-        ),
-    ]
 }
 
 #[cfg(test)]

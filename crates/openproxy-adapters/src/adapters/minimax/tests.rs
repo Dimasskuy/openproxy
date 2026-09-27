@@ -1,4 +1,5 @@
 use super::*;
+use crate::adapters::discovery::build_discovered_model_full;
 
 #[test]
 fn parses_minimax_quota_with_end_times() {
@@ -294,7 +295,18 @@ async fn test_minimax_fetch_models_oauth_returns_builtin_catalog() {
 #[test]
 fn test_minimax_builtin_models_structure() {
     let models = minimax_builtin_models();
-    assert_eq!(models.len(), 5);
+    assert_eq!(models.len(), 6);
+
+    let m31 = models
+        .iter()
+        .find(|m| m.model_id.as_str() == "MiniMax-M3.1-Flash-Preview")
+        .expect("MiniMax-M3.1-Flash-Preview present");
+    assert_eq!(m31.context_length, Some(1_000_000));
+    assert_eq!(m31.max_output_tokens, Some(128_000));
+    assert_eq!(m31.target_format, TargetFormat::Anthropic);
+    assert!(m31.capabilities.as_ref().unwrap().vision.unwrap());
+    assert!(m31.capabilities.as_ref().unwrap().reasoning.unwrap());
+
     let m3 = models
         .iter()
         .find(|m| m.model_id.as_str() == "MiniMax-M3")
@@ -302,4 +314,149 @@ fn test_minimax_builtin_models_structure() {
     assert_eq!(m3.context_length, Some(1_000_000));
     assert_eq!(m3.max_output_tokens, Some(128_000));
     assert_eq!(m3.target_format, TargetFormat::Anthropic);
+}
+
+#[test]
+fn test_parse_minimax_config_ts_upstream_sample() {
+    let ts_sample = r#"
+import type { ModelConfig } from './types';
+
+const MINIMAX_M3_FILE_API_CAPABILITIES = {
+  fileApi: true,
+};
+
+const MINIMAX_MODELS: Record<string, ModelConfig> = {
+  "MiniMax-M3": {
+    name: "MiniMax-M3",
+    attachment: true,
+    reasoning: true,
+    tool_call: true,
+    temperature: true,
+    modalities: { input: ["text", "image", "video"], output: ["text"] },
+    limit: { context: 512000, output: 128000 },
+    contextWindowOptions: [512000, 1000000],
+    contextWindowOptionHints: { "1000000": "higher_usage" },
+    options: { reasoningSummary: "auto" },
+    thinking_config: { mode: "switchable", default_value: "true" },
+    variants: {
+      "none-thinking": { thinking: { type: "disabled" } },
+      thinking: { thinking: { type: "adaptive" } },
+    },
+    capabilities: MINIMAX_M3_FILE_API_CAPABILITIES,
+  },
+  "MiniMax-M2.7-highspeed": {
+    name: "MiniMax-M2.7-highspeed",
+    attachment: false,
+    reasoning: true,
+    tool_call: true,
+    temperature: true,
+    modalities: { input: ["text"], output: ["text"] },
+    limit: { context: 200000, output: 128000 },
+  },
+  "MiniMax-M2.7": {
+    name: "MiniMax-M2.7",
+    attachment: false,
+    reasoning: true,
+    tool_call: true,
+    temperature: true,
+    modalities: { input: ["text"], output: ["text"] },
+    limit: { context: 200000, output: 128000 },
+  },
+  "MiniMax-M4": {
+    name: "MiniMax-M4 Ultra",
+    attachment: true,
+    reasoning: true,
+    tool_call: true,
+    temperature: true,
+    modalities: { input: ["text", "image"], output: ["text"] },
+    limit: { context: 2000000, output: 256000 },
+  },
+};
+
+export const MINIMAX_API_MODEL_CATALOG: Record<string, ModelConfig> = MINIMAX_MODELS;
+"#;
+
+    let parsed = parse_minimax_config_ts(ts_sample).expect("successfully parsed models");
+    assert_eq!(parsed.len(), 4);
+
+    let m3 = parsed.iter().find(|m| m.model_id.as_str() == "MiniMax-M3").unwrap();
+    assert_eq!(m3.display_name.as_deref(), Some("MiniMax-M3"));
+    assert_eq!(m3.context_length, Some(1_000_000)); // picked max from contextWindowOptions [512000, 1000000]
+    assert_eq!(m3.max_output_tokens, Some(128_000));
+    assert_eq!(m3.target_format, TargetFormat::Anthropic);
+    assert!(m3.capabilities.as_ref().unwrap().vision.unwrap());
+    assert!(m3.capabilities.as_ref().unwrap().tool_calling.unwrap());
+    assert!(m3.capabilities.as_ref().unwrap().reasoning.unwrap());
+    let in_mods = m3.input_modalities.as_ref().unwrap();
+    assert!(in_mods.contains(&"image".to_string()));
+    assert!(in_mods.contains(&"video".to_string()));
+
+    let m27_hs = parsed.iter().find(|m| m.model_id.as_str() == "MiniMax-M2.7-highspeed").unwrap();
+    assert_eq!(m27_hs.context_length, Some(200_000));
+    assert_eq!(m27_hs.max_output_tokens, Some(128_000));
+    assert!(!m27_hs.capabilities.as_ref().unwrap().vision.unwrap());
+
+    let m4 = parsed.iter().find(|m| m.model_id.as_str() == "MiniMax-M4").unwrap();
+    assert_eq!(m4.display_name.as_deref(), Some("MiniMax-M4 Ultra"));
+    assert_eq!(m4.context_length, Some(2_000_000));
+    assert_eq!(m4.max_output_tokens, Some(256_000));
+    assert!(m4.capabilities.as_ref().unwrap().vision.unwrap());
+}
+
+#[test]
+fn test_merge_minimax_models_preserves_base_and_appends_new() {
+    let base = minimax_builtin_models();
+    let upstream = vec![
+        build_discovered_model_full(
+            "MiniMax-M3".into(),
+            Some("MiniMax-M3 (Updated)".into()),
+            TargetFormat::Anthropic,
+            Some(2_000_000),
+            Some(256_000),
+        ),
+        build_discovered_model_full(
+            "MiniMax-M4".into(),
+            Some("MiniMax-M4".into()),
+            TargetFormat::Anthropic,
+            Some(3_000_000),
+            Some(512_000),
+        ),
+    ];
+
+    let merged = merge_minimax_models(base, upstream);
+    // Base had 6 models; M3 was updated in-place; M4 was added => total 7
+    assert_eq!(merged.len(), 7);
+
+    let m3 = merged.iter().find(|m| m.model_id.as_str() == "MiniMax-M3").unwrap();
+    assert_eq!(m3.display_name.as_deref(), Some("MiniMax-M3 (Updated)"));
+    assert_eq!(m3.context_length, Some(2_000_000));
+
+    let m4 = merged.iter().find(|m| m.model_id.as_str() == "MiniMax-M4").unwrap();
+    assert_eq!(m4.context_length, Some(3_000_000));
+
+    // Legacy models preserved
+    assert!(merged.iter().any(|m| m.model_id.as_str() == "minimax-m2.1"));
+    assert!(merged.iter().any(|m| m.model_id.as_str() == "MiniMax-M2"));
+}
+
+#[test]
+fn test_dynamic_minimax_models_runtime_lifecycle() {
+    reset_dynamic_minimax_models();
+    assert!(current_dynamic_minimax_models().is_none());
+
+    let test_catalog = vec![build_discovered_model_full(
+        "MiniMax-M-Test".into(),
+        Some("MiniMax-M-Test".into()),
+        TargetFormat::Anthropic,
+        Some(500_000),
+        Some(64_000),
+    )];
+
+    set_dynamic_minimax_models(test_catalog);
+    let cur = current_dynamic_minimax_models().expect("dynamic models must be present");
+    assert_eq!(cur.len(), 1);
+    assert_eq!(cur[0].model_id.as_str(), "MiniMax-M-Test");
+
+    reset_dynamic_minimax_models();
+    assert!(current_dynamic_minimax_models().is_none());
 }

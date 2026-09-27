@@ -92,6 +92,15 @@ fn test_minimax_golden_contract_spec_parity() {
         })
         .collect();
 
+    // Upstream MiniMax-M3.1-Flash-Preview spec: 1M context, 128k output, Anthropic format
+    assert_eq!(
+        model_map.get("MiniMax-M3.1-Flash-Preview"),
+        Some(&(
+            Some(1_000_000),
+            Some(128_000),
+            openproxy_types::TargetFormat::Anthropic
+        ))
+    );
     // Upstream MiniMax-M3 spec: 1M context, 128k output, Anthropic format
     assert_eq!(
         model_map.get("MiniMax-M3"),
@@ -472,6 +481,13 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
         .expect("MiniMax-M2.7 present");
     assert_eq!(m27.context_length, Some(200_000));
     assert_eq!(m27.max_output_tokens, Some(128_000));
+
+    // Verify dynamic model absorption from upstream config.ts
+    let dynamically_parsed = openproxy_adapters::adapters::minimax::parse_minimax_config_ts(&config_ts)
+        .expect("dynamically parse upstream MINIMAX_MODELS");
+    assert!(dynamically_parsed.iter().any(|m| m.model_id.as_str() == "MiniMax-M3"));
+    assert!(dynamically_parsed.iter().any(|m| m.model_id.as_str() == "MiniMax-M2.7-highspeed"));
+    assert!(dynamically_parsed.iter().any(|m| m.model_id.as_str() == "MiniMax-M2.7"));
 
     // Preset managed login routing check
     assert!(
