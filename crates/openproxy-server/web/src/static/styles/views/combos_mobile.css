@@ -1,0 +1,521 @@
+/* ==========================================================================
+   COMBOS VIEW — Responsive Mobile Cards Specification (<= 768px)
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  /* ------------------------------------------------------------------------
+     1. Page Header & Toolbar Controls
+     ------------------------------------------------------------------------ */
+  .combos-list-container {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .combos-search-wrap {
+    width: 100%;
+    margin-bottom: var(--space-2);
+  }
+
+  .combos-search-input {
+    width: 100% !important;
+    height: 32px;
+    font-size: var(--fs-sm);
+    box-sizing: border-box;
+  }
+
+  /* ------------------------------------------------------------------------
+     2. Combos List — Modern Responsive Entity Cards
+     ------------------------------------------------------------------------ */
+  .combos-table.responsive-card-table {
+    display: block;
+    width: 100%;
+  }
+
+  .combos-table.responsive-card-table thead {
+    display: none;
+  }
+
+  .combos-table.responsive-card-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    width: 100%;
+  }
+
+  .combos-table.responsive-card-table .responsive-card-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-subtle);
+    box-sizing: border-box;
+    width: 100%;
+    transition: border-color var(--t-fast), box-shadow var(--t-fast);
+  }
+
+  .combos-table.responsive-card-table .responsive-card-row:active {
+    border-color: var(--color-primary);
+  }
+
+  /* Card Header: Combo Name + ID + State Badges */
+  .combos-table .responsive-card-row > td[data-label="Name"] {
+    display: block;
+    padding: 0 0 var(--space-2) 0;
+    border-bottom: 1px solid var(--color-border-soft);
+    width: 100%;
+  }
+
+  .combos-table .responsive-card-row > td[data-label="Name"]::before {
+    display: none; /* Hide redundant "Name" label */
+  }
+
+  .combos-table .combo-table-name-wrap {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    width: 100%;
+  }
+
+  .combos-table .combo-name-title {
+    font-size: var(--fs-md);
+    font-weight: 700;
+    color: var(--color-text);
+    word-break: break-word;
+  }
+
+  .combos-table .combo-id-badge {
+    font-size: var(--fs-2xs);
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
+    background: var(--color-surface-2);
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border-soft);
+  }
+
+  /* Card Meta Properties (Strategy, Priority Mode, Race, Context) */
+  .combos-table .responsive-card-row > td:not([data-label="Name"]):not([data-label="Actions"]) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 0;
+    border: none;
+    font-size: var(--fs-xs);
+    width: 100%;
+  }
+
+  .combos-table .responsive-card-row > td::before {
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    color: var(--color-text-muted);
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  /* Card Footer Actions */
+  .combos-table .responsive-card-row > td[data-label="Actions"] {
+    display: block;
+    padding: var(--space-2) 0 0 0;
+    border-top: 1px dashed var(--color-border-soft);
+    width: 100%;
+  }
+
+  .combos-table .responsive-card-row > td[data-label="Actions"]::before {
+    display: none; /* Hide redundant "Actions" label */
+  }
+
+  .combos-table .combo-table-actions {
+    display: flex;
+    width: 100%;
+  }
+
+  .combos-table .combo-table-actions a.button {
+    width: 100%;
+    min-height: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    text-decoration: none;
+    box-sizing: border-box;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Auto Combos Accordion */
+  .auto-combos-summary {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .auto-combos-summary .auto-combos-hint {
+    display: none; /* Hide hint on mobile to keep header clean */
+  }
+
+  /* ------------------------------------------------------------------------
+     3. Combo Detail View — Settings Bar & Controls
+     ------------------------------------------------------------------------ */
+  .combo-settings-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    padding: var(--space-2) 0;
+  }
+
+  .combo-settings-bar > label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    font-size: var(--fs-xs);
+  }
+
+  .combo-settings-bar select {
+    min-width: 130px;
+    height: 30px;
+    font-size: var(--fs-xs);
+  }
+
+  .combo-mode-params {
+    width: 100%;
+    min-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .combo-context-window-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .combo-context-window-bar label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    font-size: var(--fs-xs);
+  }
+
+  .combo-context-window-bar input {
+    width: 130px;
+    height: 30px;
+    font-size: var(--fs-xs);
+  }
+
+  .combo-context-window-bar .cw-hint {
+    font-size: var(--fs-2xs);
+    color: var(--color-text-muted);
+  }
+
+  /* ------------------------------------------------------------------------
+     4. Combo Targets — Intuitive Mobile Cards (.combo-target-card-row)
+     ------------------------------------------------------------------------ */
+  .combo-targets-table thead {
+    display: none;
+  }
+
+  .combo-targets-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    width: 100%;
+  }
+
+  .combo-target-card-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-subtle);
+    box-sizing: border-box;
+    width: 100%;
+    position: relative;
+    touch-action: pan-y;
+  }
+
+  .combo-target-card-row td {
+    display: block;
+    padding: 0;
+    border: none;
+    background: transparent;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Order Badge: pill at top-left */
+  .combo-target-card-row .col-target-order {
+    order: 1;
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    color: var(--color-primary);
+    background: var(--color-primary-soft, rgba(56, 189, 248, 0.12));
+    border: 1px solid var(--color-border-soft);
+    padding: 2px 8px;
+    border-radius: var(--radius-full, 9999px);
+    margin-bottom: 2px;
+  }
+
+  .combo-target-card-row .col-target-order::before {
+    content: "Priority #";
+    color: var(--color-text-muted);
+    font-weight: 500;
+    font-size: var(--fs-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-right: 2px;
+  }
+
+  /* Touch Drag Handle: subtle indicator on top-right */
+  .combo-target-card-row .col-target-drag {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-3);
+    left: auto;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    color: var(--color-text-muted);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-sm);
+    cursor: grab;
+    z-index: 2;
+  }
+
+  .combo-target-card-row .col-target-drag:active {
+    background: var(--color-primary-soft);
+    color: var(--color-primary);
+  }
+
+  /* Model Title: bold, clear, full width with right padding for drag handle */
+  .combo-target-card-row .col-target-model {
+    order: 2;
+    padding: 0 36px 0 0;
+    min-height: auto;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--color-text);
+    border-bottom: 1px solid var(--color-border-soft);
+    padding-bottom: var(--space-2);
+  }
+
+  .combo-target-card-row .target-model-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    width: 100%;
+  }
+
+  .combo-target-card-row .target-desc-row {
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  .combo-target-card-row .target-desc-row input {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 32px;
+    font-size: var(--fs-xs) !important;
+    box-sizing: border-box;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Metadata Rows (Provider, Account, Context, Health) */
+  .combo-target-card-row .col-target-provider,
+  .combo-target-card-row .col-target-account,
+  .combo-target-card-row .col-target-context,
+  .combo-target-card-row .col-target-test-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: var(--fs-xs);
+    padding: 3px 0;
+    width: 100%;
+    border-bottom: 1px dashed var(--color-border-soft);
+  }
+
+  .combo-target-card-row .col-target-provider { order: 3; }
+  .combo-target-card-row .col-target-account  { order: 4; }
+  .combo-target-card-row .col-target-context  { order: 5; }
+  .combo-target-card-row .col-target-test-status { order: 6; }
+
+  .combo-target-card-row .col-target-provider::before { content: "Provider"; font-weight: 500; color: var(--color-text-muted); }
+  .combo-target-card-row .col-target-account::before  { content: "Account"; font-weight: 500; color: var(--color-text-muted); }
+  .combo-target-card-row .col-target-context::before  { content: "Context"; font-weight: 500; color: var(--color-text-muted); }
+  .combo-target-card-row .col-target-test-status::before { content: "Test Status"; font-weight: 500; color: var(--color-text-muted); }
+
+  /* Target Parameters (Thinking, Cooldown, Weight) */
+  .combo-target-card-row .col-target-thinking,
+  .combo-target-card-row .col-target-cooldown,
+  .combo-target-card-row .col-target-weight {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: var(--fs-xs);
+    padding: 3px 0;
+    width: 100%;
+    border-bottom: 1px dashed var(--color-border-soft);
+  }
+
+  .combo-target-card-row .col-target-thinking { order: 7; }
+  .combo-target-card-row .col-target-cooldown { order: 8; }
+  .combo-target-card-row .col-target-weight   { order: 9; }
+
+  .combo-target-card-row .col-target-thinking::before { content: "Thinking"; font-weight: 500; color: var(--color-text-muted); }
+  .combo-target-card-row .col-target-cooldown::before { content: "Cooldown"; font-weight: 500; color: var(--color-text-muted); }
+  .combo-target-card-row .col-target-weight::before   { content: "Weight"; font-weight: 500; color: var(--color-text-muted); }
+
+  .combo-target-card-row .col-target-thinking select,
+  .combo-target-card-row .col-target-cooldown select {
+    min-height: 30px;
+    height: 30px;
+    font-size: var(--fs-xs);
+    padding: 2px 8px;
+    max-width: 140px;
+    border-radius: var(--radius-sm);
+  }
+
+  .combo-target-card-row .col-target-weight input {
+    height: 30px;
+    font-size: var(--fs-xs);
+    padding: 2px 8px;
+    width: 70px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Actions Toolbar at Bottom */
+  .combo-target-card-row .col-target-actions {
+    order: 10;
+    display: block;
+    padding-top: var(--space-2);
+    border-top: none;
+    margin-top: 2px;
+    width: 100%;
+  }
+
+  .target-actions-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .target-actions-wrap button {
+    flex: 1 1 auto;
+    height: 34px;
+    min-height: 34px;
+    padding: 0 8px;
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border-radius: var(--radius-sm);
+    box-sizing: border-box;
+  }
+
+  .target-actions-wrap button.reorder-btn {
+    flex: 0 0 36px;
+    width: 36px;
+    padding: 0;
+  }
+
+  .target-actions-wrap button.danger {
+    flex: 0 0 36px;
+    width: 36px;
+    padding: 0;
+  }
+
+  /* ------------------------------------------------------------------------
+     5. Sub-combos Accordion and Nested Child Rows
+     ------------------------------------------------------------------------ */
+  .subcombo-group-row {
+    border-left: 4px solid var(--chart-indigo, #6366f1) !important;
+  }
+
+  .subcombo-accordion-row {
+    display: block;
+    width: 100%;
+    border-left: 4px solid var(--chart-indigo, #6366f1) !important;
+  }
+
+  .subcombo-nested-container {
+    margin: var(--space-1) 0 var(--space-2) 0;
+    padding: var(--space-2);
+    border-radius: var(--radius-sm);
+  }
+
+  .subcombo-nested-table thead {
+    display: none;
+  }
+
+  .subcombo-child-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border-soft);
+    border-left: 3px solid var(--chart-indigo, #6366f1);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--space-2);
+  }
+
+  .subcombo-child-row td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    font-size: var(--fs-xs);
+    border-bottom: 1px dashed var(--color-border-soft);
+  }
+
+  .subcombo-child-row td:last-child {
+    border-bottom: none;
+  }
+
+  .subcombo-child-row .sub-col-order::before    { content: "Priority"; font-weight: 500; color: var(--color-text-muted); }
+  .subcombo-child-row .sub-col-provider::before { content: "Provider"; font-weight: 500; color: var(--color-text-muted); }
+  .subcombo-child-row .sub-col-account::before  { content: "Account"; font-weight: 500; color: var(--color-text-muted); }
+  .subcombo-child-row .sub-col-ctx::before      { content: "Context"; font-weight: 500; color: var(--color-text-muted); }
+  .subcombo-child-row .sub-col-thinking::before { content: "Thinking"; font-weight: 500; color: var(--color-text-muted); }
+  .subcombo-child-row .sub-col-cooldown::before { content: "Cooldown"; font-weight: 500; color: var(--color-text-muted); }
+  .subcombo-child-row .sub-col-test::before     { content: "Status"; font-weight: 500; color: var(--color-text-muted); }
+
+  .sub-actions-wrap {
+    display: flex;
+    gap: var(--space-2);
+    width: 100%;
+    justify-content: flex-end;
+    padding-top: var(--space-1);
+  }
+
+  .sub-actions-wrap button {
+    height: 32px;
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: var(--fs-xs);
+    border-radius: var(--radius-sm);
+  }
+
+  .form-row-2, .form-row-3 {
+    grid-template-columns: 1fr;
+  }
+}
