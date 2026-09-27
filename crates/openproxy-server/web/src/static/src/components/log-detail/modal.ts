@@ -16,6 +16,7 @@ import {
   bumpOpenLogDetailGeneration,
   clearPinnedIdentity,
   getActiveLogDetailTab,
+  getPinnedTraceId,
   isCurrentOpenLogDetailGeneration,
   matchesPinnedModalIdentity,
   setActiveLogDetailTab,
@@ -271,6 +272,8 @@ export function initializeLogDetailTabs(): void {
   logDetailTabClick("request");
 }
 
+let pinnedSnapshot: LogDetailLog | null = null;
+
 /** Remove the `.log-detail-modal` element AND its wrapper host div, keeping `#modal-root`
  *  clean so the next modal opens in a fresh wrapper. */
 function removeLogDetailModal(m: HTMLElement): void {
@@ -281,6 +284,7 @@ function removeLogDetailModal(m: HTMLElement): void {
   }
   // Clear the pin so later WS events skip the closed modal.
   clearPinnedIdentity();
+  pinnedSnapshot = null;
   state.logs.selectedIdentity = null;
 }
 
@@ -292,6 +296,7 @@ export async function openLogDetail(
   row?: unknown // AttemptState (from logs.ts)
 ): Promise<void> {
   const gen = bumpOpenLogDetailGeneration();
+  pinnedSnapshot = null;
   const typedRow = row as Record<string, unknown> | undefined;
   const isFinalized = typedRow != null && typedRow["terminal"] && typedRow["row"];
 
@@ -334,11 +339,16 @@ export async function openLogDetail(
 
 function renderModal() {
   if (!state.logs.selectedIdentity) return;
-  const attempt = liveLogsStore.selectDetail(state.logs.selectedIdentity);
-  if (!attempt) return;
-
   const wrapper = document.querySelector(".log-detail-modal-wrapper");
   if (!wrapper) return;
+
+  if (pinnedSnapshot && !getPinnedTraceId()) {
+    render(renderLogDetailModal(pinnedSnapshot), wrapper as HTMLElement);
+    return;
+  }
+
+  const attempt = liveLogsStore.selectDetail(state.logs.selectedIdentity);
+  if (!attempt) return;
 
   // The WS `log` row is the SSOT for live state; `attempt.detail` carries the heavy
   // /usage/detail payloads. Merge with `log` winning, except where a payload is null in the WS event.
@@ -374,6 +384,9 @@ function renderModal() {
     response_body_json: detailObj?.['response_body_json'],
     stages: [safeAttempt]
   };
+  if (!getPinnedTraceId() && !pinnedSnapshot) {
+    pinnedSnapshot = logObj as LogDetailLog;
+  }
   render(renderLogDetailModal(logObj as LogDetailLog), wrapper as HTMLElement);
 }
 

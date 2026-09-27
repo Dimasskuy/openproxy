@@ -64,6 +64,7 @@ test.describe('Phase robustness', () => {
     await page.addInitScript((args: { key: string; token: string }) => {
       try { localStorage.setItem(args.key, args.token); } catch (_e) {}
     }, { key: ADMIN_TOKEN_STORAGE_KEY, token: DUMMY_ADMIN_TOKEN });
+    await page.routeWebSocket('**/admin/ws**', () => { /* no server stream */ });
   });
 
   test('Live Logs: stale streaming stage freezes the latency ticker', async ({ page }: { page: Page }) => {

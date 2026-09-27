@@ -104,6 +104,11 @@ export function clearPinnedIdentity(): void {
   pinnedTraceId = null;
 }
 
+/** Get the currently pinned traceId. */
+export function getPinnedTraceId(): string | null {
+  return pinnedTraceId;
+}
+
 // Race protection across the async `/usage/detail` fetch: each `openLogDetail`
 // captures the generation, and the callback discards its result if the user
 // clicked another row in the meantime.
