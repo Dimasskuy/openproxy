@@ -115,9 +115,14 @@ function createProviderTemplate(wrapper: HTMLElement): TemplateResult {
             <div class="field">
               <label for="provider-format">Format</label>
               <select id="provider-format" name="format">
-                <option value="openai">openai</option>
-                <option value="anthropic">anthropic</option>
-                <option value="mixed">mixed</option>
+                <option value="openai">OpenAI Chat Completions (/v1/chat/completions)</option>
+                <option value="responses">OpenAI Responses (/v1/responses)</option>
+                <option value="anthropic">Anthropic Messages (/v1/messages)</option>
+                <option value="gemini">Google Gemini (generateContent)</option>
+                <option value="mixed">Mixed (per-model target format)</option>
+                <option value="systemone">SystemOne (Decision / Fast Engine)</option>
+                <option value="atomesus">Atomesus</option>
+                <option value="commandcodego">CommandCodeGo</option>
               </select>
             </div>
             <div class="field">

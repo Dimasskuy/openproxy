@@ -17,7 +17,7 @@ import type { Provider } from "../lib/types/api.js";
 
 function customModelFormTemplate(providerId: string): TemplateResult {
   const provider: Provider | undefined = state.providers.find((p) => p.id === providerId);
-  const defaultFormat: "openai" | "anthropic" = provider && provider.format === "anthropic" ? "anthropic" : "openai";
+  const defaultFormat: string = provider && provider.format && provider.format !== "mixed" ? provider.format : "openai";
   return html`
     <div class="modal-bg" id="custom-model-modal" @click=${(e: Event) => { if (e.target === e.currentTarget) closeCustomModelForm(); }}>
       <div class="modal">
@@ -49,10 +49,13 @@ function customModelFormTemplate(providerId: string): TemplateResult {
             <div class="field">
               <label for="custom-model-format">Target format</label>
               <select id="custom-model-format" name="target_format">
-                <option value="openai" ?selected=${defaultFormat === "openai"}>openai</option>
-                <option value="anthropic" ?selected=${defaultFormat === "anthropic"}>anthropic</option>
-                <option value="gemini">gemini</option>
-                <option value="systemone">systemone</option>
+                <option value="openai" ?selected=${defaultFormat === "openai"}>OpenAI Chat Completions (/v1/chat/completions)</option>
+                <option value="responses" ?selected=${defaultFormat === "responses"}>OpenAI Responses (/v1/responses)</option>
+                <option value="anthropic" ?selected=${defaultFormat === "anthropic"}>Anthropic Messages (/v1/messages)</option>
+                <option value="gemini" ?selected=${defaultFormat === "gemini"}>Google Gemini (generateContent)</option>
+                <option value="systemone" ?selected=${defaultFormat === "systemone"}>SystemOne (Decision / Fast Engine)</option>
+                <option value="atomesus" ?selected=${defaultFormat === "atomesus"}>Atomesus</option>
+                <option value="commandcodego" ?selected=${defaultFormat === "commandcodego"}>CommandCodeGo</option>
               </select>
             </div>
             <div class="field">
