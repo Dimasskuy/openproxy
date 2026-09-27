@@ -407,15 +407,27 @@ mod tests {
         let rr_counters = std::sync::Arc::new(dashmap::DashMap::new());
 
         let res1 = execute_load_balancing(targets.clone(), &combo, &rr_counters, &registry);
-        assert_eq!(res1.iter().map(|t| t.id.0).collect::<Vec<_>>(), vec![1, 2, 3]);
+        assert_eq!(
+            res1.iter().map(|t| t.id.0).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
 
         let res2 = execute_load_balancing(targets.clone(), &combo, &rr_counters, &registry);
-        assert_eq!(res2.iter().map(|t| t.id.0).collect::<Vec<_>>(), vec![2, 3, 1]);
+        assert_eq!(
+            res2.iter().map(|t| t.id.0).collect::<Vec<_>>(),
+            vec![2, 3, 1]
+        );
 
         let res3 = execute_load_balancing(targets.clone(), &combo, &rr_counters, &registry);
-        assert_eq!(res3.iter().map(|t| t.id.0).collect::<Vec<_>>(), vec![3, 1, 2]);
+        assert_eq!(
+            res3.iter().map(|t| t.id.0).collect::<Vec<_>>(),
+            vec![3, 1, 2]
+        );
 
         let res4 = execute_load_balancing(targets, &combo, &rr_counters, &registry);
-        assert_eq!(res4.iter().map(|t| t.id.0).collect::<Vec<_>>(), vec![1, 2, 3]);
+        assert_eq!(
+            res4.iter().map(|t| t.id.0).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
     }
 }
