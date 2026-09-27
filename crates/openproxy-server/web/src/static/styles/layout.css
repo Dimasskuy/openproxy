@@ -10,6 +10,7 @@
   height: 100%;
   height: 100dvh;
   overflow: hidden;
+  border: var(--border-w) var(--border-style) var(--color-frame-ink);
   margin: 0;
   background: var(--color-bg);
   color: var(--color-text);

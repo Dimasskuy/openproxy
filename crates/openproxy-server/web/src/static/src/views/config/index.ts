@@ -50,24 +50,32 @@ function renderStaticRegion(cfg: ConfigPayload): TemplateResult {
   const r = cfg.retries || {};
   const cb = cfg.circuit_breaker || {};
   const rc = cfg.racing || {};
-  return html`<details class="config-static-region">
-    <summary>${t("config.static.readonly_summary")}</summary>
-    ${card(t("config.static.retries"), html`<div class="config-static-display">
-      ${renderStaticField("max_attempts", r.max_attempts)}
-      ${renderStaticField("backoff_base_ms", r.backoff_base_ms)}
-      ${renderStaticField("backoff_factor", r.backoff_factor)}
-      ${renderStaticField("backoff_jitter_pct", r.backoff_jitter_pct)}
-      ${renderStaticField("combo_max_attempts", r.combo_max_attempts)}
-    </div>`)}
-    ${card(t("config.static.circuit_breaker"), html`<div class="config-static-display">
-      ${renderStaticField("failure_threshold", cb.failure_threshold)}
-      ${renderStaticField("unhealthy_duration_ms", cb.unhealthy_duration_ms)}
-    </div>`)}
-    ${card(t("config.static.racing"), html`<div class="config-static-display">
-      ${renderStaticField("default_race_size", rc.default_race_size)}
-      ${renderStaticField("max_race_size", rc.max_race_size)}
-      ${renderStaticField("abort_grace_ms", rc.abort_grace_ms)}
-    </div>`)}
+  return html`<details class="config-details config-static-region">
+    <summary class="config-details-summary">
+      <span class="summary-title-wrap">
+        <span class="summary-chevron"></span>
+        <span class="summary-title">${t("config.static.readonly_summary")}</span>
+      </span>
+      <span class="config-pill-badge">config.toml</span>
+    </summary>
+    <div class="config-static-cards">
+      ${card(t("config.static.retries"), html`<div class="config-static-display">
+        ${renderStaticField("max_attempts", r.max_attempts)}
+        ${renderStaticField("backoff_base_ms", r.backoff_base_ms)}
+        ${renderStaticField("backoff_factor", r.backoff_factor)}
+        ${renderStaticField("backoff_jitter_pct", r.backoff_jitter_pct)}
+        ${renderStaticField("combo_max_attempts", r.combo_max_attempts)}
+      </div>`)}
+      ${card(t("config.static.circuit_breaker"), html`<div class="config-static-display">
+        ${renderStaticField("failure_threshold", cb.failure_threshold)}
+        ${renderStaticField("unhealthy_duration_ms", cb.unhealthy_duration_ms)}
+      </div>`)}
+      ${card(t("config.static.racing"), html`<div class="config-static-display">
+        ${renderStaticField("default_race_size", rc.default_race_size)}
+        ${renderStaticField("max_race_size", rc.max_race_size)}
+        ${renderStaticField("abort_grace_ms", rc.abort_grace_ms)}
+      </div>`)}
+    </div>
   </details>`;
 }
 
@@ -90,31 +98,44 @@ function renderConfig(): TemplateResult {
   const banner = getBanner();
 
   return html`
-    <div class="page-header"><h2>${t("config.title")}</h2></div>
-    <div class="banner banner-${banner.kind}">
-      <strong>${banner.title}</strong>
-      ${banner.body}
-    </div>
-    <div class="config-editable-region">
-      ${renderTimeoutsCard()}
-      ${renderRecordingTtlCard()}
-      ${renderCompressionCard()}
-      ${renderIdleChunkCard()}
-      ${renderNotificationsCard()}
-      ${renderQuotaCard()}
-      ${renderPiiCard()}
-      ${renderMaintenanceCard()}
-    </div>
-    ${renderStaticRegion(cfg)}
-    <details class="config-details">
-      <summary>${t("config.precedence.title")}</summary>
-      <p>${unsafeHTML(t("config.precedence.body"))}</p>
-      <ol>
-        <li>${unsafeHTML(t("config.precedence.step1"))}</li>
-        <li>${unsafeHTML(t("config.precedence.step2"))}</li>
-      </ol>
-      <p>${unsafeHTML(t("config.precedence.per_model_note"))}</p>
-    </details>`;
+    <div class="view-config">
+      <div class="page-header"><h2>${t("config.title")}</h2></div>
+      <div class="banner banner-${banner.kind} config-banner">
+        <div class="banner-status-dot"></div>
+        <div class="banner-body-wrap">
+          <strong class="banner-title">${banner.title}</strong>
+          <span class="banner-text">${banner.body}</span>
+        </div>
+      </div>
+      <div class="config-editable-region">
+        ${renderTimeoutsCard()}
+        ${renderRecordingTtlCard()}
+        ${renderCompressionCard()}
+        ${renderIdleChunkCard()}
+        ${renderNotificationsCard()}
+        ${renderQuotaCard()}
+        ${renderPiiCard()}
+        ${renderMaintenanceCard()}
+      </div>
+      ${renderStaticRegion(cfg)}
+      <details class="config-details">
+        <summary class="config-details-summary">
+          <span class="summary-title-wrap">
+            <span class="summary-chevron"></span>
+            <span class="summary-title">${t("config.precedence.title")}</span>
+          </span>
+          <span class="config-pill-badge">info</span>
+        </summary>
+        <div class="config-details-body">
+          <p>${unsafeHTML(t("config.precedence.body"))}</p>
+          <ol>
+            <li>${unsafeHTML(t("config.precedence.step1"))}</li>
+            <li>${unsafeHTML(t("config.precedence.step2"))}</li>
+          </ol>
+          <p>${unsafeHTML(t("config.precedence.per_model_note"))}</p>
+        </div>
+      </details>
+    </div>`;
 }
 
 // ── Mount ───────────────────────────────────────────────────────────

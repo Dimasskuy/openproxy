@@ -126,42 +126,93 @@ export function renderMaintenanceCard(): TemplateResult {
   const lastRunText = vacuumStatus.last_run
     ? new Date(vacuumStatus.last_run).toLocaleString()
     : t("config.maintenance.never");
+  const isOk = vacuumStatus.last_result === "ok";
   const lastResultText = vacuumStatus.last_result
-    ? (vacuumStatus.last_result === "ok" ? t("config.maintenance.result_ok") : t("config.maintenance.result_failed", { result: vacuumStatus.last_result }))
+    ? (isOk ? t("config.maintenance.result_ok") : t("config.maintenance.result_failed", { result: vacuumStatus.last_result }))
     : "—";
   const nextScheduledText = vacuumStatus.next_scheduled
     ? new Date(vacuumStatus.next_scheduled).toLocaleString()
     : (liveAutoVacuum ? t("config.maintenance.next_scheduled_tick") : t("config.maintenance.next_disabled"));
+
   return card(t("config.maintenance.title"), html`
-    <div class="config-field">
-      <label class="checkbox-label">
-        <input type="checkbox" ?checked=${liveAutoVacuum} @change=${(e: Event) => { liveAutoVacuum = (e.target as HTMLInputElement).checked; void patchMaintenance(); }}>
-        <span>${t("config.maintenance.auto_vacuum")}</span>
-      </label>
-      <p class="muted">${t("config.maintenance.auto_vacuum_desc", { hours: liveVacuumIntervalHours })}</p>
+    <div class="config-rows-list">
+      <div class="config-toggle-row">
+        <div class="config-toggle-info">
+          <span class="config-label">${t("config.maintenance.auto_vacuum")}</span>
+          <span class="config-help">${t("config.maintenance.auto_vacuum_desc", { hours: liveVacuumIntervalHours })}</span>
+        </div>
+        <button type="button" role="switch" aria-checked=${liveAutoVacuum ? "true" : "false"}
+          class="toggle-btn ${liveAutoVacuum ? "on" : "off"}"
+          @click=${() => { liveAutoVacuum = !liveAutoVacuum; void patchMaintenance(); }}>
+          <span class="toggle-thumb"></span>
+        </button>
+      </div>
+
+      <div class="config-inline-setting">
+        <div class="config-inline-info">
+          <span class="config-label">${t("config.maintenance.vacuum_interval")}</span>
+          <span class="config-help">Interval in hours between auto-vacuum jobs.</span>
+        </div>
+        <div class="config-inline-action">
+          <div class="config-input-group has-unit">
+            <input type="number" inputmode="numeric" min="1" max="168"
+              .value=${String(liveVacuumIntervalHours)}
+              aria-label=${t("config.maintenance.vacuum_interval")}
+              @change=${(e: Event) => {
+                const v = parseInt((e.target as HTMLInputElement).value, 10);
+                if (v >= 1) { liveVacuumIntervalHours = v; void patchMaintenance(); }
+              }}>
+            <span class="config-input-unit">h</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="config-inline-setting">
+        <div class="config-inline-info">
+          <span class="config-label">${t("config.maintenance.usage_retention")}</span>
+          <span class="config-help">${t("config.maintenance.usage_retention_desc")}</span>
+        </div>
+        <div class="config-inline-action">
+          <div class="config-input-group has-unit">
+            <input type="number" inputmode="numeric" min="0" max="365"
+              .value=${String(liveUsageRetentionDays)}
+              aria-label=${t("config.maintenance.usage_retention")}
+              @change=${(e: Event) => {
+                const v = parseInt((e.target as HTMLInputElement).value, 10);
+                if (v >= 0) { liveUsageRetentionDays = v; void patchMaintenance(); }
+              }}>
+            <span class="config-input-unit">d</span>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="config-field">
-      <label>${t("config.maintenance.vacuum_interval")}</label>
-      <input type="number" inputmode="numeric" min="1" max="168" .value=${String(liveVacuumIntervalHours)} @change=${(e: Event) => { const v = parseInt((e.target as HTMLInputElement).value, 10); if (v >= 1) { liveVacuumIntervalHours = v; void patchMaintenance(); } }}>
-    </div>
-    <div class="config-field">
-      <label>${t("config.maintenance.usage_retention")}</label>
-      <input type="number" inputmode="numeric" min="0" max="365" .value=${String(liveUsageRetentionDays)} @change=${(e: Event) => { const v = parseInt((e.target as HTMLInputElement).value, 10); if (v >= 0) { liveUsageRetentionDays = v; void patchMaintenance(); } }}>
-      <p class="muted">${t("config.maintenance.usage_retention_desc")}</p>
-    </div>
-    <div class="config-field">
-      <button class="primary"
-              ?disabled=${vacuumStatus.in_progress}
-              @click=${() => void triggerVacuum()}>
-        ${vacuumBtnLabel}
-      </button>
-    </div>
-    <div class="config-field">
-      <span class="label">${t("config.maintenance.last_run")}</span> <span class="value">${lastRunText}</span>
-      <span class="label" style="margin-left:1rem;">${t("config.maintenance.result")}</span> <span class="value">${lastResultText}</span>
-    </div>
-    <div class="config-field">
-      <span class="label">${t("config.maintenance.next_scheduled")}</span> <span class="value">${nextScheduledText}</span>
+
+    <div class="config-maintenance-telemetry">
+      <div class="telemetry-grid">
+        <div class="telemetry-item">
+          <span class="telemetry-label">${t("config.maintenance.last_run")}</span>
+          <span class="telemetry-value">${lastRunText}</span>
+        </div>
+        <div class="telemetry-item">
+          <span class="telemetry-label">${t("config.maintenance.result")}</span>
+          <span class="telemetry-value">
+            <span class="status-pill ${isOk ? "active" : (vacuumStatus.last_result ? "inactive" : "")}">
+              ${lastResultText}
+            </span>
+          </span>
+        </div>
+        <div class="telemetry-item">
+          <span class="telemetry-label">${t("config.maintenance.next_scheduled")}</span>
+          <span class="telemetry-value">${nextScheduledText}</span>
+        </div>
+      </div>
+      <div class="telemetry-action">
+        <button class="primary"
+          ?disabled=${vacuumStatus.in_progress}
+          @click=${() => void triggerVacuum()}>
+          ${vacuumBtnLabel}
+        </button>
+      </div>
     </div>
   `);
 }

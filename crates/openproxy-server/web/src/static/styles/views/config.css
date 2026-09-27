@@ -1,86 +1,494 @@
-/* ----- Config grid ----- */
-.config-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--space-3);
-  margin-top: var(--space-2);
+/* ==========================================================================
+   VIEW: CONFIGURATION / SETTINGS (Classic, Compact & Responsive)
+   ========================================================================== */
+
+/* ----- Main view container ----- */
+.view-config {
+  width: 100%;
+  max-width: 100%;
 }
-.config-field { display: flex; flex-direction: column; gap: 0.25rem; }
-.config-field input[type="number"] {
-  background: var(--color-surface-2);
-  color: var(--color-text-muted);
+
+/* ----- Live status banner ----- */
+.config-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  background: var(--color-surface);
   border: var(--border-w) var(--border-style) var(--color-border);
-  padding: 0.4rem 0.6rem;
-  font-family: var(--font-mono);
+  box-shadow: var(--shadow-subtle);
+}
+
+.config-banner.banner-info {
+  border-left: 3px solid var(--color-warn);
+}
+
+.config-banner.banner-success {
+  border-left: 3px solid var(--color-success);
+}
+
+.config-banner .banner-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-warn);
+  margin-top: 0.35rem;
+  flex-shrink: 0;
+}
+
+.config-banner.banner-success .banner-status-dot {
+  background: var(--color-success);
+}
+
+.config-banner .banner-body-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+
+.config-banner .banner-title {
+  color: var(--color-text);
+  font-weight: 600;
   font-size: var(--fs-sm);
 }
-.config-field input[type="number"]:disabled { cursor: not-allowed; opacity: 0.85; }
-.config-label { font-size: var(--fs-xs); font-weight: 600; color: var(--color-text-muted); letter-spacing: 0.02em; }
-.config-help  { font-size: var(--fs-xs); color: var(--color-text-muted); line-height: 1.3; }
-.config-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin: var(--space-5) 0;
-  flex-wrap: wrap;
-}
-.config-details {
-  margin: var(--space-3) 0 var(--space-6);
-  padding: var(--space-3) var(--space-4);
-  border: var(--border-w) var(--border-style) var(--color-border);
-  background: var(--color-surface);
-}
-.config-details summary {
-  cursor: pointer;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  user-select: none;
-}
-.config-details summary:hover { color: var(--color-text); }
-.config-details > *:not(summary) { margin-top: var(--space-2); line-height: 1.5; }
-.config-details ol, .config-details p { color: var(--color-text-muted); font-size: var(--fs-sm); }
 
-
-/* ----- Config refactor: editable vs static regions ----- */
+/* ----- Editable Cards Grid (Workbench 2-column layout) ----- */
 .config-editable-region {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-4);
   margin-bottom: var(--space-4);
 }
-.config-static-region {
-  margin-top: var(--space-4);
+
+/* Timeouts card spans both columns on desktop for optimal horizontal density */
+.config-card.card-timeouts-full {
+  grid-column: 1 / -1;
 }
-.config-static-region summary {
-  cursor: pointer;
-  font-weight: bold;
-  padding: var(--space-2);
-  background: var(--color-surface-2);
-  border: var(--border-w) var(--border-style) var(--color-border);
+
+/* ----- Section Card Styling ----- */
+.config-card {
+  background: var(--color-surface);
+  border: var(--border-w) var(--border-style) var(--color-border-soft);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-subtle);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  transition: border-color var(--t-fast);
 }
-.config-static-region[open] summary {
-  margin-bottom: var(--space-3);
+
+.config-card:hover {
+  border-color: var(--color-border-strong);
 }
-.config-static-display {
+
+.config-card .section-header {
+  margin: 0 0 var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.config-card .section-header h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text);
+}
+
+.config-card p.muted {
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+  line-height: 1.45;
+  margin: 0 0 var(--space-3);
+}
+
+.config-card .card-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+/* ----- Fields & Grids ----- */
+.config-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--space-2);
-  padding: var(--space-2);
+  gap: var(--space-3);
 }
-.config-static-display .field {
+
+.config-timeouts-grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3);
+}
+
+.config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.config-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--color-text);
+  letter-spacing: 0.01em;
+}
+
+.config-help {
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+  line-height: 1.35;
+}
+
+/* ----- Input group with unit badge ----- */
+.config-input-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.config-input-group input[type="number"] {
+  width: 100%;
+  height: 32px;
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  border: var(--border-w) var(--border-style) var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.55rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+
+.config-input-group input[type="number"]:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.config-input-group input[type="number"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.config-input-group.has-unit input[type="number"] {
+  padding-right: 2.2rem;
+}
+
+.config-input-unit {
+  position: absolute;
+  right: 0.55rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-muted);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ----- Compact Horizontal Settings Rows ----- */
+.config-rows-list {
   display: flex;
   flex-direction: column;
 }
+
+.config-toggle-row,
+.config-inline-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.config-toggle-row:last-child,
+.config-inline-setting:last-child {
+  border-bottom: none;
+}
+
+.config-toggle-info,
+.config-inline-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.config-inline-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.config-inline-action .config-input-group {
+  width: 90px;
+}
+
+.config-select {
+  height: 32px;
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  border: var(--border-w) var(--border-style) var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.55rem;
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: border-color var(--t-fast);
+}
+
+.config-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* ----- PII Entity Chips ----- */
+.config-entities-section {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.config-entities-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.config-entity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  height: 28px;
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+  border: var(--border-w) var(--border-style) var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), transform var(--t-fast);
+  user-select: none;
+}
+
+.config-entity-chip:hover {
+  background: var(--color-surface-soft);
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.config-entity-chip:active {
+  transform: scale(0.97);
+}
+
+.config-entity-chip.active {
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.config-entity-chip .chip-symbol {
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+/* ----- Database Maintenance Telemetry & Actions ----- */
+.config-maintenance-telemetry {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-surface-2);
+  border: var(--border-w) var(--border-style) var(--color-border-soft);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.config-maintenance-telemetry .telemetry-grid {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.config-maintenance-telemetry .telemetry-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.config-maintenance-telemetry .telemetry-label {
+  font-size: var(--fs-xs);
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.config-maintenance-telemetry .telemetry-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text);
+}
+
+.config-maintenance-telemetry .telemetry-action button {
+  height: 32px;
+  padding: 0 0.85rem;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+/* ----- Collapsible Details & Static Region ----- */
+.config-details {
+  margin: var(--space-3) 0 var(--space-4);
+  border: var(--border-w) var(--border-style) var(--color-border-soft);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-subtle);
+  overflow: hidden;
+}
+
+.config-details-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 1rem;
+  background: var(--color-surface-2);
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--color-text);
+  list-style: none;
+  transition: background var(--t-fast);
+}
+
+.config-details-summary::-webkit-details-marker {
+  display: none;
+}
+
+.config-details-summary:hover {
+  background: var(--color-surface-soft);
+}
+
+.summary-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.summary-chevron {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid var(--color-text-muted);
+  border-bottom: 2px solid var(--color-text-muted);
+  transform: rotate(-45deg);
+  transition: transform var(--t-fast);
+  margin-right: 0.2rem;
+}
+
+details[open] > .config-details-summary .summary-chevron {
+  transform: rotate(45deg);
+}
+
+.config-pill-badge {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: var(--border-w) var(--border-style) var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.config-static-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.config-static-cards .card {
+  padding: var(--space-3);
+  margin-bottom: 0;
+  background: var(--color-surface-2);
+}
+
+.config-static-display {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--space-2);
+}
+
+.config-static-display .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
 .config-static-display .field .label {
   font-size: var(--fs-xs);
   text-transform: uppercase;
   color: var(--color-text-muted);
   font-family: var(--font-display);
+  letter-spacing: 0.03em;
 }
+
 .config-static-display .field .value {
   font-family: var(--font-mono);
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
+  color: var(--color-text);
 }
+
+.config-details-body {
+  padding: var(--space-3) var(--space-4);
+  line-height: 1.6;
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+}
+
+.config-details-body p {
+  margin: var(--space-2) 0;
+}
+
+.config-details-body ol {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-4);
+}
+
+.config-details-body li {
+  margin-bottom: var(--space-1);
+}
+
+.config-details-body code {
+  font-family: var(--font-mono);
+  background: var(--color-surface-2);
+  padding: 0.15rem 0.35rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  color: var(--color-text);
+  border: var(--border-w) var(--border-style) var(--color-border-soft);
+}
+
+/* ----- Dirty Indicator & Actions Bar ----- */
 .config-dirty-indicator {
   display: inline-block;
   width: 6px;
@@ -90,6 +498,7 @@
   margin-left: var(--space-1);
   vertical-align: middle;
 }
+
 .config-actions-bar {
   position: sticky;
   bottom: 0;
@@ -101,17 +510,73 @@
   border: var(--border-w-2) var(--border-style) var(--color-border);
   margin-top: var(--space-4);
 }
+
 .config-actions-bar .dirty-count {
   font-size: var(--fs-sm);
   color: var(--color-text-muted);
   margin-left: auto;
 }
 
+/* ----- Responsive Breakpoints ----- */
+@media (max-width: 1024px) {
+  .config-editable-region {
+    grid-template-columns: 1fr;
+  }
+}
 
 @media (max-width: 768px) {
-  /* 5. Configuration */
-  .config-grid { grid-template-columns: 1fr; gap: var(--space-4); }
-  .config-field input[type="number"], .config-field select, .config-field button { width: 100%; min-height: 44px; }
-  .config-field { gap: 0.5rem; }
-  .config-actions button { width: 100%; min-height: 44px; }
+  .config-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  .config-timeouts-grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+
+  .config-field input[type="number"],
+  .config-field select,
+  .config-field button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .config-inline-setting {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  .config-inline-action {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .config-inline-action .config-input-group {
+    flex: 1;
+  }
+
+  .config-inline-action button {
+    min-height: 44px;
+    padding: 0 1.25rem;
+  }
+
+  .config-maintenance-telemetry {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .config-maintenance-telemetry .telemetry-grid {
+    gap: var(--space-2);
+  }
+
+  .config-maintenance-telemetry .telemetry-action button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .toggle-btn {
+    min-width: 44px;
+    min-height: 24px;
+  }
 }

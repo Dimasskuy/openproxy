@@ -159,80 +159,135 @@ export function configSaveIdleChunkRetryable(): Promise<void> {
 }
 
 function renderToggle(label: string, val: boolean, helpOn: string, helpOff: string, onToggle: () => void, inputName?: string): TemplateResult {
-  return html`<label class="config-field">
-    <span class="config-label">${label}</span>
-    <button type="button" role="switch" aria-checked=${val ? "true" : "false"} class="toggle-btn ${val ? "on" : "off"}" @click=${onToggle}><span class="toggle-thumb"></span></button>
+  return html`<div class="config-toggle-row">
+    <div class="config-toggle-info">
+      <span class="config-label">${label}</span>
+      <span class="config-help">${val ? helpOn : helpOff}</span>
+    </div>
+    <button type="button" role="switch" aria-checked=${val ? "true" : "false"}
+      class="toggle-btn ${val ? "on" : "off"}"
+      data-action=${inputName === "idle_chunk_retryable" ? "toggleIdleChunkRetryable" : ""}
+      @click=${onToggle}>
+      <span class="toggle-thumb"></span>
+    </button>
     ${inputName ? html`<input type="checkbox" name=${inputName} ?checked=${val} class="sr-only">` : ""}
-    <span class="config-help">${val ? helpOn : helpOff}</span>
-  </label>`;
+  </div>`;
 }
 
 export function renderTimeoutsCard(): TemplateResult {
   return card(unsafeHTML(t("config.timeouts.title")), html`
     <p class="muted">${unsafeHTML(t("config.timeouts.description"))}</p>
-    <div class="config-grid">
-      ${renderField("connect_ms", "timeouts.connect_ms", liveTimeouts.connect_ms, "DNS + TCP connect + TLS handshake.", (e) => void onTimeoutChange("connect_ms", e), { editable: true })}
-      ${renderField("request_send_ms", "timeouts.request_send_ms", liveTimeouts.request_send_ms, "Max time to write request headers + body.", (e) => void onTimeoutChange("request_send_ms", e), { editable: true })}
-      ${renderField("ttft_ms", "timeouts.ttft_ms", liveTimeouts.ttft_ms, "Time-to-first-token: wait for response headers.", (e) => void onTimeoutChange("ttft_ms", e), { editable: true })}
-      ${renderField("idle_chunk_ms", "timeouts.idle_chunk_ms", liveTimeouts.idle_chunk_ms, "Max gap between SSE chunks.", (e) => void onTimeoutChange("idle_chunk_ms", e), { editable: true })}
-      ${renderField("total_ms", "timeouts.total_ms", liveTimeouts.total_ms, "Hard ceiling for the whole request.", (e) => void onTimeoutChange("total_ms", e), { editable: true })}
+    <div class="config-grid config-timeouts-grid">
+      ${renderField("connect_ms", "timeouts.connect_ms", liveTimeouts.connect_ms, "DNS + TCP connect + TLS handshake.", (e) => void onTimeoutChange("connect_ms", e), { editable: true, unit: "ms" })}
+      ${renderField("request_send_ms", "timeouts.request_send_ms", liveTimeouts.request_send_ms, "Max time to write request headers + body.", (e) => void onTimeoutChange("request_send_ms", e), { editable: true, unit: "ms" })}
+      ${renderField("ttft_ms", "timeouts.ttft_ms", liveTimeouts.ttft_ms, "Time-to-first-token: wait for response headers.", (e) => void onTimeoutChange("ttft_ms", e), { editable: true, unit: "ms" })}
+      ${renderField("idle_chunk_ms", "timeouts.idle_chunk_ms", liveTimeouts.idle_chunk_ms, "Max gap between SSE chunks.", (e) => void onTimeoutChange("idle_chunk_ms", e), { editable: true, unit: "ms" })}
+      ${renderField("total_ms", "timeouts.total_ms", liveTimeouts.total_ms, "Hard ceiling for the whole request.", (e) => void onTimeoutChange("total_ms", e), { editable: true, unit: "ms" })}
     </div>
-  `);
+  `, "card-timeouts-full");
 }
 
 export function renderRecordingTtlCard(): TemplateResult {
   return card(unsafeHTML(t("config.recording_ttl.title")), html`
     <p class="muted">${t("config.recording_ttl.description")}</p>
-    <div class="config-grid">${renderField("recording_ttl_secs", "recording_ttl_secs", liveRecordingTtl, "TTL in seconds.", (e) => void onRecordingTtlChange(e), { editable: true, step: 1 })}</div>
-    <div class="config-actions" style="margin-top: 1rem;"><button class="primary" data-action="configSaveRecordingTtl" @click=${configSaveRecordingTtl}>${t("config.recording_ttl.save")}</button></div>
+    <div class="config-inline-setting">
+      <div class="config-inline-info">
+        <span class="config-label">recording_ttl_secs</span>
+        <span class="config-help">TTL in seconds for debug traces.</span>
+      </div>
+      <div class="config-inline-action">
+        <div class="config-input-group has-unit">
+          <input type="number" inputmode="numeric" name="recording_ttl_secs" min="0" step="1"
+            .value=${String(liveRecordingTtl)}
+            aria-label="recording_ttl_secs"
+            @change=${(e: Event) => void onRecordingTtlChange(e)}
+            @input=${(e: Event) => void onRecordingTtlChange(e)}>
+          <span class="config-input-unit">s</span>
+        </div>
+        <button class="primary" data-action="configSaveRecordingTtl" @click=${configSaveRecordingTtl}>
+          ${t("config.recording_ttl.save")}
+        </button>
+      </div>
+    </div>
   `);
 }
 
 export function renderCompressionCard(): TemplateResult {
   return card(t("config.compression.title"), html`
     <p class="muted">${unsafeHTML(t("config.compression.description"))}</p>
-    <div class="config-grid"><label class="config-field"><span class="config-label">${t("config.compression.mode_label")}</span>
-      <select name="compression_mode" aria-label="Compression mode" @change=${onCompressionChange}>
-        ${["off", "lite", "rtk", "lite_rtk"].map((m) => html`<option value=${m} ?selected=${liveCompression === m}>${t("config.compression." + m)}</option>`)}
-      </select><span class="config-help">${unsafeHTML(t("config.compression.help"))}</span></label></div>
+    <div class="config-inline-setting">
+      <div class="config-inline-info">
+        <span class="config-label">${t("config.compression.mode_label")}</span>
+        <span class="config-help">${unsafeHTML(t("config.compression.help"))}</span>
+      </div>
+      <div class="config-inline-action">
+        <select name="compression_mode" class="config-select" aria-label="Compression mode" @change=${onCompressionChange}>
+          ${["off", "lite", "rtk", "lite_rtk"].map((m) => html`<option value=${m} ?selected=${liveCompression === m}>${t("config.compression." + m)}</option>`)}
+        </select>
+      </div>
+    </div>
   `);
 }
 
 export function renderIdleChunkCard(): TemplateResult {
-  return card(t("config.idle_chunk.title"), html`<p class="muted">${t("config.idle_chunk.description")}</p>
-    <div class="config-grid">${renderToggle(t("config.idle_chunk.label"), liveIdleChunkRetryable, t("config.idle_chunk.help_on"), t("config.idle_chunk.help_off"), () => void patchIdleChunkRetryable(!liveIdleChunkRetryable), "idle_chunk_retryable")}</div>`);
+  return card(t("config.idle_chunk.title"), html`
+    <p class="muted">${t("config.idle_chunk.description")}</p>
+    ${renderToggle(t("config.idle_chunk.label"), liveIdleChunkRetryable, t("config.idle_chunk.help_on"), t("config.idle_chunk.help_off"), () => void patchIdleChunkRetryable(!liveIdleChunkRetryable), "idle_chunk_retryable")}
+  `);
 }
 
 export function renderNotificationsCard(): TemplateResult {
-  return card(t("config.notifications.title"), html`<p class="muted">${t("config.notifications.description")}</p>
-    <div class="config-grid">${renderToggle(t("config.notifications.enabled"), liveNotificationsEnabled, t("config.notifications.help_on"), t("config.notifications.help_off"), () => void patchNotificationsEnabled(!liveNotificationsEnabled))}</div>`);
+  return card(t("config.notifications.title"), html`
+    <p class="muted">${t("config.notifications.description")}</p>
+    ${renderToggle(t("config.notifications.enabled"), liveNotificationsEnabled, t("config.notifications.help_on"), t("config.notifications.help_off"), () => void patchNotificationsEnabled(!liveNotificationsEnabled))}
+  `);
 }
 
 export function renderQuotaCard(): TemplateResult {
-  return card(t("config.quota.title"), html`<p class="muted">${t("config.quota.description")}</p>
-    <div class="config-grid">
+  return card(t("config.quota.title"), html`
+    <p class="muted">${t("config.quota.description")}</p>
+    <div class="config-rows-list">
       ${renderToggle(t("config.quota.enabled"), liveQuotaProtectionEnabled, t("config.quota.help_on"), t("config.quota.help_off"), async () => {
         const next = !liveQuotaProtectionEnabled;
         if (await patchQuotaProtection(next, liveQuotaProtectionThreshold)) liveQuotaProtectionEnabled = next;
       })}
-      <label class="config-field"><span class="config-label">${t("config.quota.reserve_threshold")}</span>
-        <input type="number" min="1" max="99" name="quota_protection.threshold_percentage" .value=${String(liveQuotaProtectionThreshold)}
-               @change=${async (e: Event) => {
-                 const n = validateNonNegInt((e.target as HTMLInputElement).value.trim(), "threshold_percentage");
-                 if (n == null || n < 1 || n > 99) { requestUpdate(); return; }
-                 const prev = liveQuotaProtectionThreshold; liveQuotaProtectionThreshold = n;
-                 if (!await patchQuotaProtection(liveQuotaProtectionEnabled, n)) liveQuotaProtectionThreshold = prev;
-               }}>
-        <span class="config-help">${t("config.quota.help_threshold")}</span></label>
-    </div>`);
+      <div class="config-inline-setting">
+        <div class="config-inline-info">
+          <span class="config-label">${t("config.quota.reserve_threshold")}</span>
+          <span class="config-help">${t("config.quota.help_threshold")}</span>
+        </div>
+        <div class="config-inline-action">
+          <div class="config-input-group has-unit">
+            <input type="number" min="1" max="99" name="quota_protection.threshold_percentage"
+              .value=${String(liveQuotaProtectionThreshold)}
+              aria-label=${t("config.quota.reserve_threshold")}
+              @change=${async (e: Event) => {
+                const n = validateNonNegInt((e.target as HTMLInputElement).value.trim(), "threshold_percentage");
+                if (n == null || n < 1 || n > 99) { requestUpdate(); return; }
+                const prev = liveQuotaProtectionThreshold; liveQuotaProtectionThreshold = n;
+                if (!await patchQuotaProtection(liveQuotaProtectionEnabled, n)) liveQuotaProtectionThreshold = prev;
+              }}>
+            <span class="config-input-unit">%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
 }
 
-const ALL_PII = [{ id: "email", label: "Email" }, { id: "phone", label: "Phone" }, { id: "ip", label: "IP Address" }, { id: "credit_card", label: "Credit Card (Luhn)" }, { id: "secret", label: "Secrets / Keys" }, { id: "person", label: "Person Names" }];
+const ALL_PII = [
+  { id: "email", label: "Email" },
+  { id: "phone", label: "Phone" },
+  { id: "ip", label: "IP Address" },
+  { id: "credit_card", label: "Credit Card (Luhn)" },
+  { id: "secret", label: "Secrets / Keys" },
+  { id: "person", label: "Person Names" },
+];
 
 export function renderPiiCard(): TemplateResult {
   return card(t("config.pii.title"), html`
     <p class="muted">${t("config.pii.description")}</p>
-    <div class="config-grid">
+    <div class="config-rows-list">
       ${renderToggle(t("config.pii.enabled"), livePiiEnabled, t("config.pii.help_on"), t("config.pii.help_off"), async () => {
         const p = livePiiEnabled; livePiiEnabled = !p; if (!await patchPiiConfig({ pii_enabled: livePiiEnabled })) livePiiEnabled = p;
       })}
@@ -243,19 +298,25 @@ export function renderPiiCard(): TemplateResult {
         const p = livePiiRedactLogs; livePiiRedactLogs = !p; if (!await patchPiiConfig({ pii_redact_logs: livePiiRedactLogs })) livePiiRedactLogs = p;
       })}
     </div>
-    <div style="margin-top: 1rem;"><span class="config-label">${t("config.pii.entities_label")}</span>
-      <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
-        ${ALL_PII.map(ent => {
+    <div class="config-entities-section">
+      <span class="config-label">${t("config.pii.entities_label")}</span>
+      <div class="config-entities-chips">
+        ${ALL_PII.map((ent) => {
           const active = livePiiEntities.includes(ent.id);
-          return html`<button type="button" class="btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}" style="font-size: 0.8rem; padding: 0.25rem 0.5rem;"
+          return html`<button type="button" class="config-entity-chip ${active ? "active" : ""}"
+            aria-pressed=${active ? "true" : "false"}
             @click=${async () => {
               const norm = normalizePiiEntity(ent.id); const prev = [...livePiiEntities];
               const idx = livePiiEntities.indexOf(norm);
               if (idx >= 0) livePiiEntities.splice(idx, 1); else livePiiEntities.push(norm);
               livePiiEntities = Array.from(new Set(livePiiEntities.map(normalizePiiEntity)));
               if (!await patchPiiConfig({ pii_entities: livePiiEntities })) livePiiEntities = prev;
-            }}>${active ? "✓ " : "+ "}${ent.label}</button>`;
+            }}>
+            <span class="chip-symbol">${active ? "✓" : "+"}</span>
+            <span>${ent.label}</span>
+          </button>`;
         })}
       </div>
-    </div>`);
+    </div>
+  `);
 }

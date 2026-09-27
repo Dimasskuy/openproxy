@@ -19,6 +19,7 @@ import { showToast } from "../../components/toast.js";
 export interface FieldOpts {
   editable?: boolean;
   step?: number;
+  unit?: string;
 }
 
 // Shape of the /admin/config response. The server flattens the
@@ -181,10 +182,13 @@ export function renderField(
 ): TemplateResult {
   return html`<label class="config-field">
     <span class="config-label">${label}</span>
-    <input type="number" inputmode="numeric" name=${name} .value=${String(value)} min="0" step=${opts.step ?? 100}
-      ?disabled=${!opts.editable}
-      aria-label=${label + (opts.editable ? "" : " (read-only)")}
-      @change=${onChange} @input=${onChange}>
+    <div class="config-input-group ${opts.unit ? "has-unit" : ""}">
+      <input type="number" inputmode="numeric" name=${name} .value=${String(value)} min="0" step=${opts.step ?? 100}
+        ?disabled=${!opts.editable}
+        aria-label=${label + (opts.editable ? "" : " (read-only)")}
+        @change=${onChange} @input=${onChange}>
+      ${opts.unit ? html`<span class="config-input-unit">${opts.unit}</span>` : ""}
+    </div>
     <span class="config-help">${help}</span>
   </label>`;
 }
@@ -197,6 +201,6 @@ export function renderStaticField(label: string, value: number | null | undefine
   return html`<div class="field"><span class="label">${label}</span><span class="value">${display}</span></div>`;
 }
 
-export function card(title: unknown, body: TemplateResult): TemplateResult {
-  return html`<section class="card"><div class="section-header"><h3>${title}</h3></div>${body}</section>`;
+export function card(title: unknown, body: TemplateResult, extraClass = ""): TemplateResult {
+  return html`<section class="card config-card ${extraClass}"><div class="section-header"><h3>${title}</h3></div><div class="card-body">${body}</div></section>`;
 }
