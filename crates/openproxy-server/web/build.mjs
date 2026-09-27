@@ -30,9 +30,6 @@ const options = {
   legalComments: 'eof',
   packages: 'bundle',
   logLevel: 'info',
-  // Treat .css imports as plain text strings so the uPlot wrapper can
-  // inline the chart CSS via a <style> tag at runtime.
-  loader: { '.css': 'text' },
 };
 
 const stylesDir = join(__dirname, 'src', 'static', 'styles');

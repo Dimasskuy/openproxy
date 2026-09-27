@@ -16,8 +16,10 @@
       try {
         const params = new URLSearchParams(window.location.search);
         const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-        const code = params.get('code') || params.get('apiKey') || params.get('token') || params.get('key')
-          || hashParams.get('code') || hashParams.get('apiKey') || hashParams.get('token') || hashParams.get('key');
+        // Only the standard OAuth `code` parameter is honoured. Aliases such
+        // as `apiKey`/`token`/`key` are not part of any flow that redirects
+        // here and would only widen the reflection surface of this page.
+        const code = params.get('code') || hashParams.get('code');
         const error = params.get('error') || hashParams.get('error');
 
         if (error) {

@@ -131,7 +131,7 @@ async fn test_get_provider_icon_endpoint_and_caching() {
     use tower::ServiceExt;
 
     let dir = tempdir();
-    let (state, _plaintext) = make_state_with_key(&dir).await;
+    let (state, plaintext) = make_state_with_key(&dir).await;
     let pid = openproxy_types::ProviderId::new("icon-prov");
     openproxy_db::providers::create(
         &state.db_pool().writer(),
@@ -148,12 +148,29 @@ async fn test_get_provider_icon_endpoint_and_caching() {
     )
     .unwrap();
 
-    let router = crate::router::build_router(state.clone());
+    let router = crate::router::build_router(state.clone()).layer(axum::Extension(
+        axum::extract::connect_info::ConnectInfo(
+            "127.0.0.1:12345".parse::<std::net::SocketAddr>().unwrap(),
+        ),
+    ));
+    let bearer = format!("Bearer {plaintext}");
 
-    // 1. Initial GET without favicon returns 404 (without requiring Bearer auth)
+    // 0. The icon route sits behind the admin auth middleware like every
+    //    other `/admin/api/*` route: no credentials → 401, never a
+    //    provider-existence oracle.
     let req = Request::builder()
         .uri("/admin/api/providers/icon-prov/icon")
         .method("GET")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let resp = router.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    // 1. Initial authenticated GET without favicon returns 404
+    let req = Request::builder()
+        .uri("/admin/api/providers/icon-prov/icon")
+        .method("GET")
+        .header("Authorization", &bearer)
         .body(axum::body::Body::empty())
         .unwrap();
     let resp = router.clone().oneshot(req).await.unwrap();
@@ -173,6 +190,7 @@ async fn test_get_provider_icon_endpoint_and_caching() {
     let req = Request::builder()
         .uri("/admin/api/providers/icon-prov/icon")
         .method("GET")
+        .header("Authorization", &bearer)
         .body(axum::body::Body::empty())
         .unwrap();
     let resp = router.clone().oneshot(req).await.unwrap();
@@ -180,7 +198,7 @@ async fn test_get_provider_icon_endpoint_and_caching() {
     assert_eq!(resp.headers().get("content-type").unwrap(), "image/png");
     assert_eq!(
         resp.headers().get("cache-control").unwrap(),
-        "public, max-age=86400"
+        "private, max-age=86400"
     );
     let body_bytes = http_body_util::BodyExt::collect(resp.into_body())
         .await
@@ -195,13 +213,19 @@ async fn test_get_provider_icon_adversarial_contract_and_stress() {
     use tower::ServiceExt;
 
     let dir = tempdir();
-    let (state, _plaintext) = make_state_with_key(&dir).await;
-    let router = crate::router::build_router(state.clone());
+    let (state, plaintext) = make_state_with_key(&dir).await;
+    let router = crate::router::build_router(state.clone()).layer(axum::Extension(
+        axum::extract::connect_info::ConnectInfo(
+            "127.0.0.1:12345".parse::<std::net::SocketAddr>().unwrap(),
+        ),
+    ));
+    let bearer = format!("Bearer {plaintext}");
 
     // 1. Non-existent provider -> 404 Not Found
     let req = Request::builder()
         .uri("/admin/api/providers/does-not-exist/icon")
         .method("GET")
+        .header("Authorization", &bearer)
         .body(axum::body::Body::empty())
         .unwrap();
     let resp = router.clone().oneshot(req).await.unwrap();
@@ -227,6 +251,7 @@ async fn test_get_provider_icon_adversarial_contract_and_stress() {
     let req = Request::builder()
         .uri("/admin/api/providers/prov-no-fav/icon")
         .method("GET")
+        .header("Authorization", &bearer)
         .body(axum::body::Body::empty())
         .unwrap();
     let resp = router.clone().oneshot(req).await.unwrap();
@@ -259,7 +284,8 @@ async fn test_get_provider_icon_adversarial_contract_and_stress() {
     )
     .unwrap();
 
-    // 4. Request with invalid Authorization header must still succeed (route is unauthenticated)
+    // 4a. Request with an invalid Authorization header is rejected (route is
+    //     behind the admin auth middleware).
     let req = Request::builder()
         .uri("/admin/api/providers/prov-ico/icon")
         .method("GET")
@@ -267,11 +293,21 @@ async fn test_get_provider_icon_adversarial_contract_and_stress() {
         .body(axum::body::Body::empty())
         .unwrap();
     let resp = router.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    // 4b. Valid credentials → binary ICO round-trips byte-for-byte.
+    let req = Request::builder()
+        .uri("/admin/api/providers/prov-ico/icon")
+        .method("GET")
+        .header("Authorization", &bearer)
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let resp = router.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(resp.headers().get("content-type").unwrap(), "image/x-icon");
     assert_eq!(
         resp.headers().get("cache-control").unwrap(),
-        "public, max-age=86400"
+        "private, max-age=86400"
     );
     let body = http_body_util::BodyExt::collect(resp.into_body())
         .await
@@ -299,6 +335,7 @@ async fn test_get_provider_icon_adversarial_contract_and_stress() {
     let req = Request::builder()
         .uri("/admin/api/providers/prov-ico/icon")
         .method("GET")
+        .header("Authorization", &bearer)
         .body(axum::body::Body::empty())
         .unwrap();
     let resp = router.clone().oneshot(req).await.unwrap();
@@ -315,6 +352,7 @@ async fn test_get_provider_icon_adversarial_contract_and_stress() {
     let req = Request::builder()
         .uri("/admin/api/providers/prov-ico/icon")
         .method("GET")
+        .header("Authorization", &bearer)
         .body(axum::body::Body::empty())
         .unwrap();
     let resp = router.clone().oneshot(req).await.unwrap();

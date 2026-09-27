@@ -144,12 +144,14 @@ pub async fn update_account_api_key(
 
 pub async fn get_account_api_key(
     State(s): State<AppState>,
+    identity: super::auth::Identity,
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let key = s
         .services()
         .accounts
         .get_api_key(s.master_key().as_ref(), AccountId::new(id))?;
+    super::auth::audit_secret_read(&identity, "account_api_key", &format!("account:{id}"));
     Ok(Json(serde_json::json!({ "api_key": key })))
 }
 
@@ -360,6 +362,7 @@ fn write_antigravity_token_file(
 
 pub async fn apply_account_local_cli(
     State(s): State<AppState>,
+    identity: super::auth::Identity,
     DbReader(r): DbReader,
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
@@ -400,6 +403,11 @@ pub async fn apply_account_local_cli(
         account.expires_at.as_deref(),
         account.email.as_deref(),
     )?;
+    super::auth::audit_secret_read(
+        &identity,
+        "oauth_tokens_written_to_cli",
+        &format!("account:{id} path:{}", token_file.display()),
+    );
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -451,8 +459,10 @@ pub struct ImportSummary {
 /// de SQLite se libera antes de cualquier `.await`.
 pub async fn scan_accounts(
     State(s): State<AppState>,
+    identity: super::auth::Identity,
     Json(q): Json<ScanQuery>,
 ) -> Result<Json<ScanResponse>, ApiError> {
+    super::auth::audit_secret_read(&identity, "host_cli_oauth_tokens_scan", "accounts:scan");
     // 1. Scan offline (no DB lock tomado).
     let discovered = tokio::task::spawn_blocking(core_account_scanner::scan_external_accounts)
         .await

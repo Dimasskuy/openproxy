@@ -45,8 +45,11 @@ pub fn router() -> axum::Router<AppState> {
 
 pub async fn list_proxies(
     DbReader(r): DbReader,
+    identity: super::auth::Identity,
     Query(query): Query<ListProxiesQuery>,
 ) -> Result<Json<Vec<openproxy_core::free_proxies::FreeProxy>>, ApiError> {
+    // Rows carry proxy `username`/`password`; make the read attributable.
+    super::auth::audit_secret_read(&identity, "proxy_credentials_list", "proxies:list");
     let list = openproxy_core::free_proxies::list_proxies(
         &r,
         query.source.as_deref(),

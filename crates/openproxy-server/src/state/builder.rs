@@ -168,6 +168,7 @@ impl AppState {
             background_tx,
             supervisor,
             api_key_cache,
+            ws_tickets: Arc::new(super::WsTicketStore::new()),
         };
 
         Ok(state)
@@ -288,6 +289,7 @@ impl AppState {
             background_tx,
             supervisor,
             api_key_cache,
+            ws_tickets: Arc::new(super::WsTicketStore::new()),
         }
     }
 }

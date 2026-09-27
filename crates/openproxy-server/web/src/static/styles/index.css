@@ -3,6 +3,12 @@
    Layers are @imported in cascade order.
    ============================================ */
 
+/* Third-party: uPlot base styles. Bundled here (not injected at runtime
+   as a <style> element) so the CSP can forbid inline style elements. The
+   dashboard's own `.uplot` overrides live in views/analytics.css and win
+   through cascade order + `!important`. */
+@import url("uplot/dist/uPlot.min.css");
+
 @import url("./tokens.css");
 @import url("./themes.css");
 @import url("./base.css");

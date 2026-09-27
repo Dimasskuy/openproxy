@@ -27,7 +27,8 @@
 //! | `GET  /admin/styles/*`        | embedded CSS (`admin_ui::serve_asset`)    |
 //! | `GET  /admin/fonts/*`         | embedded fonts (`admin_ui::serve_asset`)  |
 //! | `*    /admin/api/*`           | admin REST API (auth-protected)           |
-//! | `GET  /admin/ws`              | live-logs WebSocket (own auth via `?token=`) |
+//! | `POST /admin/api/ws-ticket`   | single-use handshake ticket for `/admin/ws` (auth-protected) |
+//! | `GET  /admin/ws`              | live-logs WebSocket (own auth: Bearer header or `?ticket=`) |
 //! | `GET  /admin/health`          | `handlers::admin::runtime::admin_health` (unauthenticated, kept public for LB probes) |
 //! | `GET  /admin/oauth/callback`  | `handlers::admin::oauth::oauth_callback` (unauthenticated, browser callback) |
 //!
@@ -36,8 +37,10 @@
 //! asset are served without checking credentials. The SPA itself
 //! sends the admin API key as a Bearer token on each `/admin/api/*`
 //! call. The WebSocket upgrade at `/admin/ws` does its own auth
-//! inside the handler (`handlers::admin::usage::usage_stream`) so it can accept `?token=`
-//! in the query string (browsers can't set headers on WS handshakes).
+//! inside the handler (`handlers::admin::usage::usage_stream`): it accepts
+//! a Bearer header (non-browser clients) or a single-use `?ticket=` minted
+//! by `POST /admin/api/ws-ticket` (browsers can't set headers on WS
+//! handshakes, and a raw key in the URL would end up in proxy logs).
 
 use axum::{Json, Router, middleware, routing::get};
 use serde_json::json;
@@ -79,19 +82,11 @@ pub fn build_router(state: AppState) -> Router {
         // limit applies to the request body, not the response.
         .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024))
         .with_state(state)
-        .layer(tower_http::set_header::SetResponseHeaderLayer::overriding(
-            axum::http::header::X_CONTENT_TYPE_OPTIONS,
-            axum::http::HeaderValue::from_static("nosniff"),
-        ))
-        .layer(tower_http::set_header::SetResponseHeaderLayer::overriding(
-            axum::http::header::HeaderName::from_static("x-frame-options"),
-            axum::http::HeaderValue::from_static("DENY"),
-        ))
-        .layer(tower_http::set_header::SetResponseHeaderLayer::overriding(
-            axum::http::header::HeaderName::from_static("content-security-policy"),
-            axum::http::HeaderValue::from_static(
-                "default-src 'self'; img-src 'self' data: https://www.google.com https://icons.duckduckgo.com; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:;",
-            ),
+        // Browser security headers (CSP / X-Frame-Options / nosniff) on
+        // the outermost layer so every response carries them. See
+        // `middleware::security_headers` for the policy rationale.
+        .layer(middleware::from_fn(
+            crate::middleware::security_headers::security_headers,
         ))
 }
 
@@ -117,11 +112,11 @@ fn build_admin_router(state: &AppState) -> Router<AppState> {
     //
     // The middleware reads only the `Authorization` header, which
     // is the contract for the HTTP path. The WebSocket upgrade
-    // handler (`handlers::admin::usage::usage_stream`) also accepts `?token=` in the query
-    // string — that path is handled inside the handler itself
-    // (the middleware would not see the WS upgrade as a normal
-    // request), so the per-handler auth check there is the source
-    // of truth for the WebSocket path.
+    // handler (`handlers::admin::usage::usage_stream`) additionally
+    // accepts a single-use `?ticket=` (never a raw key) — that path is
+    // handled inside the handler itself (the middleware would not see
+    // the WS upgrade as a normal request), so the per-handler auth
+    // check there is the source of truth for the WebSocket path.
     let admin_api_routes = handlers::admin::admin_api_routes();
 
     // Apply the admin auth middleware to the protected admin REST
@@ -184,10 +179,6 @@ fn build_admin_router(state: &AppState) -> Router<AppState> {
         // validates the lang code. See `admin_ui::serve_i18n` for the
         // path-traversal guard + cache headers + extension parsing.
         .route("/i18n/{lang}", get(admin_ui::serve_i18n))
-        .route(
-            "/api/providers/{id}/icon",
-            get(handlers::admin::providers::get_provider_icon),
-        )
         .nest("/api", admin_api_routes)
         .fallback(admin_ui::serve_asset)
 }
@@ -262,14 +253,97 @@ mod tests {
             "nosniff"
         );
         assert_eq!(response.headers().get("x-frame-options").unwrap(), "DENY");
-        assert_eq!(
-            response.headers().get("content-security-policy").unwrap(),
-            "default-src 'self'; img-src 'self' data: https://www.google.com https://icons.duckduckgo.com; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:;"
+        let csp = response
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(
+            csp.starts_with("default-src 'self'; script-src 'self';"),
+            "{csp}"
+        );
+        assert!(csp.contains("style-src-elem 'self';"), "{csp}");
+        assert!(
+            csp.ends_with("connect-src 'self';"),
+            "no Host header → no ws origins: {csp}"
         );
 
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn test_models_catalog_requires_key_unless_anonymous_opt_in() {
+        // Zero active keys AND `allow_anonymous = false` (the default):
+        // `/v1/models` must NOT leak the catalog. Same gate as chat.
+        let (pool, _path) = fresh_pool();
+        let db_pool = Arc::new(pool);
+        let master_key = Arc::new(MasterKey::generate().unwrap());
+        let adapters = Arc::new(RwLock::new(Arc::new(
+            Vec::<adapters::ProviderAdapterEnum>::new(),
+        )));
+        let config = AppConfig::default();
+        assert!(!config.server.allow_anonymous, "default must be closed");
+        let state = AppState::for_test(config, db_pool, master_key, adapters);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/models")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        // With the explicit opt-in (what `make_state()` sets) the
+        // first-boot anonymous window still works.
+        let app = build_router(make_state().await);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/models")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_csp_pins_ws_origin_to_host_header() {
+        let state = make_state().await;
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/health")
+                    .header("host", "listo.click")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let csp = response
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            csp.ends_with("connect-src 'self' ws://listo.click wss://listo.click;"),
+            "{csp}"
+        );
+        assert!(!csp.contains("connect-src 'self' ws: wss:"), "{csp}");
+        assert!(csp.contains("frame-ancestors 'none';"), "{csp}");
     }
 
     #[tokio::test]
@@ -325,9 +399,20 @@ mod tests {
             "nosniff"
         );
         assert_eq!(response.headers().get("x-frame-options").unwrap(), "DENY");
-        assert_eq!(
-            response.headers().get("content-security-policy").unwrap(),
-            "default-src 'self'; img-src 'self' data: https://www.google.com https://icons.duckduckgo.com; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:;"
+        let csp = response
+            .headers()
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(
+            csp.starts_with("default-src 'self'; script-src 'self';"),
+            "{csp}"
+        );
+        assert!(csp.contains("style-src-elem 'self';"), "{csp}");
+        assert!(
+            csp.ends_with("connect-src 'self';"),
+            "no Host header → no ws origins: {csp}"
         );
 
         let body = response.into_body().collect().await.unwrap().to_bytes();

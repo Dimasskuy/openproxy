@@ -1,8 +1,13 @@
 //! Bootstrap API key: if the database is empty when the server starts,
-//! seed a single admin key with `["manage", "chat"]` scope and print
-//! the plaintext to the logs (and stderr, for visibility). The
-//! operator copies it out of the boot logs and uses it as their
-//! first API key.
+//! seed a single admin key with `["manage", "chat"]` scope and hand the
+//! plaintext to the operator through a **root-only file** next to the
+//! database (or the path in `OPENPROXY_BOOTSTRAP_KEY_FILE`). Only the key
+//! id, prefix and the file path are logged.
+//!
+//! The plaintext is deliberately NOT written to stdout/stderr: under
+//! systemd (`StandardError=journal`) and Docker (`docker logs`) both
+//! streams land in the same indexed, long-retained log store as the
+//! structured log pipeline, so "just stderr" was never a safe channel.
 //!
 //! The behaviour is intentionally one-shot: subsequent starts see
 //! existing keys and do nothing. Re-running the bootstrap path on a
@@ -17,6 +22,8 @@ use crate::error::Result;
 use crate::ids::ApiKeyId;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 /// Public, HTTP-friendly view of a bootstrap-key row. Returned to
 /// the admin handler so the UI can render the plaintext in a copy-
@@ -53,35 +60,85 @@ pub fn ensure_bootstrap_key(conn: &Connection, label: &str) -> Result<Option<Boo
         "system",
     )?;
 
-    // WARN, not INFO, because the operator must take action
-    // (copy the key). A regular INFO would scroll past too easily
-    // in a default `RUST_LOG=info` deployment.
-    //
-    // SECURITY: do NOT include `plaintext` as a structured field —
-    // log aggregators (Datadog, CloudWatch, Loki) index structured
-    // fields and store them indefinitely, making exfiltration trivial.
-    // The plaintext is only sent to stderr (eprintln!) below, which
-    // goes to the console/journalctl but not to the structured log
-    // pipeline.
-    tracing::warn!(
-        key_id = key.id.0,
-        prefix = ?key.key_prefix,
-        "Bootstrap API key created. Check stderr (journalctl) for the plaintext — it is not stored in plaintext anywhere.",
-    );
-    // Also surface on stderr: containerized deployments often have
-    // log collection that swallows WARN from the application layer,
-    // and the operator scanning `journalctl -u openproxy-core` will
-    // see this without filter setup.
-    eprintln!(
-        "openproxy bootstrap key (id={}): {}\n  ^- save this NOW, it is not stored in plaintext anywhere",
-        key.id.0, plaintext
-    );
+    // SECURITY: the plaintext never goes to a log stream (structured or
+    // stderr). It is written to a 0600 file the operator reads once and
+    // deletes; only the location is logged. WARN, not INFO, because the
+    // operator must take action.
+    match write_bootstrap_key_file(conn, &plaintext) {
+        Ok(Some(path)) => tracing::warn!(
+            key_id = key.id.0,
+            prefix = ?key.key_prefix,
+            path = %path.display(),
+            "Bootstrap API key created. Plaintext written to a root-only (0600) file — \
+             read it, store it in your secret manager, then delete the file.",
+        ),
+        Ok(None) => tracing::warn!(
+            key_id = key.id.0,
+            prefix = ?key.key_prefix,
+            "Bootstrap API key created but the database has no on-disk path and \
+             OPENPROXY_BOOTSTRAP_KEY_FILE is unset; the plaintext was not persisted. \
+             Set OPENPROXY_BOOTSTRAP_KEY_FILE and restart with an empty api_keys table.",
+        ),
+        Err(e) => tracing::error!(
+            key_id = key.id.0,
+            prefix = ?key.key_prefix,
+            error = %e,
+            "Bootstrap API key created but writing the plaintext file failed. \
+             Delete the row from api_keys (or set OPENPROXY_BOOTSTRAP_KEY_FILE to a \
+             writable path) and restart to re-issue.",
+        ),
+    }
 
     Ok(Some(BootstrapResult {
         id: key.id,
         plaintext,
         key_prefix: key.key_prefix,
     }))
+}
+
+/// Name of the plaintext drop file when `OPENPROXY_BOOTSTRAP_KEY_FILE`
+/// is unset: a sibling of the SQLite database.
+pub const BOOTSTRAP_KEY_FILENAME: &str = "bootstrap-api-key.txt";
+
+/// Resolve where the plaintext should be written: the env override, or
+/// `<db dir>/bootstrap-api-key.txt` for an on-disk database. `None` for
+/// in-memory databases without an override.
+fn bootstrap_key_path(conn: &Connection) -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("OPENPROXY_BOOTSTRAP_KEY_FILE").filter(|p| !p.is_empty()) {
+        return Some(PathBuf::from(p));
+    }
+    let db_path = conn.path().filter(|p| !p.is_empty() && *p != ":memory:")?;
+    let parent = Path::new(db_path).parent()?;
+    Some(parent.join(BOOTSTRAP_KEY_FILENAME))
+}
+
+/// Create the drop file with mode 0600 (owner read/write only) and write
+/// the plaintext. Fails closed if the file already exists so a stale
+/// file is never silently overwritten (and so we never truncate a path an
+/// attacker pre-created as a symlink).
+fn write_bootstrap_key_file(
+    conn: &Connection,
+    plaintext: &str,
+) -> std::io::Result<Option<PathBuf>> {
+    let Some(path) = bootstrap_key_path(conn) else {
+        return Ok(None);
+    };
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts.open(&path)?;
+    writeln!(
+        f,
+        "# openproxy bootstrap API key (scopes: manage, chat)\n\
+         # Store it in your secret manager and DELETE this file.\n\
+         {plaintext}"
+    )?;
+    f.sync_all()?;
+    Ok(Some(path))
 }
 
 #[cfg(test)]
@@ -93,6 +150,28 @@ mod tests {
     fn fresh_conn() -> (Connection, PathBuf) {
         let conn = openproxy_db::testing::open_in_memory();
         (conn, PathBuf::from(":memory:"))
+    }
+
+    #[test]
+    fn bootstrap_writes_plaintext_to_root_only_file_next_to_db() {
+        let dir = openproxy_db::testing::TempDir::new("openproxy-bootstrap").expect("tmp");
+        let db_path = dir.path().join("data.db");
+        let mut conn = Connection::open(&db_path).expect("open db");
+        openproxy_db::migrations::run(&mut conn).expect("migrations");
+
+        let r = ensure_bootstrap_key(&conn, "bootstrap")
+            .expect("bootstrap")
+            .expect("created");
+
+        let file = dir.path().join(BOOTSTRAP_KEY_FILENAME);
+        let contents = std::fs::read_to_string(&file).expect("drop file exists");
+        assert!(contents.lines().any(|l| l == r.plaintext), "{contents}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "drop file must be owner-only");
+        }
     }
 
     #[test]

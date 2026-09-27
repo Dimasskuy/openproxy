@@ -1,6 +1,6 @@
 use crate::{error::ApiError, state::AppState};
 use axum::{extract::State, http::HeaderMap, response::IntoResponse};
-use openproxy_core::api_keys as core_api_keys;
+use openproxy_core::api_keys::{self as core_api_keys, ApiKey};
 use openproxy_types::{CoreError, ids::ApiKeyId};
 use std::sync::Arc;
 
@@ -175,7 +175,7 @@ pub(crate) fn authenticate(
     }))
 }
 
-fn validate_key_record(key: &core_api_keys::ApiKey, required_scope: &str) -> Result<(), ApiError> {
+pub(crate) fn validate_key_record(key: &ApiKey, required_scope: &str) -> Result<(), ApiError> {
     if !key.is_active {
         return Err(ApiError(CoreError::Auth(
             "api key revoked or inactive".into(),

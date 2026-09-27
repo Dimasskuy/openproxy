@@ -5,7 +5,7 @@
 // switch is CSS, not JS).
 
 import { describe, it, expect } from "vitest";
-import { render } from "lit-html";
+import { html as litHtml, render } from "lit-html";
 import { renderResponsiveCardTable } from "./render-responsive-card-table.js";
 import type { TemplateResult } from "lit-html";
 
@@ -23,7 +23,9 @@ const ROWS: readonly Row[] = [
 function toString(tpl: TemplateResult): string {
   const container = document.createElement("div");
   render(tpl, container);
-  return container.innerHTML;
+  // Strip lit-html's `<!--?lit$…-->` binding markers so assertions can
+  // match contiguous markup produced by nested templates.
+  return container.innerHTML.replace(/<!--[\s\S]*?-->/g, "");
 }
 
 describe("renderResponsiveCardTable", () => {
@@ -68,7 +70,7 @@ describe("renderResponsiveCardTable", () => {
         {
           key: "status",
           label: "Status",
-          render: (r) => `<strong>${r.status.toUpperCase()}</strong>`,
+          render: (r) => litHtml`<strong>${r.status.toUpperCase()}</strong>`,
         },
       ],
       rows: ROWS,
@@ -76,6 +78,22 @@ describe("renderResponsiveCardTable", () => {
     }));
     expect(html).toContain("<strong>ALIVE</strong>");
     expect(html).toContain("<strong>DEAD</strong>");
+  });
+
+  it("renders plain-string `render` results as text, never as raw HTML", () => {
+    const html = toString(renderResponsiveCardTable<Row>({
+      columns: [
+        {
+          key: "status",
+          label: "Status",
+          render: (r) => `<img src=x onerror=alert(1)>${r.status}`,
+        },
+      ],
+      rows: ROWS,
+      rowKey: (r) => r.id,
+    }));
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;alive");
   });
 
   it("marks hiddenMobile columns with the hidden-mobile class", () => {

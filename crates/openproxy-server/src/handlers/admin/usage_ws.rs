@@ -22,9 +22,16 @@ pub enum NotifRxEvent {
     Closed,
 }
 
+/// Query parameters accepted by the `/admin/ws` upgrade.
+///
+/// `ticket` is a single-use, 30-second credential minted by
+/// `POST /admin/api/ws-ticket` (see `state::WsTicketStore`). Raw API keys
+/// are NOT accepted in the query string: reverse proxies log the request
+/// line, so a `?token=<key>` would leak the long-lived secret to every
+/// reader of the access log.
 #[derive(Debug, Default, Deserialize)]
 pub struct UsageStreamQuery {
-    pub token: Option<String>,
+    pub ticket: Option<String>,
 }
 
 fn is_allowed_origin(origin: &str, host: &str) -> bool {
@@ -48,9 +55,12 @@ fn check_cswsh_origin(headers: &HeaderMap) -> Result<(), (StatusCode, &'static s
         return Ok(());
     };
 
+    // Prefer the `Host` the request actually arrived with. A trusted
+    // reverse proxy rewrites `Host` to the public name; `X-Forwarded-Host`
+    // is only consulted as a fallback because any client can set it.
     let host = headers
-        .get("x-forwarded-host")
-        .or_else(|| headers.get("host"))
+        .get("host")
+        .or_else(|| headers.get("x-forwarded-host"))
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
@@ -76,12 +86,42 @@ pub async fn usage_stream(
         return resp.into_response();
     }
 
-    match authenticate_admin_ws(&s, &headers, q.token.as_deref(), Some(&addr)) {
-        Ok(()) => ws
+    match authenticate_admin_ws(&s, &headers, q.ticket.as_deref(), Some(&addr)) {
+        Ok(_identity) => ws
             .on_upgrade(move |socket| stream_usage_rows(socket, s))
             .into_response(),
         Err(e) => e.into_response(),
     }
+}
+
+/// `POST /admin/api/ws-ticket` — mint a single-use ticket for the
+/// `/admin/ws` handshake. Runs behind `admin_auth_middleware`, so the
+/// caller already proved possession of a `manage` key; the ticket is
+/// bound to that key and re-validated when redeemed.
+pub async fn issue_ws_ticket(
+    State(s): State<AppState>,
+    identity: Option<axum::Extension<super::auth::AdminIdentity>>,
+) -> Result<axum::Json<serde_json::Value>, super::ApiError> {
+    let key_id = identity
+        .as_ref()
+        .and_then(|axum::Extension(id)| id.key.as_ref())
+        .map(|k| k.id)
+        .ok_or_else(|| {
+            // Dev bypass (no key) has no identity to bind a ticket to; the
+            // bypassed WS handshake does not need one either.
+            super::ApiError(super::CoreError::Auth(
+                "ws tickets require an authenticated api key".into(),
+            ))
+        })?;
+    let ticket = s.ws_tickets().issue(key_id).ok_or_else(|| {
+        super::ApiError(super::CoreError::Internal(
+            "too many outstanding ws tickets; retry shortly".into(),
+        ))
+    })?;
+    Ok(axum::Json(json!({
+        "ticket": ticket,
+        "expires_in_secs": crate::state::WsTicketStore::TTL.as_secs(),
+    })))
 }
 
 async fn outbox_send(tx: &tokio::sync::mpsc::Sender<Box<str>>, val: serde_json::Value) {

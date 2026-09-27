@@ -29,10 +29,16 @@ pub async fn list_api_keys(
 
 pub async fn create_api_key(
     State(s): State<AppState>,
+    identity: super::auth::Identity,
     Json(body): Json<core_api_keys::CreateApiKeyInput>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let (key, plaintext) = s.services().api_keys.create(body, "admin")?;
     s.cache_api_key(Arc::new(key.clone()));
+    super::auth::audit_secret_read(
+        &identity,
+        "api_key_created",
+        &format!("key:{} scopes:{:?}", key.id.0, key.scopes),
+    );
     Ok(Json(serde_json::json!({
         "key": key,
         "plaintext": plaintext,
@@ -138,11 +144,14 @@ crate::admin_entity_action_handler! {
 
 pub async fn regenerate_api_key(
     State(s): State<AppState>,
+    identity: super::auth::Identity,
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let w = s.db_pool().writer();
     let (key, plaintext) = core_api_keys::regenerate(&w, ApiKeyId(id))?;
+    drop(w);
     s.invalidate_api_key_cache(None);
+    super::auth::audit_secret_read(&identity, "api_key_regenerated", &format!("key:{id}"));
     Ok(Json(serde_json::json!({
         "key": key,
         "plaintext": plaintext,

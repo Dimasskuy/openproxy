@@ -23,6 +23,9 @@
 //!   Google, custom proxy tokens).
 //! - `x-api-key` — the de-facto standard "API key" header used
 //!   by most non-OpenAI upstreams.
+//! - `api-key` — Azure OpenAI's credential header.
+//! - `x-goog-api-key` — Google Gemini's credential header (see
+//!   `AdapterAuthType::GoogApiKey`).
 //! - `proxy-authorization` — RFC 7617 credential on the proxy
 //!   hop; if the operator's reverse-proxy auth is on this header
 //!   it would leak the user's identity verbatim.
@@ -55,15 +58,18 @@ use http::HeaderMap;
 use std::collections::BTreeMap;
 
 /// Return `true` if `name` (case-insensitive) is one of the
-/// known sensitive headers: `authorization`, `x-api-key`, `cookie`,
-/// `set-cookie`, `proxy-authorization`, `x-auth-token`.
+/// known sensitive headers: `authorization`, `x-api-key`, `api-key`
+/// (Azure OpenAI), `x-goog-api-key` (Gemini), `cookie`, `set-cookie`,
+/// `proxy-authorization`, `x-auth-token`.
 pub fn is_sensitive(name: &str) -> bool {
     match name.len() {
         6 => name.eq_ignore_ascii_case("cookie"),
+        7 => name.eq_ignore_ascii_case("api-key"),
         9 => name.eq_ignore_ascii_case("x-api-key"),
         10 => name.eq_ignore_ascii_case("set-cookie"),
         12 => name.eq_ignore_ascii_case("x-auth-token"),
         13 => name.eq_ignore_ascii_case("authorization"),
+        14 => name.eq_ignore_ascii_case("x-goog-api-key"),
         19 => name.eq_ignore_ascii_case("proxy-authorization"),
         _ => false,
     }
@@ -284,6 +290,8 @@ mod tests {
         let known_sensitive = [
             "authorization",
             "x-api-key",
+            "api-key",
+            "x-goog-api-key",
             "cookie",
             "set-cookie",
             "proxy-authorization",

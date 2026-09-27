@@ -1,5 +1,51 @@
 use super::{ApiError, AppState, CoreError, HeaderMap, IntoResponse};
+use openproxy_core::api_keys as core_api_keys;
 use std::net::SocketAddr;
+use std::sync::Arc;
+
+/// Who is calling an admin endpoint, as resolved by
+/// [`admin_auth_middleware`]. Stored in the request extensions so
+/// handlers can bind derived credentials (WS tickets) to the key and
+/// write attributable audit records for secret reads.
+///
+/// `key` is `None` only when the debug-build dev bypass admitted the
+/// request without credentials.
+#[derive(Clone, Debug)]
+pub struct AdminIdentity {
+    pub key: Option<Arc<core_api_keys::ApiKey>>,
+    pub remote_addr: Option<SocketAddr>,
+}
+
+impl AdminIdentity {
+    /// Numeric key id for audit logs (`None` under dev bypass).
+    pub fn key_id(&self) -> Option<i64> {
+        self.key.as_ref().map(|k| k.id.0)
+    }
+}
+
+/// Extractor alias for handlers: the identity resolved by
+/// [`admin_auth_middleware`]. `Option` because a handler might be mounted
+/// outside the middleware in tests; production admin routes always have it.
+pub(crate) type Identity = Option<axum::Extension<AdminIdentity>>;
+
+/// Write an attributable audit record every time an admin endpoint hands
+/// out (or writes to disk) a decrypted secret. Emitted at WARN on the
+/// dedicated `openproxy::security::audit` target so operators can route
+/// it to a separate sink and alert on unexpected `key_id`/`ip` pairs.
+pub(crate) fn audit_secret_read(identity: &Identity, secret_kind: &str, subject: &str) {
+    let id = identity.as_ref().map(|axum::Extension(i)| i);
+    tracing::warn!(
+        target: "openproxy::security::audit",
+        key_id = id.and_then(AdminIdentity::key_id),
+        key_prefix = id
+            .and_then(|i| i.key.as_ref())
+            .and_then(|k| k.key_prefix.as_deref()),
+        ip = id.and_then(|i| i.remote_addr).map(|a| a.ip().to_string()),
+        secret = secret_kind,
+        subject,
+        "secret disclosed via admin api"
+    );
+}
 
 #[cfg(debug_assertions)]
 fn check_dev_auth_bypass(
@@ -11,6 +57,19 @@ fn check_dev_auth_bypass(
     };
     if bypass != "1" {
         return Ok(false);
+    }
+    // The bypass is a local-development convenience. Refuse it outright
+    // when the request came through a reverse proxy: behind a proxy on
+    // the same host every remote client looks like loopback at the TCP
+    // layer, so the peer-address check below would be meaningless.
+    if headers.contains_key("x-forwarded-for") || headers.contains_key("forwarded") {
+        tracing::error!(
+            target: "openproxy::security",
+            "OPENPROXY_DASHBOARD_AUTH_BYPASS refused: request carries proxy forwarding headers"
+        );
+        return Err(ApiError(CoreError::Auth(
+            "dev bypass not available behind a proxy".into(),
+        )));
     }
     if let Some(addr) = remote_addr
         && !addr.ip().is_loopback()
@@ -34,63 +93,123 @@ fn check_dev_auth_bypass(
     Ok(true)
 }
 
-fn extract_admin_token<'a>(
-    headers: &'a HeaderMap,
-    query_token: Option<&'a str>,
-) -> Result<&'a str, ApiError> {
-    let header_token = headers
+/// Pull the Bearer token out of the `Authorization` header.
+///
+/// SEC-01: credentials are accepted from headers ONLY. Query-string
+/// tokens are never honoured — not even for WebSocket upgrades — because
+/// every reverse proxy logs the request line and the long-lived key
+/// would land in plaintext in access logs. Browsers that cannot set
+/// headers on `new WebSocket()` use the single-use ticket flow instead
+/// (see [`authenticate_admin_ws`] and `state::WsTicketStore`).
+fn extract_bearer_token(headers: &HeaderMap) -> Result<Option<&str>, ApiError> {
+    let Some(raw) = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
-        .map(str::trim);
-
-    // SEC-01: Query parameter tokens are only permitted for WebSocket endpoints
-    // where setting the Authorization header is impossible from the browser API.
-    // For all other HTTP requests (REST APIs, etc.), we ignore the query token
-    // to prevent credential leakage in server logs or browser history.
-    let is_ws_upgrade = headers
-        .get(axum::http::header::UPGRADE)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|s| s.eq_ignore_ascii_case("websocket"));
-
-    let safe_query_token = if is_ws_upgrade { query_token } else { None };
-
-    let t = header_token.or(safe_query_token).ok_or_else(|| {
-        ApiError(CoreError::Auth(
-            "missing authorization header or token query parameter".into(),
-        ))
-    })?;
-
-    if t.is_empty() {
+        .map(str::trim)
+    else {
+        return Ok(None);
+    };
+    if raw.is_empty() {
         return Err(ApiError(CoreError::Auth("invalid token".into())));
     }
-    Ok(t)
+    Ok(Some(raw))
 }
 
+/// Authenticate an admin REST request from its headers.
+///
+/// Returns the resolved identity; `key` is `None` only under the
+/// debug-build dev bypass.
+pub(crate) fn authenticate_admin(
+    state: &AppState,
+    headers: &HeaderMap,
+    remote_addr: Option<&SocketAddr>,
+) -> Result<AdminIdentity, ApiError> {
+    #[cfg(debug_assertions)]
+    if check_dev_auth_bypass(headers, remote_addr)? {
+        return Ok(AdminIdentity {
+            key: None,
+            remote_addr: remote_addr.copied(),
+        });
+    }
+
+    let token = extract_bearer_token(headers)?
+        .ok_or_else(|| ApiError(CoreError::Auth("missing authorization header".into())))?;
+    let key = crate::middleware::auth::verify_key_credentials(state, token, "manage")?;
+    Ok(AdminIdentity {
+        key: Some(key),
+        remote_addr: remote_addr.copied(),
+    })
+}
+
+/// Redeem a single-use WS ticket and re-validate the key it was bound to.
+fn authenticate_ws_ticket(
+    state: &AppState,
+    ticket: &str,
+) -> Result<Arc<core_api_keys::ApiKey>, ApiError> {
+    let key_id = state
+        .ws_tickets()
+        .consume(ticket)
+        .ok_or_else(|| ApiError(CoreError::Auth("invalid or expired ws ticket".into())))?;
+    let key = {
+        let r = state.db_pool().reader();
+        core_api_keys::get_by_id(&r, key_id)
+            .map_err(|e| {
+                tracing::error!(%e, "db error resolving ws ticket key");
+                ApiError(CoreError::Auth("invalid api key".into()))
+            })?
+            .ok_or_else(|| ApiError(CoreError::Auth("invalid api key".into())))?
+    };
+    crate::middleware::auth::validate_key_record(&key, "manage")?;
+    Ok(Arc::new(key))
+}
+
+/// Authenticate the `/admin/ws` upgrade (and any handler that wants the
+/// same contract). Accepts EITHER `Authorization: Bearer <key>` (CLI /
+/// non-browser clients) OR a single-use `?ticket=` minted by
+/// `POST /admin/api/ws-ticket` (browsers). Never a raw key in the URL.
 pub(crate) fn authenticate_admin_ws(
     state: &AppState,
     headers: &HeaderMap,
-    query_token: Option<&str>,
-    _remote_addr: Option<&SocketAddr>,
-) -> Result<(), ApiError> {
+    ticket: Option<&str>,
+    remote_addr: Option<&SocketAddr>,
+) -> Result<AdminIdentity, ApiError> {
     #[cfg(debug_assertions)]
-    if check_dev_auth_bypass(headers, _remote_addr)? {
-        return Ok(());
+    if check_dev_auth_bypass(headers, remote_addr)? {
+        return Ok(AdminIdentity {
+            key: None,
+            remote_addr: remote_addr.copied(),
+        });
     }
 
-    let token = extract_admin_token(headers, query_token)?;
-    crate::middleware::auth::verify_key_credentials(state, token, "manage")?;
-    Ok(())
+    let key = match (extract_bearer_token(headers)?, ticket) {
+        (Some(token), _) => {
+            crate::middleware::auth::verify_key_credentials(state, token, "manage")?
+        }
+        (None, Some(t)) if !t.is_empty() => authenticate_ws_ticket(state, t)?,
+        _ => {
+            return Err(ApiError(CoreError::Auth(
+                "missing authorization header or ws ticket".into(),
+            )));
+        }
+    };
+    Ok(AdminIdentity {
+        key: Some(key),
+        remote_addr: remote_addr.copied(),
+    })
 }
 
 pub async fn admin_auth_middleware(
     axum::extract::State(state): axum::extract::State<AppState>,
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
-    req: axum::extract::Request,
+    mut req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    if let Err(e) = authenticate_admin_ws(&state, req.headers(), None, Some(&addr)) {
-        return e.into_response();
+    match authenticate_admin(&state, req.headers(), Some(&addr)) {
+        Ok(identity) => {
+            req.extensions_mut().insert(identity);
+        }
+        Err(e) => return e.into_response(),
     }
     next.run(req).await
 }

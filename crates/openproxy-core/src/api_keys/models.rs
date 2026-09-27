@@ -94,15 +94,21 @@ pub struct UsageSummary {
 /// Number of seconds of "stale-ness" we tolerate before re-stamping `last_used_at`.
 pub const LAST_USED_THROTTLE_SECS: i64 = 300;
 
-/// Generate a new API key plaintext.
-pub fn generate_plaintext() -> String {
+/// Generate `len` cryptographically random alphanumeric characters
+/// (62-symbol alphabet, ≈5.95 bits per character). Shared by API key
+/// plaintexts and short-lived opaque tokens (e.g. WebSocket tickets).
+pub fn generate_opaque_token(len: usize) -> String {
     use rand::RngExt;
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     let mut rng = rand::rng();
-    let suffix: String = (0..32)
+    (0..len)
         .map(|_| CHARS[rng.random_range(0..CHARS.len())] as char)
-        .collect();
-    format!("op_live_{suffix}")
+        .collect()
+}
+
+/// Generate a new API key plaintext.
+pub fn generate_plaintext() -> String {
+    format!("op_live_{}", generate_opaque_token(32))
 }
 
 /// Hash a plaintext API key with SHA-256.

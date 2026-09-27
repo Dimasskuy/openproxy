@@ -33,7 +33,6 @@
 // in-place updates).
 
 import { html, nothing, type TemplateResult } from "lit-html";
-import { unsafeHTML } from "lit-html/directives/unsafe-html.js";
 
 export interface ResponsiveColumn<T> {
   /** Column key — used for the `data-label` and as the fallback
@@ -43,10 +42,9 @@ export interface ResponsiveColumn<T> {
    *  mobile card cells. */
   label: string;
   /** Optional cell renderer. Receives the row and returns either a
-   *  `TemplateResult` (preferred) or a plain HTML string. Plain
-   *  strings are embedded via `unsafeHTML` so callers can opt into
-   *  raw markup (e.g. pre-styled status pills) without writing a
-   *  full TemplateResult. */
+   *  `TemplateResult` (preferred) or a plain string. Plain strings are
+   *  rendered as TEXT (lit-html escapes them) — never as raw HTML. Use
+   *  a `TemplateResult` when you need markup (e.g. status pills). */
   render?: (row: T) => TemplateResult | string;
   /** If true, this column is hidden on mobile (its `<td>` gets a
    *  `display: none` in the card view via CSS). */
@@ -72,7 +70,7 @@ export interface ResponsiveTableProps<T> {
 function renderCell<T>(col: ResponsiveColumn<T>, row: T): TemplateResult {
   if (col.render) {
     const v: TemplateResult | string = col.render(row);
-    return typeof v === "string" ? html`${unsafeHTML(v)}` : v;
+    return typeof v === "string" ? html`${v}` : v;
   }
   const value: unknown = (row as Record<string, unknown>)[col.key];
   return html`${value == null ? "" : String(value)}`;

@@ -9,6 +9,7 @@ import { dispatchWs } from "./ws-bus.js";
 import { liveLogsStore } from "./live-logs-store.js";
 import type { WsEnvelope } from "../views/logs.js";
 import { getToken } from "./auth.js";
+import { api } from "../lib/api.js";
 
 /** Connection status for the live-logs view. */
 export type LogsStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
@@ -21,35 +22,41 @@ export function subscribeLogsStatus(fn: (status: LogsStatus) => void): () => voi
   return () => statusSubscribers.delete(fn);
 }
 
+/** Base URL of the live-logs WebSocket (no credentials). */
 export function logsWsUrl(): string {
   const scheme: "ws:" | "wss:" = location.protocol === "https:" ? "wss:" : "ws:";
   // Post-F0 single-binary merge: the live-logs WebSocket is served
-  // directly by the openproxy server at `/admin/ws` (was
-  // `/web/api/usage/stream` on the now-removed separate dashboard
-  // binary, which reverse-proxied to `/admin/usage/stream` on the
-  // core server).
-  //
-  // DASHBOARD-FIX (Bug 3): the WS upgrade handler
-  // (`handlers/admin.rs::usage_stream`) authenticates via
-  // `authenticate_admin_ws`, which accepts EITHER an
-  // `Authorization: Bearer <token>` header OR a `?token=<key>` query
-  // param. Browsers cannot set custom headers on `new WebSocket()`
-  // (the WebSocket API only supports the `protocols` arg, not
-  // arbitrary headers), so we MUST use the query-param path. Without
-  // it the upgrade is rejected with 401 before the WS handshake
-  // completes → "Firefox no puede establecer una conexión con el
-  // servidor en ws://.../admin/ws".
-  //
-  // `encodeURIComponent` is important: tokens are opaque strings
-  // that may contain `+`, `=`, `/` (base64-ish chars). The server
-  // decodes via axum's `Query<T>` deserializer, which percent-decodes
-  // for us; the encode/decode round-trip preserves the token.
-  const base: string = `${scheme}//${location.host}/admin/ws`;
-  const token: string | null = getToken();
-  if (token) {
-    return `${base}?token=${encodeURIComponent(token)}`;
+  // directly by the openproxy server at `/admin/ws`.
+  return `${scheme}//${location.host}/admin/ws`;
+}
+
+/** Full WebSocket URL carrying a single-use handshake ticket.
+ *
+ *  SECURITY: the manage-scope API key is NEVER placed in the URL.
+ *  Browsers cannot set headers on `new WebSocket()`, and anything in the
+ *  query string ends up verbatim in every reverse-proxy access log. The
+ *  server instead mints a 30-second, single-use ticket bound to our key
+ *  (`POST /admin/api/ws-ticket`, sent with the normal Bearer header) and
+ *  the upgrade redeems it via `?ticket=`. A logged ticket is dead by the
+ *  time anyone can read the log. */
+export function logsWsUrlWithTicket(ticket: string): string {
+  return `${logsWsUrl()}?ticket=${encodeURIComponent(ticket)}`;
+}
+
+interface WsTicketResponse { ticket?: unknown }
+
+/** Ask the server for a fresh handshake ticket. Returns null on any
+ *  failure (network, 401, malformed body) so the caller can schedule a
+ *  reconnect instead of throwing. */
+async function fetchWsTicket(): Promise<string | null> {
+  try {
+    const res = await api("/ws-ticket", { method: "POST" }) as WsTicketResponse | null;
+    const ticket: unknown = res?.ticket;
+    return typeof ticket === "string" && ticket.length > 0 ? ticket : null;
+  } catch (err: unknown) {
+    console.warn("[openproxy] live-logs WS ticket request failed:", err);
+    return null;
   }
-  return base;
 }
 
 export function setLogsStatus(status: LogsStatus): void {
@@ -107,6 +114,15 @@ export function setMessageHandler(fn: ((event: MessageEvent) => void) | null): v
   messageHandler = fn;
 }
 
+// True while a ticket request is in flight. Guards against a second
+// `connectLogsWebSocket()` call opening a duplicate socket before the
+// first one has even been constructed.
+let ticketInFlight = false;
+// Monotonic counter so a ticket resolved after `disconnectLogsWebSocket()`
+// (or after a newer connect attempt) is discarded instead of opening a
+// stale socket.
+let connectGeneration = 0;
+
 export function connectLogsWebSocket(): void {
   clearLogsReconnectTimer();
   if (!getToken()) {
@@ -118,8 +134,24 @@ export function connectLogsWebSocket(): void {
     if (ready === WebSocket.OPEN) { setLogsStatus("connected"); return; }
     if (ready === WebSocket.CONNECTING) return;
   }
+  if (ticketInFlight) return;
   setLogsStatus(state.logs.reconnectAttempt === 0 ? "connecting" : "reconnecting");
-  const ws: WebSocket = new WebSocket(logsWsUrl());
+  ticketInFlight = true;
+  const generation: number = ++connectGeneration;
+  void fetchWsTicket().then((ticket: string | null) => {
+    ticketInFlight = false;
+    if (generation !== connectGeneration) return; // superseded / disconnected
+    if (!ticket) {
+      setLogsStatus("disconnected");
+      scheduleLogsReconnect();
+      return;
+    }
+    openLogsWebSocket(logsWsUrlWithTicket(ticket));
+  });
+}
+
+function openLogsWebSocket(url: string): void {
+  const ws: WebSocket = new WebSocket(url);
   // Heartbeat: send a ping every 15s. The server responds with a
   // pong. If we don't receive a pong within 30s (2 intervals), we
   // consider the connection dead and force-close it. This detects
@@ -233,6 +265,7 @@ export function connectLogsWebSocket(): void {
 
 export function disconnectLogsWebSocket(): void {
   clearLogsReconnectTimer();
+  connectGeneration += 1; // invalidate any in-flight ticket request
   if (state.logs.ws) {
     try { state.logs.ws.close(); } catch (_e: unknown) { /* already closed */ }
     state.logs.ws = null;

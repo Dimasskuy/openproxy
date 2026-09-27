@@ -166,7 +166,11 @@ fn extract_auth_header_token(headers: &HeaderMap) -> Option<&str> {
 }
 
 /// Authenticate with a chat-scope key, OR allow anonymous when zero
-/// active keys exist (first-boot window). Returns the key if
+/// active keys exist (first-boot window) AND the operator opted in via
+/// `server.allow_anonymous` — the same gate the chat routes apply in
+/// `middleware::auth::check_anonymous_fallback`. Without the opt-in, the
+/// catalog stays private during the first-boot window and after the last
+/// key is revoked (e.g. during an incident rotation). Returns the key if
 /// authenticated, or None if anonymous.
 fn authenticate_chat_or_anonymous(
     state: &AppState,
@@ -176,7 +180,7 @@ fn authenticate_chat_or_anonymous(
 
     let Some(token) = token else {
         let active = state.services().api_keys.count_active().map_err(ApiError)?;
-        if active == 0 {
+        if active == 0 && state.config().server.allow_anonymous {
             return Ok(None);
         }
         return Err(ApiError(CoreError::Auth("missing api key".into())));

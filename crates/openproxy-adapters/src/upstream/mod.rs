@@ -73,6 +73,8 @@ pub use client::{UpstreamClient, UpstreamRequest};
 #[cfg(feature = "upstream-hyper")]
 pub use conn_pool::{HostKey, Scheme, UpstreamConnectionPool};
 #[cfg(feature = "upstream-hyper")]
+pub use dns::resolve_public_host;
+
 pub use connector::{
     PhasedConnector, PhasedConnectorError, PhasedTimeouts, is_private_or_reserved, phased_phase,
 };

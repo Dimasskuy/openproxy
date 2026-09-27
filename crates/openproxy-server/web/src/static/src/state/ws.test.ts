@@ -36,9 +36,36 @@ class MockWebSocket {
   simulateError() { this.fire("error", new Event("error")); }
 }
 
-async function openWs(): Promise<MockWebSocket> {
+/** Stub `fetch` so `POST /admin/api/ws-ticket` answers with a ticket
+ *  (or a failure). Records every call for assertions. */
+interface RecordedFetch { url: string; init: RequestInit | undefined }
+interface TicketFetchStub { calls: RecordedFetch[] }
+
+function stubTicketFetch(opts: { ticket?: string; status?: number } = {}): TicketFetchStub {
+  const calls: RecordedFetch[] = [];
+  const status = opts.status ?? 200;
+  const ticket = opts.ticket ?? "tkt-abc123";
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    calls.push({ url, init });
+    const body = status === 200 ? JSON.stringify({ ticket, expires_in_secs: 30 }) : "unauthorized";
+    return new Response(body, {
+      status,
+      headers: { "content-type": status === 200 ? "application/json" : "text/plain" },
+    });
+  });
+  return { calls };
+}
+
+/** Kick off a connect and let the (async) ticket round-trip settle so
+ *  the MockWebSocket instance exists. */
+async function connectAndSettle(): Promise<void> {
   const { connectLogsWebSocket } = await import("./ws.js");
   connectLogsWebSocket();
+  await vi.advanceTimersByTimeAsync(0);
+}
+
+async function openWs(): Promise<MockWebSocket> {
+  await connectAndSettle();
   const ws = MockWebSocket.instances[MockWebSocket.instances.length - 1]!;
   ws.simulateOpen();
   return ws;
@@ -58,6 +85,7 @@ beforeEach(async () => {
   disconnectLogsWebSocket();
   MockWebSocket.instances = [];
   vi.stubGlobal("WebSocket", MockWebSocket);
+  stubTicketFetch();
   await setupAuthMock({ token: "test-token" });
 });
 
@@ -75,34 +103,56 @@ describe("ws store — validation and urls", () => {
     expect(isStageEvent("string")).toBe(false);
   });
 
-  it("builds correct URL with token and protocol", async () => {
-    const { logsWsUrl } = await import("./ws.js");
-    const url = logsWsUrl();
-    expect(url).toContain("/admin/ws?token=test-token");
+  it("never places the API key in the WebSocket URL", async () => {
+    const { logsWsUrl, logsWsUrlWithTicket } = await import("./ws.js");
+    expect(logsWsUrl()).toMatch(/^wss?:\/\/[^/]+\/admin\/ws$/);
+    expect(logsWsUrl()).not.toContain("token=");
+    const withTicket = logsWsUrlWithTicket("t/k+t=1");
+    expect(withTicket).toContain("/admin/ws?ticket=t%2Fk%2Bt%3D1");
+    expect(withTicket).not.toContain("test-token");
   });
 });
 
 describe("ws store — connection and cursors", () => {
-  it("connects with token and triggers connecting status", async () => {
+  it("requests a ticket with the Bearer header, then connects with ?ticket=", async () => {
+    const { calls } = stubTicketFetch({ ticket: "tkt-xyz" });
     const statuses = await trackStatuses();
-    const { connectLogsWebSocket } = await import("./ws.js");
-    connectLogsWebSocket();
+    await connectAndSettle();
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.url).toBe("/admin/api/ws-ticket");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect((calls[0]!.init?.headers as Record<string, string>)["Authorization"]).toBe("Bearer test-token");
     expect(MockWebSocket.instances.length).toBe(1);
+    expect(MockWebSocket.instances[0]!.url).toContain("/admin/ws?ticket=tkt-xyz");
+    expect(MockWebSocket.instances[0]!.url).not.toContain("test-token");
     expect(statuses).toContain("connecting");
   });
 
-  it("does not connect when token is missing", async () => {
+  it("does not connect when token is missing (no ticket request either)", async () => {
+    const { calls } = stubTicketFetch();
     await setupAuthMock({ token: null });
-    const { connectLogsWebSocket } = await import("./ws.js");
-    connectLogsWebSocket();
+    await connectAndSettle();
+    expect(calls.length).toBe(0);
     expect(MockWebSocket.instances.length).toBe(0);
+  });
+
+  it("schedules a reconnect when the ticket request fails", async () => {
+    stubTicketFetch({ status: 401 });
+    const statuses = await trackStatuses();
+    await connectAndSettle();
+    expect(MockWebSocket.instances.length).toBe(0);
+    expect(statuses).toContain("disconnected");
+    // backoff elapses → a fresh ticket attempt (still failing → still no WS)
+    await vi.advanceTimersByTimeAsync(300);
+    expect(MockWebSocket.instances.length).toBe(0);
+    expect(statuses).toContain("reconnecting");
   });
 
   it("handles cursor subscribe messaging", async () => {
     const { liveLogsStore } = await import("./live-logs-store.js");
-    const { connectLogsWebSocket, disconnectLogsWebSocket } = await import("./ws.js");
+    const { disconnectLogsWebSocket } = await import("./ws.js");
     liveLogsStore.lastAppliedCursor = 42;
-    connectLogsWebSocket();
+    await connectAndSettle();
     const ws1 = MockWebSocket.instances[0]!;
     ws1.simulateOpen();
     expect(ws1.sent).toEqual([JSON.stringify({ type: "subscribe", cursor: 42 })]);
@@ -110,7 +160,7 @@ describe("ws store — connection and cursors", () => {
     disconnectLogsWebSocket();
     MockWebSocket.instances = [];
     liveLogsStore.lastAppliedCursor = 0;
-    connectLogsWebSocket();
+    await connectAndSettle();
     const ws2 = MockWebSocket.instances[0]!;
     ws2.simulateOpen();
     expect(ws2.sent.length).toBe(0);
@@ -118,9 +168,24 @@ describe("ws store — connection and cursors", () => {
 
   it("is idempotent: does not create a second WS while first is open", async () => {
     await openWs();
+    await connectAndSettle();
+    expect(MockWebSocket.instances.length).toBe(1);
+  });
+
+  it("is idempotent: a second connect during the ticket round-trip is coalesced", async () => {
     const { connectLogsWebSocket } = await import("./ws.js");
     connectLogsWebSocket();
+    connectLogsWebSocket();
+    await vi.advanceTimersByTimeAsync(0);
     expect(MockWebSocket.instances.length).toBe(1);
+  });
+
+  it("discards a ticket that resolves after disconnect", async () => {
+    const { connectLogsWebSocket, disconnectLogsWebSocket } = await import("./ws.js");
+    connectLogsWebSocket();
+    disconnectLogsWebSocket();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(MockWebSocket.instances.length).toBe(0);
   });
 });
 

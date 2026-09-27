@@ -17,8 +17,10 @@ mod builder;
 mod init;
 #[cfg(test)]
 mod tests;
+mod ws_tickets;
 
 pub(crate) use init::run_boot_backfill;
+pub use ws_tickets::WsTicketStore;
 
 use openproxy_adapters::adapters;
 use openproxy_adapters::upstream::UpstreamClient;
@@ -65,6 +67,7 @@ pub struct AppState {
     supervisor: Arc<crate::background::BackgroundSupervisor>,
     api_key_cache:
         Arc<dashmap::DashMap<String, (Arc<openproxy_core::api_keys::ApiKey>, std::time::Instant)>>,
+    ws_tickets: Arc<WsTicketStore>,
 }
 
 /// VACUUM status reported to the dashboard.
@@ -165,6 +168,11 @@ impl AppState {
     /// Borrow the SQLite connection pool.
     pub fn db_pool(&self) -> &Arc<db::DbPool> {
         &self.db_pool
+    }
+
+    /// Single-use tickets for the `/admin/ws` handshake (see [`WsTicketStore`]).
+    pub fn ws_tickets(&self) -> &WsTicketStore {
+        &self.ws_tickets
     }
 
     /// Borrow the per-key rate limiter.

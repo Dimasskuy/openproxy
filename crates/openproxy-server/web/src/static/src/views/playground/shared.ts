@@ -344,29 +344,53 @@ export function extractThinkingProcess(
 }
 
 // ==========
-// Global code block copy handler (installed once; consumed by lib/markdown.ts
-// rendered HTML in fenced code blocks).
+// Code block copy handler (installed once as a delegated `click` listener;
+// consumed by lib/markdown.ts rendered HTML in fenced code blocks).
+//
+// The rendered markup carries NO inline `onclick` — the dashboard's CSP
+// (`script-src 'self'`) blocks inline handlers — so we listen at the
+// document level and match `button.md-copy-btn`.
 // ==========
 
-if (typeof window !== 'undefined') {
-  const win = window as Window & typeof globalThis & { __copyPlaygroundCode?: (btn: HTMLElement) => void };
-  if (!win.__copyPlaygroundCode) {
-    win.__copyPlaygroundCode = (btn: HTMLElement) => {
-      const encoded = btn.getAttribute('data-code') || '';
-      const code = decodeURIComponent(encoded);
-      const onCopied = (): void => {
-        const originalText = btn.textContent;
-        btn.textContent = 'Copied!';
-        btn.classList.add('copied');
-        setTimeout(() => {
-          btn.textContent = originalText;
-          btn.classList.remove('copied');
-        }, 1600);
-      };
+/** Copy the fenced code stored in `data-code` (percent-encoded) to the
+ *  clipboard and flash a "Copied!" label on the button. Exported for tests. */
+export function copyPlaygroundCode(btn: HTMLElement): void {
+  const encoded = btn.getAttribute('data-code') || '';
+  let code: string;
+  try {
+    code = decodeURIComponent(encoded);
+  } catch {
+    showToast('Copy failed — please copy manually', 'error');
+    return;
+  }
+  const onCopied = (): void => {
+    const originalText = btn.textContent;
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.classList.remove('copied');
+    }, 1600);
+  };
 
-      copyToClipboard(code).then(onCopied).catch(() => {
-        showToast('Copy failed — please copy manually', 'error');
-      });
-    };
+  copyToClipboard(code).then(onCopied).catch(() => {
+    showToast('Copy failed — please copy manually', 'error');
+  });
+}
+
+const COPY_LISTENER_FLAG = '__openproxyCopyListenerInstalled';
+
+if (typeof document !== 'undefined') {
+  const doc = document as Document & { [COPY_LISTENER_FLAG]?: boolean };
+  if (!doc[COPY_LISTENER_FLAG]) {
+    doc[COPY_LISTENER_FLAG] = true;
+    document.addEventListener('click', (ev: MouseEvent) => {
+      const target = ev.target;
+      if (!(target instanceof Element)) return;
+      const btn = target.closest<HTMLElement>('button.md-copy-btn');
+      if (!btn) return;
+      ev.preventDefault();
+      copyPlaygroundCode(btn);
+    });
   }
 }

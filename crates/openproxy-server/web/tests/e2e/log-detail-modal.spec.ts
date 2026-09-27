@@ -28,6 +28,11 @@ test.beforeEach(async ({ page }: { page: Page }) => {
       // Ignore
     }
   }, { key: ADMIN_TOKEN_STORAGE_KEY, token: DUMMY_ADMIN_TOKEN });
+  // These specs inject rows straight into `__liveLogsStore`. Isolate them
+  // from the real `/admin/ws` stream: the server's initial `snapshot`
+  // envelope clears the store, and its arrival time is not deterministic
+  // (the dashboard first exchanges its token for a WS ticket).
+  await page.routeWebSocket('**/admin/ws**', () => { /* no server stream */ });
 });
 
 async function openFirstLogRow(page: Page): Promise<string | null> {

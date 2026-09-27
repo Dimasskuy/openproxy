@@ -1,20 +1,21 @@
 // state/auth.ts — admin token management for the dashboard.
 //
 // DASHBOARD-FIX (Bug 2): the server's `admin_auth_middleware`
-// (handlers/admin.rs) requires a `Bearer <token>` Authorization
-// header on every `/admin/api/*` request and a `?token=<key>` query
-// param on the `/admin/ws` upgrade. The dashboard previously sent
-// neither → every API call returned 401 and the WS upgrade was
-// rejected → "live-store initial rehydrate failed", "connection
-// interrupted".
+// (handlers/admin/auth.rs) requires a `Bearer <token>` Authorization
+// header on every `/admin/api/*` request. The `/admin/ws` upgrade
+// cannot carry that header from a browser, so `state/ws.ts` first
+// exchanges the Bearer token for a single-use, 30-second ticket
+// (`POST /admin/api/ws-ticket`) and connects with `?ticket=`. The
+// API key itself is NEVER placed in a URL (reverse proxies log the
+// request line).
 //
 // This module owns the manage-scope API key string. It is:
 //   - Entered once via the login view (views/login.ts).
 //   - Persisted to localStorage so it survives reloads.
 //   - Seeded into module-local memory on first read so subsequent
 //     `getToken()` calls don't hit localStorage on every fetch.
-//   - Attached to every `fetch()` and WebSocket URL by `lib/api.ts`,
-//     `state/api.ts`, and `state/ws.ts`.
+//   - Attached as a Bearer header to every `fetch()` by `lib/api.ts` /
+//     `state/api.ts`; `state/ws.ts` exchanges it for a WS ticket.
 //
 // Security notes:
 //   - The token lives in localStorage, NOT in a cookie. Cookies
@@ -91,10 +92,9 @@ export function clearToken(): void {
 /** Get the current token, seeding the in-memory cache from
  *  localStorage on first access. Returns null if the user is not
  *  logged in. Callers (`lib/api.ts`, `state/api.ts`, `state/ws.ts`)
- *  use the return value to build the `Authorization` header or the
- *  `?token=` query param; a null return means "send no auth" — the
- *  server will respond with 401 and the caller can surface that
- *  to the user. */
+ *  use the return value to build the `Authorization` header; a null
+ *  return means "send no auth" — the server will respond with 401
+ *  and the caller can surface that to the user. */
 export function getToken(): string | null {
   if (currentToken === null) {
     currentToken = load();

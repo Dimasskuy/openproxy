@@ -96,6 +96,12 @@ test.describe('Log detail modal — contamination regression (Fixes 4-b + 5-b)',
       try { localStorage.setItem(args.key, args.token); } catch (_e) {}
     }, { key: ADMIN_TOKEN_STORAGE_KEY, token: DUMMY_ADMIN_TOKEN });
 
+    // Isolate from the real `/admin/ws` stream: the server's initial
+    // `snapshot` envelope clears `__liveLogsStore`, and its arrival time is
+    // not deterministic (the dashboard first exchanges its token for a WS
+    // ticket). These specs feed the store themselves.
+    await page.routeWebSocket('**/admin/ws**', () => { /* no server stream */ });
+
     await page.route('**/admin/api/usage/detail*', async (route) => {
       const url = new URL(route.request().url());
       const [id, traceId] = [url.searchParams.get('id'), url.searchParams.get('trace_id')];

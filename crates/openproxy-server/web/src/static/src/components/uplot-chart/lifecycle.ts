@@ -1,32 +1,19 @@
 // components/uplot-chart/lifecycle.ts
 // ==========
-// Chart instance lifecycle: CSS injection, create / resize / dispose,
-// and shared rendering primitives (Catmull-Rom smooth spline, default
-// Options builder, sparkline factory).
+// Chart instance lifecycle: create / resize / dispose, and shared
+// rendering primitives (Catmull-Rom smooth spline, default Options
+// builder, sparkline factory).
 //
-// Public API: `injectUplotCss`, `createLiveChart`, `createSparkline`,
-// `resizeChart`, `observeResize`, `smoothSpline`, `smoothPath`,
-// `LiveChartOpts`, `ChartData`.
+// Public API: `createLiveChart`, `createSparkline`, `resizeChart`,
+// `observeResize`, `smoothSpline`, `smoothPath`, `LiveChartOpts`,
+// `ChartData`.
+//
+// uPlot's stylesheet is bundled into `dist/app.css` (see
+// `styles/index.css`) instead of being injected as a runtime `<style>`
+// element: the dashboard's CSP (`style-src-elem 'self'`) forbids inline
+// style elements so injected `<style>` from untrusted content is inert.
 
 import uPlot from "uplot";
-import uplotCss from "uplot/dist/uPlot.min.css";
-
-// ----------
-// CSS injection
-// ----------
-
-let cssInjected = false;
-
-/** Inject uPlot's stylesheet into <head> as a <style> tag. Idempotent. */
-export function injectUplotCss(): void {
-  if (cssInjected) return;
-  if (typeof document === "undefined") return;
-  const style: HTMLStyleElement = document.createElement("style");
-  style.setAttribute("data-uplot-css", "");
-  style.textContent = uplotCss;
-  document.head.appendChild(style);
-  cssInjected = true;
-}
 
 // ----------
 // Types
@@ -102,7 +89,6 @@ function buildOptions(
  *  on each throttled re-render. We never recreate the chart — `setData`
  *  is the only mutation path. */
 export function createLiveChart(container: HTMLElement, opts: LiveChartOpts): uPlot {
-  injectUplotCss();
   // CRITICAL: read the container's ACTUAL size, not a fallback.
   // If clientWidth is 0 (container not yet laid out by the browser),
   // defer creation by one animation frame so the layout has a chance
@@ -212,7 +198,6 @@ export const smoothPath: uPlot.Series.PathBuilder = smoothSpline();
  *  The X values can be anything (we use indices 0..n-1); the X axis is
  *  hidden, so the scale doesn't matter. */
 export function createSparkline(container: HTMLElement, color: string): uPlot {
-  injectUplotCss();
   const w: number = container.clientWidth || 100;
   const h: number = container.clientHeight || 34;
   const opts: uPlot.Options = {

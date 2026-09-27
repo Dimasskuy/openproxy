@@ -46,6 +46,11 @@ pub fn router() -> axum::Router<AppState> {
             axum::routing::post(refresh_provider_models),
         )
         .route("/{id}/active", axum::routing::post(set_provider_active))
+        // Persisted favicon blob. Lives inside this router so it inherits
+        // `admin_auth_middleware` like every other `/admin/api/*` route;
+        // the SPA fetches it with the Bearer header and feeds the `<img>`
+        // an object URL (see web `views/providers/shared.ts`).
+        .route("/{id}/icon", axum::routing::get(get_provider_icon))
         .route(
             "/{id}",
             axum::routing::get(get_provider)
@@ -173,9 +178,11 @@ pub async fn get_provider_icon(
             axum::http::StatusCode::OK,
             [
                 (axum::http::header::CONTENT_TYPE, mime),
+                // `private`: the response is credential-gated, so shared
+                // caches must not serve it to other clients.
                 (
                     axum::http::header::CACHE_CONTROL,
-                    "public, max-age=86400".to_string(),
+                    "private, max-age=86400".to_string(),
                 ),
             ],
             data,

@@ -284,17 +284,18 @@ pub async fn run_test_for_model(
                 }
             }
 
+            // SECURITY: the debug payload is returned to the dashboard and
+            // may be copied into bug reports. Credential-bearing headers
+            // (`Authorization`, `x-goog-api-key`, `x-api-key`, `api-key`, …)
+            // are redacted with the same allowlist used for persisted
+            // `usage.request_headers`, so a `manage` key cannot be used to
+            // read every upstream secret through the model tester.
             let request_headers_map = if opts.in_combo_fanout {
                 None
             } else {
-                Some(
-                    req.headers
-                        .iter()
-                        .map(|(k, v)| {
-                            (k.as_str().to_string(), v.to_str().unwrap_or("").to_string())
-                        })
-                        .collect::<std::collections::HashMap<_, _>>(),
-                )
+                Some(openproxy_pipeline::redact::redact_sensitive_headers(
+                    &req.headers,
+                ))
             };
 
             let cancel = openproxy_adapters::upstream::CancellationToken::new();

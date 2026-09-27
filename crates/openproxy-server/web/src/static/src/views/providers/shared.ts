@@ -8,7 +8,9 @@
 // "kitchen sink".
 
 import { html, type TemplateResult } from 'lit-html';
+import { ref } from 'lit-html/directives/ref.js';
 import { state } from '../../state/index.js';
+import { getToken } from '../../state/auth.js';
 import type { ModelSort } from '../../components/model-table.js';
 import type { Provider } from '../../lib/types/api.js';
 
@@ -116,8 +118,58 @@ export function extractApexDomain(host: string): string {
   return parts.slice(-2).join('.');
 }
 
+// ---- Authenticated favicon loading ----
+//
+// `GET /admin/api/providers/:id/icon` sits behind the admin auth
+// middleware like every other `/admin/api/*` route (it used to be the
+// single unauthenticated exception, which made it a provider-existence
+// oracle). A bare `<img src>` cannot carry the Bearer header, so we fetch
+// the blob ourselves and hand the `<img>` an object URL. Object URLs are
+// cached per provider id for the lifetime of the page.
+
+const iconObjectUrls = new Map<string, string>();
+const iconInflight = new Map<string, Promise<string | null>>();
+
+/** Fetch the persisted favicon with the admin Bearer token and return a
+ *  `blob:` URL, or null if the server has none / the request failed. */
+export function loadProviderIconUrl(providerId: string): Promise<string | null> {
+  const cached = iconObjectUrls.get(providerId);
+  if (cached) return Promise.resolve(cached);
+  const inflight = iconInflight.get(providerId);
+  if (inflight) return inflight;
+  const token = getToken();
+  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+  const promise: Promise<string | null> = fetch(
+    `/admin/api/providers/${encodeURIComponent(providerId)}/icon`,
+    { headers },
+  )
+    .then(async (r: Response) => {
+      if (!r.ok) return null;
+      const url = URL.createObjectURL(await r.blob());
+      iconObjectUrls.set(providerId, url);
+      return url;
+    })
+    .catch(() => null)
+    .finally(() => {
+      iconInflight.delete(providerId);
+    });
+  iconInflight.set(providerId, promise);
+  return promise;
+}
+
+/** Drop a cached icon (e.g. after the provider's favicon was refreshed). */
+export function invalidateProviderIcon(providerId: string): void {
+  const url = iconObjectUrls.get(providerId);
+  if (url) {
+    URL.revokeObjectURL(url);
+    iconObjectUrls.delete(providerId);
+  }
+}
+
 /** Render the provider favicon with a graceful fallback chain:
- *  1. on-demand streaming endpoint `/admin/api/providers/:id/icon` (if `has_favicon` is true),
+ *  1. persisted favicon via the authenticated `/admin/api/providers/:id/icon`
+ *     endpoint (if `has_favicon` is true) — fetched with the Bearer token
+ *     and served to the `<img>` as a `blob:` URL,
  *  2. legacy `favicon_base64` (if set),
  *  3. Google's `s2/favicons` service keyed on the host,
  *  4. retry against the apex domain (handles `cdn.provider.com`),
@@ -130,15 +182,29 @@ export function renderProviderIcon(p: Provider): TemplateResult {
   const fallback = (p.id[0] || '?').toUpperCase();
   const host = extractDomain(p.base_url);
   const apex = host ? extractApexDomain(host) : null;
-  const src =
-    p.has_favicon
-      ? `/admin/api/providers/${encodeURIComponent(p.id)}/icon`
-      : (p.favicon_base64 ||
-        (host ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64` : null));
+  const externalSrc: string | null =
+    p.favicon_base64 ||
+    (host ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64` : null);
+  const cachedIcon: string | undefined = p.has_favicon ? iconObjectUrls.get(p.id) : undefined;
+  const src: string | null = cachedIcon ?? externalSrc;
 
-  if (!src) {
+  if (!src && !p.has_favicon) {
     return html`<span>${fallback}</span>`;
   }
+
+  // When the persisted icon is not cached yet, start the authenticated
+  // fetch and swap the `src` in once it lands. Until then the external
+  // fallback (if any) is shown so the card never renders an empty box.
+  const onImgMounted = (el: Element | undefined): void => {
+    if (!(el instanceof HTMLImageElement) || !p.has_favicon || cachedIcon) return;
+    void loadProviderIconUrl(p.id).then((url: string | null) => {
+      if (!url || !el.isConnected) return;
+      el.src = url;
+      // Undo a fallback-chain "hide" that may have run while we waited.
+      el.style.display = '';
+      if (el.nextElementSibling) (el.nextElementSibling as HTMLElement).style.display = 'none';
+    });
+  };
 
   let attempt = 0;
   const onImgError = (e: Event): void => {
@@ -159,7 +225,7 @@ export function renderProviderIcon(p: Provider): TemplateResult {
   };
 
   return html`
-    <img src=${src} alt=${p.name} class="provider-favicon" @error=${onImgError} loading="lazy" />
+    <img src=${src ?? ''} alt=${p.name} class="provider-favicon" @error=${onImgError} loading="lazy" ${ref(onImgMounted)} />
     <span style="display: none;">${fallback}</span>
   `;
 }

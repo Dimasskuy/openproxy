@@ -75,6 +75,31 @@ fn ensure_dns_sweep_started() {
     });
 }
 
+/// Resolve `host:port` and require EVERY address to be public, regardless
+/// of `OPENPROXY_ALLOW_PRIVATE_UPSTREAMS` (which only relaxes the check
+/// for operator-configured provider upstreams, not for user-supplied URLs).
+///
+/// The addresses are stored in the shared DNS cache, so a subsequent
+/// [`UpstreamClient`](super::UpstreamClient) call for the same
+/// `host:port` within the cache TTL dials exactly the addresses that were
+/// validated here. That closes the resolve-validate-then-resolve-again
+/// TOCTOU/DNS-rebinding window a caller would have if it validated with
+/// its own `lookup_host` and then let the connector resolve independently.
+///
+/// Literal IPs are validated directly (they never touch the cache).
+pub async fn resolve_public_host(host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
+    let addrs = resolve_host(host, port).await?;
+    if addrs.is_empty() {
+        return Err(io::Error::other("host resolved to no addresses"));
+    }
+    if addrs.iter().any(|a| is_private_or_reserved(&a.ip())) {
+        return Err(io::Error::other(
+            "private or reserved IP addresses are not allowed",
+        ));
+    }
+    Ok(addrs)
+}
+
 /// Resolve `host:port` to one or more `SocketAddr`s using tokio's
 /// async DNS, with a simple in-memory cache (5m TTL) to avoid
 /// hitting getaddrinfo on every fresh dial.
@@ -127,4 +152,38 @@ pub(crate) async fn resolve_host(host: &str, port: u16) -> io::Result<Vec<Socket
     ensure_dns_sweep_started();
 
     Ok(addrs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn resolve_public_host_rejects_private_literals_even_in_test_builds() {
+        // `cfg!(test)` relaxes `resolve_host`'s own SSRF gate; the public
+        // variant must still refuse private/reserved targets.
+        for bad in [
+            "127.0.0.1",
+            "10.1.2.3",
+            "192.168.0.1",
+            "169.254.169.254",
+            "0.0.0.0",
+            "::1",
+            "fd00::1",
+        ] {
+            let err = resolve_public_host(bad, 80).await.expect_err(bad);
+            assert!(
+                err.to_string().contains("private or reserved"),
+                "{bad}: {err}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_public_host_accepts_public_literals() {
+        let addrs = resolve_public_host("1.1.1.1", 443)
+            .await
+            .expect("public ip");
+        assert_eq!(addrs, vec!["1.1.1.1:443".parse::<SocketAddr>().unwrap()]);
+    }
 }

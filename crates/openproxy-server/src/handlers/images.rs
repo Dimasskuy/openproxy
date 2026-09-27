@@ -241,26 +241,20 @@ async fn fetch_remote_image(
     let allow_private = cfg!(test)
         || std::env::var("OPENPROXY_ALLOW_PRIVATE_IMAGES").is_ok_and(|v| v == "true" || v == "1");
 
-    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-        if !allow_private && openproxy_adapters::upstream::is_private_or_reserved(&ip) {
-            return Err(ApiError(CoreError::Validation(
-                "private or reserved IP addresses are not allowed".into(),
-            )));
-        }
-    } else {
-        let addrs = tokio::net::lookup_host((host, port)).await.map_err(|e| {
-            ApiError(CoreError::Validation(format!(
-                "failed to resolve image URL host: {e}"
-            )))
-        })?;
-
-        for addr in addrs {
-            if !allow_private && openproxy_adapters::upstream::is_private_or_reserved(&addr.ip()) {
-                return Err(ApiError(CoreError::Validation(
-                    "private or reserved IP addresses are not allowed".into(),
-                )));
-            }
-        }
+    if !allow_private {
+        // SSRF guard for a user-supplied URL. `resolve_public_host` both
+        // validates every resolved address AND seeds the upstream client's
+        // shared DNS cache, so the connector below dials the addresses that
+        // were validated here instead of re-resolving (which would reopen a
+        // DNS-rebinding window — especially with
+        // `OPENPROXY_ALLOW_PRIVATE_UPSTREAMS` set for provider upstreams).
+        openproxy_adapters::upstream::resolve_public_host(host, port)
+            .await
+            .map_err(|e| {
+                ApiError(CoreError::Validation(format!(
+                    "image URL host rejected: {e}"
+                )))
+            })?;
     }
 
     let req = openproxy_adapters::UpstreamRequest::get(url);

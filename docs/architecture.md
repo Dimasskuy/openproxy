@@ -371,5 +371,9 @@ binary at compile time via `rust-embed` (see `crates/openproxy-server/src/admin_
   goes through the server admin REST API.
 - Auth: the dashboard presents an admin API key prompt. The key is stored in browser
   `localStorage` and sent as `Authorization: Bearer <key>` on every
-  `/admin/api/*` request. The `/admin/ws` WebSocket authenticates via a `?token=`
-  query parameter because browsers cannot set custom headers on WebSocket handshakes.
+  `/admin/api/*` request. The `/admin/ws` WebSocket cannot carry that header
+  (browsers cannot set custom headers on WebSocket handshakes), so the dashboard
+  first calls `POST /admin/api/ws-ticket` (Bearer-authenticated) to obtain a
+  single-use, 30-second ticket bound to its key, and opens `/admin/ws?ticket=…`.
+  The raw API key is never placed in a URL, so it cannot leak through
+  reverse-proxy access logs.

@@ -45,6 +45,7 @@ pub fn admin_api_routes() -> axum::Router<AppState> {
         .nest("/proxy-sources", proxy_sources::router())
         .nest("/notifications", notifications::router())
         .nest("/oauth", oauth::router())
+        .route("/ws-ticket", axum::routing::post(usage_ws::issue_ws_ticket))
         .fallback(|| async {
             (
                 axum::http::StatusCode::NOT_FOUND,

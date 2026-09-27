@@ -216,7 +216,7 @@ fn ensure_bootstrap_key_logged(w: &WriterGuard<'_>) -> anyhow::Result<()> {
         tracing::info!(
             id = b.id.0,
             prefix = ?b.key_prefix,
-            "bootstrap key ready (see WARN log / stderr for plaintext)"
+            "bootstrap key ready (plaintext written to the 0600 drop file named in the WARN log above)"
         );
     }
     Ok(())

@@ -13,7 +13,6 @@
 export { CHART_COLORS, cssVar, type ChartColors } from "./colors.js";
 
 export {
-  injectUplotCss,
   createLiveChart,
   createSparkline,
   resizeChart,
