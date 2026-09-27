@@ -73,8 +73,10 @@ struct I18nAssets;
 
 /// Serve the SPA shell. The HTML is `include_str!`-embedded so the
 /// handler returns `Html<&'static str>` with no allocation.
-pub async fn index_html() -> Html<&'static str> {
-    Html(include_str!("../web/src/static/index.html"))
+pub async fn index_html() -> Response {
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    (headers, Html(include_str!("../web/src/static/index.html"))).into_response()
 }
 
 /// Serve the OAuth callback page (a tiny static HTML file that grabs
@@ -91,21 +93,10 @@ pub async fn callback_html() -> Html<&'static str> {
 /// `/admin/dist/app.js`). We strip the leading `/admin/` (or
 /// `/admin`) segment, then look the rest up in the embedded tree.
 ///
-/// If the asset exists, we serve it with the `mime_guess`-derived
-/// Content-Type and an aggressive cache header for hashed bundles
-/// (`dist/*`) or a no-cache header for everything else (HTML, CSS,
-/// fonts — anything that could change between deploys without a
-/// filename change).
-///
-/// If the asset doesn't exist, we fall back to `index_html` so
-/// client-side SPA routes (e.g. `/admin/combos/42/edit`) keep
-/// working — the SPA's hash-router takes over and renders the right
-/// view. This is the standard "SPA fallback" pattern.
-///
-/// Path traversal is blocked: any `..` segment short-circuits to the
-/// SPA fallback (no asset in the embedded tree is named with `..`
-/// anyway, but the explicit guard keeps the handler obviously safe).
-pub async fn serve_asset(uri: Uri) -> Response {
+/// Immutable caching is applied to content-addressed chunks (`dist/chunks/*`)
+/// and binary fonts (`fonts/*`), while entry bundles (`dist/app.js`, `dist/app.css`)
+/// are validated using SHA-256 ETags and HTTP 304 Not Modified responses.
+pub async fn serve_asset(uri: Uri, req_headers: axum::http::HeaderMap) -> Response {
     let raw = uri.path();
     // Strip the `/admin/` prefix (or `/admin` with no trailing slash).
     // `strip_prefix("/admin/")` covers `/admin/dist/app.js` →
@@ -117,32 +108,51 @@ pub async fn serve_asset(uri: Uri) -> Response {
         .trim_start_matches('/');
 
     if path.is_empty() || path.contains("..") {
-        return index_html().await.into_response();
+        return index_html().await;
     }
 
     let Some(file) = DashboardAssets::get(path) else {
         // SPA fallback: unknown `/admin/*` paths (e.g. client-side
         // routes like `/admin/combos/42/edit`) get the SPA shell so the
         // hash-router can take over.
-        return index_html().await.into_response();
+        return index_html().await;
     };
 
+    let hash = file.metadata.sha256_hash();
+    let mut etag = String::with_capacity(66);
+    etag.push('"');
+    for byte in hash {
+        use std::fmt::Write;
+        let _ = write!(etag, "{byte:02x}");
+    }
+    etag.push('"');
+
+    if req_headers
+        .get(header::IF_NONE_MATCH)
+        .is_some_and(|m| m.as_bytes() == etag.as_bytes())
+    {
+        let mut headers = axum::http::HeaderMap::new();
+        if let Ok(val) = HeaderValue::from_str(&etag) {
+            headers.insert(header::ETAG, val);
+        }
+        return (StatusCode::NOT_MODIFIED, headers).into_response();
+    }
+
     let mime = from_path(path).first_or_octet_stream();
-    // `dist/` is the esbuild output — bundles that change content
-    // on every build. We don't currently content-hash filenames
-    // (esbuild emits `app.js`, not `app.<hash>.js`), so an
-    // immutable cache would be a footgun on redeploys. Keep the
-    // no-cache policy for now; if we add content hashing later,
-    // flip `dist/` to `public, max-age=31536000, immutable`.
-    let cache = "no-cache, no-store, must-revalidate";
+    let cache = if path.starts_with("fonts/") || path.starts_with("dist/chunks/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+
     let mut headers = axum::http::HeaderMap::new();
-    // `mime.as_ref()` is `&str`; `HeaderValue::from_str` only
-    // fails on invisible ASCII / control chars, which a
-    // `mime_guess`-derived type never contains.
     if let Ok(ct) = HeaderValue::from_str(mime.as_ref()) {
         headers.insert(header::CONTENT_TYPE, ct);
     }
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
+    if let Ok(val) = HeaderValue::from_str(&etag) {
+        headers.insert(header::ETAG, val);
+    }
     let body = Body::from(file.data);
     (StatusCode::OK, headers, body).into_response()
 }

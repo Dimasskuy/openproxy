@@ -35,11 +35,28 @@ const options = {
   loader: { '.css': 'text' },
 };
 
+const stylesDir = join(__dirname, 'src', 'static', 'styles');
+const cssOptions = {
+  entryPoints: [join(stylesDir, 'index.css')],
+  bundle: true,
+  outfile: join(outDir, 'app.css'),
+  minify: !isWatch,
+  legalComments: 'eof',
+  external: ['/admin/*'],
+  logLevel: 'info',
+};
+
 if (isWatch) {
-  const ctx = await context(options);
-  await ctx.watch();
+  const [jsCtx, cssCtx] = await Promise.all([
+    context(options),
+    context(cssOptions),
+  ]);
+  await Promise.all([jsCtx.watch(), cssCtx.watch()]);
   console.log('Watching for changes...');
 } else {
-  await build(options);
+  await Promise.all([
+    build(options),
+    build(cssOptions),
+  ]);
   console.log('Build complete: ' + outDir);
 }
