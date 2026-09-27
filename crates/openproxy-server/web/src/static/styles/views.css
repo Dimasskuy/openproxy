@@ -69,10 +69,10 @@ input:focus, select:focus, textarea:focus {
 button, .btn {
   border-radius: var(--radius-sm);
   transition: background var(--t-fast), color var(--t-fast),
-              border-color var(--t-fast), opacity var(--t-fast);
+              border-color var(--t-fast), transform var(--t-fast);
 }
-button:hover, .btn:hover { opacity: 0.88; }
-button:active, .btn:active { transform: translateY(1px); }
+button:hover, .btn:hover { opacity: 0.95; border-color: var(--color-border-strong); }
+button:active, .btn:active { transform: scale(0.97); transition-timing-function: var(--t-spring); }
 
 /* Tables: softer borders + rounded corners */
 table {
@@ -97,12 +97,13 @@ table.sticky-header thead th {
 /* Cards: radius + subtle shadow */
 .card, .combo-card {
   border-radius: var(--radius-md);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
-  transition: box-shadow var(--t-base), transform var(--t-base);
+  box-shadow: var(--shadow-subtle);
+  transition: box-shadow var(--t-base), transform var(--t-base), border-color var(--t-fast);
 }
 .combo-card:hover {
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  box-shadow: var(--shadow-elevated);
   transform: translateY(-1px);
+  border-color: var(--color-border-strong);
 }
 
 /* Chart card variant */

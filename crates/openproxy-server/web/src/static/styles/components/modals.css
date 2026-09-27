@@ -6,7 +6,9 @@
 .modal-bg {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -15,11 +17,14 @@
   overflow-y: auto;
 }
 .modal {
-  background: var(--color-bg);
-  border: var(--border-w-2) var(--border-style) var(--color-border);
+  background: var(--color-surface);
+  border: var(--border-w) var(--border-style) var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
   min-width: 400px;
   max-width: 640px;
   width: 100%;
+  overflow: hidden;
 }
 .modal-header {
   display: flex;

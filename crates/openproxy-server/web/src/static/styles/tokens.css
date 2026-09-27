@@ -180,14 +180,17 @@
   --border-w-2:   2px;
   --border-style: solid;
 
-  /* ----- Transitions — smooth ----- */
-  --t-fast:  120ms ease;
-  --t-base:  200ms ease;
+  /* ----- Transitions — smooth & tactile spring ----- */
+  --t-fast:   120ms ease;
+  --t-base:   200ms ease;
+  --t-spring: 150ms cubic-bezier(0.32, 0.72, 0, 1);
 
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow-md: 0 10px 30px rgba(16, 24, 40, 0.08);
-  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.15);
-  --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.20);
+  --shadow-sm:       0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-md:       0 10px 30px rgba(16, 24, 40, 0.08);
+  --shadow-lg:       0 10px 25px rgba(0, 0, 0, 0.15);
+  --shadow-xl:       0 20px 40px rgba(0, 0, 0, 0.20);
+  --shadow-subtle:   var(--shadow-sm);
+  --shadow-elevated: var(--shadow-md);
 
   /* ----- Layout ----- */
   --layout-sidebar-w:          200px;

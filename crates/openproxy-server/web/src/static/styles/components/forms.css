@@ -36,13 +36,19 @@ button.small { padding: 0.2rem 0.5rem; font-size: var(--fs-xs); }
   background: var(--color-surface);
   color: var(--color-text);
   border: var(--border-w) var(--border-style) var(--color-border);
-  transition: all var(--t-fast);
+  box-shadow: var(--shadow-subtle);
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
   text-decoration: none;
   white-space: nowrap;
   user-select: none;
 }
 .btn:hover:not(:disabled) {
-  background: var(--color-surface-2);
+  background: var(--color-surface-soft);
+  border-color: var(--color-border-strong);
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+  transition-timing-function: var(--t-spring);
 }
 .btn-sm {
   padding: 0.25rem 0.55rem;

@@ -5,21 +5,22 @@
 *, *::before, *::after {
   box-sizing: border-box;
   scrollbar-width: thin;
-  scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
+  scrollbar-color: var(--color-scrollbar-thumb) transparent;
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-scrollbar-track);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
   background-color: var(--color-scrollbar-thumb);
-  border-radius: var(--radius-sm);
+  border-radius: 9999px;
+  transition: background-color 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -46,7 +47,7 @@ html, body {
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   margin: 0 0 var(--space-3);
   line-height: var(--lh-tight);
   color: var(--color-text);
@@ -71,6 +72,15 @@ code, pre, kbd, samp {
   font-size: 0.92em;
 }
 
+kbd {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
 button {
   font-family: var(--font-sans);
   font-size: var(--fs-sm);
@@ -80,11 +90,18 @@ button {
   border: var(--border-w) var(--border-style) var(--color-border);
   border-radius: var(--radius-sm);
   padding: 0.4rem 0.8rem;
-  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+  box-shadow: var(--shadow-subtle);
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
 }
-button:hover:not(:disabled) { background: var(--color-surface-2); }
-button:active:not(:disabled) { transform: translateY(1px); }
-button:disabled { cursor: not-allowed; opacity: 0.5; }
+button:hover:not(:disabled) {
+  background: var(--color-surface-soft);
+  border-color: var(--color-border-strong);
+}
+button:active:not(:disabled) {
+  transform: scale(0.97);
+  transition-timing-function: var(--t-spring);
+}
+button:disabled { cursor: not-allowed; opacity: 0.45; }
 button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 
 input, select, textarea {
@@ -95,10 +112,12 @@ input, select, textarea {
   border: var(--border-w) var(--border-style) var(--color-border);
   border-radius: var(--radius-sm);
   padding: 0.4rem 0.6rem;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
 input:focus, select:focus, textarea:focus {
   outline: 2px solid var(--color-primary);
   outline-offset: 0;
+  border-color: var(--color-primary);
 }
 
 ::selection {

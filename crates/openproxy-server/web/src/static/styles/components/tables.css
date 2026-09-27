@@ -24,7 +24,7 @@ th {
   letter-spacing: 0.04em;
   color: var(--color-text-muted);
 }
-tbody tr:hover { background: var(--color-surface-2); }
+tbody tr:hover { background: var(--color-surface-hover); }
 tr.selected { background: var(--color-primary-soft); }
 
 /* ----- Sortable table headers ----- */

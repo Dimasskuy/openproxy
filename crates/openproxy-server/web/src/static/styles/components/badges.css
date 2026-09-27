@@ -5,9 +5,10 @@
 /* ----- Badges & Chips ----- */
 .badge {
   display: inline-block;
-  padding: 0.1rem 0.5rem;
+  padding: 0.15rem 0.5rem;
   font-size: var(--fs-xs);
   border: var(--border-w) var(--border-style) var(--color-border);
+  border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: var(--color-text);
 }
@@ -39,6 +40,7 @@
   background: var(--color-info-soft);
   color: var(--color-info);
   border: var(--border-w) var(--border-style) var(--color-info);
+  border-radius: var(--radius-sm);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
@@ -54,10 +56,11 @@
 /* ----- Status pill ----- */
 .status-pill {
   display: inline-block;
-  padding: 0.1rem 0.5rem;
+  padding: 0.12rem 0.5rem;
   font-size: var(--fs-xs);
   font-family: var(--font-mono);
   border: var(--border-w) var(--border-style) currentColor;
+  border-radius: var(--radius-sm);
   background: transparent;
 }
 .status-pill.ok, .status-pill.on, .status-pill.success {
