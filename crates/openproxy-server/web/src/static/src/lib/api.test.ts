@@ -103,6 +103,17 @@ describe("api", () => {
     await expect(api("/x")).rejects.toThrow(`${status}: failure`);
   });
 
+  it("clears token and redirects to login on 401 Unauthorized", async () => {
+    localStorage.setItem(TOKEN_KEY, "expired-token");
+    location.hash = "#/keys";
+    fetchSpy.mockResolvedValue(response("unauthorized", 401, "text/plain"));
+
+    await expect(api("/keys")).rejects.toThrow("401: unauthorized");
+
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(location.hash).toBe("#/login");
+  });
+
   it("reads the response body before throwing", async () => {
     const r = response("body was consumed", 502);
     const textSpy = vi.spyOn(r, "text");

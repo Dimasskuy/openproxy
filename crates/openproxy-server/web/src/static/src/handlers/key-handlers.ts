@@ -15,6 +15,7 @@
 
 import { state } from "../state/index.js";
 import { api } from "../state/api.js";
+import { clearToken, isCurrentSessionKey } from "../state/auth.js";
 import { html, render, type TemplateResult } from "lit-html";
 import { showPlaintextKey } from "../components/key-display.js";
 import {
@@ -391,12 +392,17 @@ export async function regenerateKey(id: number, label: string | null): Promise<v
     danger: true,
     confirmLabel: "Regenerate",
   }))) return;
-  // intentionally not using mutateAndRefresh because: Tier 4 critical
-  // flow — success path opens the plaintext-key modal instead of a
-  // toast + re-render.
+  const isSelf = isCurrentSessionKey(id);
   try {
     const result = await api(`/keys/${id}/regenerate`, { method: "POST" }) as KeyPlaintextResponse;
-    showPlaintextKey(result.plaintext, result.key);
+    if (isSelf) {
+      clearToken();
+    }
+    showPlaintextKey(result.plaintext, result.key, () => {
+      if (isSelf) {
+        location.hash = "#/login";
+      }
+    });
   } catch (e: unknown) {
     showApiError(e, "Error");
   }
@@ -410,12 +416,22 @@ export async function revokeKey(id: number, label: string | null): Promise<void>
     danger: true,
     confirmLabel: "Revoke",
   }))) return;
+  const isSelf = isCurrentSessionKey(id);
   await mutateAndRefresh({
     apiCall: async () => {
       await api(`/keys/${id}/revoke`, { method: "POST" });
+      if (isSelf) {
+        clearToken();
+        location.hash = "#/login";
+        return;
+      }
       state.apiKeys = await api("/keys") as typeof state.apiKeys;
     },
   });
+  if (isSelf) {
+    clearToken();
+    location.hash = "#/login";
+  }
 }
 
 export function viewKeyUsage(id: number): void {
@@ -430,10 +446,20 @@ export async function deleteKey(id: number, label: string | null): Promise<void>
     danger: true,
     confirmLabel: "Delete",
   }))) return;
+  const isSelf = isCurrentSessionKey(id);
   await mutateAndRefresh({
     apiCall: async () => {
       await api(`/keys/${id}`, { method: "DELETE" });
+      if (isSelf) {
+        clearToken();
+        location.hash = "#/login";
+        return;
+      }
       state.apiKeys = (state.apiKeys || []).filter((k) => (k as { id: number }).id !== id);
     },
   });
+  if (isSelf) {
+    clearToken();
+    location.hash = "#/login";
+  }
 }

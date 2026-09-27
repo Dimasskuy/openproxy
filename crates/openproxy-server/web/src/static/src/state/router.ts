@@ -189,6 +189,16 @@ export function navigate(): void {
     location.hash = "#/";
     return;
   }
+  if (r.name === "login") {
+    document.querySelectorAll(".modal-bg").forEach((el: Element) => {
+      const parent: HTMLElement | null = el.parentElement;
+      if (parent && parent !== document.body && parent.id !== "modal-root") {
+        parent.remove();
+      } else {
+        el.remove();
+      }
+    });
+  }
   // Toggle a body class so CSS can hide the sidebar on the login
   // page (the sidebar's nav links would otherwise bounce back to
   // #/login via the auth gate, which is confusing on the login
@@ -303,4 +313,5 @@ export function forceRerenderCurrentView(): void {
 // only path to them is through data-action or direct import.
 export function installRouter(): void {
   window.addEventListener("hashchange", navigate);
+  window.addEventListener("popstate", navigate);
 }

@@ -11,6 +11,7 @@
 import { html, type TemplateResult } from 'lit-html';
 import { state } from "../state/index.js";
 import { api } from "../state/api.js";
+import { clearToken, isCurrentSessionKey } from "../state/auth.js";
 import { requestUpdate } from "../state/reactive.js";
 import { createView } from "../lib/view-utils.js";
 import { showToast } from "../components/toast.js";
@@ -59,9 +60,17 @@ async function onRegenerateKey(id: number, label: string | null): Promise<void> 
     danger: true,
     confirmLabel: t("keys.list.confirm.regenerate.confirm"),
   }))) return;
+  const isSelf = isCurrentSessionKey(id);
   try {
     const result = (await api(`/keys/${id}/regenerate`, { method: "POST" })) as KeyPlaintextResponse;
-    showPlaintextKey(result.plaintext, result.key);
+    if (isSelf) {
+      clearToken();
+    }
+    showPlaintextKey(result.plaintext, result.key, () => {
+      if (isSelf) {
+        location.hash = "#/login";
+      }
+    });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     showToast(t("keys.list.toast.error_prefix") + msg, "error");
@@ -76,11 +85,22 @@ async function onRevokeKey(id: number, label: string | null): Promise<void> {
     danger: true,
     confirmLabel: t("keys.list.confirm.revoke.confirm"),
   }))) return;
+  const isSelf = isCurrentSessionKey(id);
   try {
     await api(`/keys/${id}/revoke`, { method: "POST" });
+    if (isSelf) {
+      clearToken();
+      location.hash = "#/login";
+      return;
+    }
     state.apiKeys = await api("/keys") as typeof state.apiKeys;
     requestUpdate();
   } catch (e: unknown) {
+    if (isSelf) {
+      clearToken();
+      location.hash = "#/login";
+      return;
+    }
     const msg = e instanceof Error ? e.message : String(e);
     showToast(t("keys.list.toast.error_prefix") + msg, "error");
   }
@@ -94,11 +114,22 @@ async function onDeleteKey(id: number, label: string | null): Promise<void> {
     danger: true,
     confirmLabel: t("keys.list.confirm.delete.confirm"),
   }))) return;
+  const isSelf = isCurrentSessionKey(id);
   try {
     await api(`/keys/${id}`, { method: "DELETE" });
+    if (isSelf) {
+      clearToken();
+      location.hash = "#/login";
+      return;
+    }
     state.apiKeys = (state.apiKeys || []).filter((k) => (k as { id: number }).id !== id);
     requestUpdate();
   } catch (e: unknown) {
+    if (isSelf) {
+      clearToken();
+      location.hash = "#/login";
+      return;
+    }
     const msg = e instanceof Error ? e.message : String(e);
     showToast(t("keys.list.toast.error_prefix") + msg, "error");
   }

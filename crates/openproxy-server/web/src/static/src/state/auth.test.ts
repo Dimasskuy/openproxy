@@ -167,4 +167,33 @@ describe("auth store", () => {
 
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
+
+  it("isCurrentSessionKey detects current key by id or prefix", async () => {
+    const { setToken, isCurrentSessionKey } = await import("./auth.js");
+    const { state } = await import("./index.js");
+
+    setToken("op_live_MYKEY1234567890abcdef");
+    state.apiKeys = [
+      { id: 42, key_prefix: "op_live_MYKE", label: "My Key" } as any,
+      { id: 99, key_prefix: "op_live_OTHER", label: "Other Key" } as any,
+    ];
+
+    expect(isCurrentSessionKey(42)).toBe(true);
+    expect(isCurrentSessionKey(99)).toBe(false);
+    expect(isCurrentSessionKey({ id: 42 })).toBe(true);
+    expect(isCurrentSessionKey({ id: 99 })).toBe(false);
+    expect(isCurrentSessionKey({ key_prefix: "op_live_MYKE" })).toBe(true);
+    expect(isCurrentSessionKey({ key_prefix: "op_live_OTHER" })).toBe(false);
+  });
+
+  it("invalidateSession clears token and updates hash to #/login", async () => {
+    const { setToken, getToken, invalidateSession } = await import("./auth.js");
+    setToken("op_live_MYKEY");
+    location.hash = "#/keys";
+
+    invalidateSession();
+
+    expect(getToken()).toBeNull();
+    expect(location.hash).toBe("#/login");
+  });
 });

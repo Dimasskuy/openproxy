@@ -18,7 +18,7 @@
 // (which sets the token optimistically before the call).
 
 import { state } from "../state/index.js";
-import { getToken } from "../state/auth.js";
+import { getToken, clearToken } from "../state/auth.js";
 import type { DebugLogsResponse } from "./types/api.js";
 
 export interface ApiOptions {
@@ -36,6 +36,12 @@ export async function api(path: string, opts: ApiOptions = {}): Promise<unknown>
   if (opts.body) init.body = opts.body;
   const r: Response = await fetch("/admin/api" + path, init);
   if (!r.ok) {
+    if (r.status === 401) {
+      clearToken();
+      if (typeof location !== "undefined" && !location.hash.startsWith("#/login") && path !== "/notifications/unread-count") {
+        location.hash = "#/login";
+      }
+    }
     const txt: string = await r.text();
     throw new Error(`${r.status}: ${txt}`);
   }

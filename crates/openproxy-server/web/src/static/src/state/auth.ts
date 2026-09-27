@@ -35,6 +35,8 @@
 //     for `<input type="password">`. A future iteration could add
 //     a session timer that calls `clearToken()` after N hours.
 
+import { state } from "./index.js";
+
 const STORAGE_KEY = "openproxy_admin_token";
 
 // Module-local cached token. Seeded from localStorage on first
@@ -107,3 +109,31 @@ export function getToken(): string | null {
 export function isLoggedIn(): boolean {
   return getToken() !== null;
 }
+
+/** Check if a given key id or prefix matches the active session token. */
+export function isCurrentSessionKey(
+  keyIdOrObj: number | { id?: number; key_prefix?: string | null },
+  keyPrefix?: string | null,
+): boolean {
+  const token = getToken();
+  if (!token) return false;
+  const id = typeof keyIdOrObj === "object" ? keyIdOrObj.id : keyIdOrObj;
+  const prefix = (typeof keyIdOrObj === "object" ? keyIdOrObj.key_prefix : keyPrefix) ?? null;
+  if (prefix && token.startsWith(prefix)) return true;
+  if (id != null) {
+    const found = (state.apiKeys || []).find((k) => (k as { id: number }).id === id);
+    if (found?.key_prefix && token.startsWith(found.key_prefix)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Invalidate active session: clear stored token and redirect to login if not already there. */
+export function invalidateSession(): void {
+  clearToken();
+  if (typeof location !== "undefined" && !location.hash.startsWith("#/login")) {
+    location.hash = "#/login";
+  }
+}
+
