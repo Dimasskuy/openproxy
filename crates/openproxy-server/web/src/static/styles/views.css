@@ -147,8 +147,21 @@ table.sticky-header thead th {
   margin-bottom: var(--space-3); flex-wrap: wrap; gap: var(--space-2);
 }
 .page-header h2 { margin: 0; font-size: var(--fs-xl); font-weight: 700; }
-@media (max-width: 640px) {
-  .page-header h2 { font-size: 1.1rem; }
+@media (max-width: 768px) {
+  .page-header h2,
+  .logs-header h2,
+  .analytics-header h2,
+  .home-title,
+  .playground-studio-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+  .section-header h3,
+  .config-card .section-header h3,
+  .combo-card h3 {
+    font-size: var(--fs-md);
+    font-weight: 600;
+  }
 }
 .page-header .actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 

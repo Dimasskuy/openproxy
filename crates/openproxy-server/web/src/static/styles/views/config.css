@@ -95,7 +95,7 @@
 .config-card .section-header h3 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -534,11 +534,12 @@ details[open] > .config-details-summary .summary-chevron {
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   }
 
-  .config-field input[type="number"],
+  .config-field input,
   .config-field select,
   .config-field button {
     width: 100%;
     min-height: 44px;
+    font-size: var(--fs-sm);
   }
 
   .config-inline-setting {

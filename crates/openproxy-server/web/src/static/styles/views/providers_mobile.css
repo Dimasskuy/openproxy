@@ -25,7 +25,7 @@
     gap: var(--space-2);
   }
   .provider-detail-title-row h2 {
-    font-size: var(--fs-lg);
+    font-size: 1.1rem;
   }
   .provider-detail-meta {
     gap: var(--space-1);

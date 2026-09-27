@@ -712,5 +712,9 @@
   .form-row-2, .form-row-3 {
     grid-template-columns: 1fr;
   }
+  .combos-search-input {
+    width: 100%;
+    font-size: var(--fs-sm);
+  }
 }
 

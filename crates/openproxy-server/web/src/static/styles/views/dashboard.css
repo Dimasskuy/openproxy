@@ -437,6 +437,13 @@
     align-items: stretch;
     gap: 8px;
   }
+  .home-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+  .home-subtitle {
+    font-size: var(--fs-xs);
+  }
 
   /* KPIs en 2 Columnas */
   .home-kpi-grid {

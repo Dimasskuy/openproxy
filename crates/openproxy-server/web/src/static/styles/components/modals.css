@@ -93,13 +93,13 @@
   }
   .modal-picker { max-width: calc(100vw - 1rem); }
 
-  input:not([type="checkbox"]):not([type="radio"]),
-  select,
-  textarea {
-    font-size: 16px !important;
+  .modal input:not([type="checkbox"]):not([type="radio"]),
+  .modal select,
+  .modal textarea {
+    font-size: var(--fs-sm);
   }
 
-  button.small {
+  .modal button.small {
     min-height: 36px;
     padding: 0.35rem 0.65rem;
     font-size: var(--fs-xs);

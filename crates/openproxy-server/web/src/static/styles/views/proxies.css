@@ -183,7 +183,7 @@
   }
 
   .filter-selects select {
-    height: 26px;
+    height: 28px;
     font-size: var(--fs-sm);
     padding: 0 4px;
     border-radius: 0;

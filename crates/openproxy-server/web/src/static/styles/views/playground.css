@@ -416,6 +416,7 @@
 
 
 @media (max-width: 768px) {
+  .playground-studio-title { font-size: 1.1rem; }
   .playground-studio-grid { grid-template-columns: 1fr; gap: var(--space-3); }
   .playground-segmented-control { flex-wrap: wrap; }
   .playground-segmented-control button { flex: 1 1 45%; text-align: center; }
