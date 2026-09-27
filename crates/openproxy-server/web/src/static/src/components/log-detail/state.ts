@@ -51,6 +51,7 @@ export interface LogDetailLog {
   model_id?: string;
   upstream_model?: string;
   account_id?: string | number | null;
+  account_label?: string | null;
   combo_id?: string | number | null;
   api_key_id?: string | number | null;
   user_agent?: string | null;

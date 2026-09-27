@@ -149,3 +149,73 @@ fn map_usage_row_negative_total_ms_returns_error() {
     let result = conn.query_row("SELECT * FROM usage WHERE id = 1", [], map_usage_row);
     assert!(result.is_err(), "negative total_ms should fail");
 }
+
+#[test]
+fn test_detail_by_id_includes_account_label() {
+    use super::detail::detail_by_id;
+
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE accounts (
+            id INTEGER PRIMARY KEY,
+            label TEXT
+        );
+        CREATE TABLE usage (
+            id INTEGER PRIMARY KEY,
+            request_id TEXT NOT NULL,
+            trace_id TEXT NOT NULL,
+            attempt INTEGER NOT NULL DEFAULT 1,
+            provider_id TEXT NOT NULL,
+            account_id INTEGER,
+            combo_id INTEGER,
+            combo_target_id INTEGER,
+            model_row_id INTEGER,
+            upstream_model_id TEXT NOT NULL,
+            prompt_tokens INTEGER,
+            completion_tokens INTEGER,
+            connect_ms INTEGER,
+            ttft_ms INTEGER,
+            total_ms INTEGER NOT NULL,
+            tokens_per_sec REAL,
+            status_code INTEGER NOT NULL,
+            error_msg TEXT,
+            error_msg_redacted TEXT,
+            race_total INTEGER NOT NULL DEFAULT 0,
+            race_attempts INTEGER NOT NULL DEFAULT 0,
+            race_lost INTEGER NOT NULL DEFAULT 0,
+            api_key_id INTEGER,
+            created_at TEXT NOT NULL,
+            is_streaming INTEGER NOT NULL DEFAULT 0,
+            stream_complete INTEGER NOT NULL DEFAULT 0,
+            request_body_json TEXT,
+            response_body_json TEXT,
+            request_headers TEXT,
+            response_headers TEXT,
+            error_message TEXT,
+            client_response INTEGER NOT NULL DEFAULT 0,
+            prompt_tokens_estimated INTEGER NOT NULL DEFAULT 0,
+            completion_tokens_estimated INTEGER NOT NULL DEFAULT 0,
+            endpoint_kind TEXT NOT NULL DEFAULT 'chat',
+            proxy_url TEXT,
+            proxy_status TEXT,
+            is_proxy_rotated INTEGER NOT NULL DEFAULT 0,
+            pii_redacted TEXT
+        );
+        INSERT INTO accounts (id, label) VALUES (205, 'My Custom Account Label');
+        INSERT INTO usage (id, request_id, trace_id, attempt, provider_id, account_id,
+            upstream_model_id, status_code, total_ms, created_at)
+        VALUES (1, 'req_1', 'tr_1', 1, 'minimax', 205, 'MiniMax-M3.1', 200, 150, '2026-09-27T10:00:00Z');
+        INSERT INTO usage (id, request_id, trace_id, attempt, provider_id, account_id,
+            upstream_model_id, status_code, total_ms, created_at)
+        VALUES (2, 'req_2', 'tr_2', 1, 'minimax', NULL, 'MiniMax-M3.1', 200, 150, '2026-09-27T10:00:00Z');",
+    )
+    .unwrap();
+
+    let detail1 = detail_by_id(&conn, 1).unwrap().expect("row 1 exists");
+    assert_eq!(detail1.account_id.map(|a| a.0), Some(205));
+    assert_eq!(detail1.account_label.as_deref(), Some("My Custom Account Label"));
+
+    let detail2 = detail_by_id(&conn, 2).unwrap().expect("row 2 exists");
+    assert_eq!(detail2.account_id, None);
+    assert_eq!(detail2.account_label, None);
+}

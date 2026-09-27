@@ -88,16 +88,32 @@ pub fn redact_error_msg(raw: &str) -> (String, String) {
     (sanitized.clone(), sanitized)
 }
 
+static WARNED_MISSING_PRICING: LazyLock<parking_lot::Mutex<std::collections::HashSet<u64>>> =
+    LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashSet::new()));
+
 fn warn_missing_pricing(input: &UsageInput, price: Option<&pricing::Price>) {
     if price.is_none()
         && (input.prompt_tokens.is_some_and(|t| t > 0)
             || input.completion_tokens.is_some_and(|t| t > 0))
     {
-        tracing::warn!(
-            provider_id = %input.provider_id,
-            upstream_model_id = %input.upstream_model_id,
-            "no pricing data found; recording cost_usd = 0 (run models.dev sync or set pricing manually)"
-        );
+        use std::hash::{DefaultHasher, Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        input.provider_id.hash(&mut hasher);
+        input.upstream_model_id.hash(&mut hasher);
+        let key = hasher.finish();
+
+        let mut warned = WARNED_MISSING_PRICING.lock();
+        if warned.len() > 1024 {
+            warned.clear();
+        }
+        if warned.insert(key) {
+            tracing::warn!(
+                provider_id = %input.provider_id,
+                upstream_model_id = %input.upstream_model_id,
+                "no pricing data found; recording cost_usd = 0 (run models.dev sync or set pricing manually)"
+            );
+        }
     }
 }
 

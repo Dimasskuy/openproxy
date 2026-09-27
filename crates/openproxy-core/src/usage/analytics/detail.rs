@@ -34,6 +34,7 @@ pub struct UsageDetailRow {
     pub attempt: i64,
     pub provider_id: ProviderId,
     pub account_id: Option<AccountId>,
+    pub account_label: Option<String>,
     pub combo_id: Option<ComboId>,
     pub combo_target_id: Option<ComboTargetId>,
     pub model_row_id: Option<ModelRowId>,
@@ -83,6 +84,8 @@ struct UsageDetailRowSerde {
     pub attempt: i64,
     pub provider_id: ProviderId,
     pub account_id: Option<AccountId>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub account_label: Option<String>,
     pub combo_id: Option<ComboId>,
     pub combo_target_id: Option<ComboTargetId>,
     pub model_row_id: Option<ModelRowId>,
@@ -130,6 +133,7 @@ impl Serialize for UsageDetailRow {
             attempt: self.attempt,
             provider_id: self.provider_id.clone(),
             account_id: self.account_id,
+            account_label: self.account_label.clone(),
             combo_id: self.combo_id,
             combo_target_id: self.combo_target_id,
             model_row_id: self.model_row_id,
@@ -203,6 +207,7 @@ impl<'de> Deserialize<'de> for UsageDetailRow {
             attempt: shadow.attempt,
             provider_id: shadow.provider_id,
             account_id: shadow.account_id,
+            account_label: shadow.account_label,
             combo_id: shadow.combo_id,
             combo_target_id: shadow.combo_target_id,
             model_row_id: shadow.model_row_id,
@@ -291,6 +296,8 @@ fn row_to_usage_detail(row: &Row<'_>) -> rusqlite::Result<UsageDetailRow> {
     let is_proxy_rotated: i64 = row.get(col_idx)?;
     col_idx += 1;
     let pii_redacted: Option<String> = row.get(col_idx).unwrap_or(None);
+    col_idx += 1;
+    let account_label: Option<String> = row.get(col_idx).unwrap_or(None);
 
     if !(0..=i64::from(u16::MAX)).contains(&status_code) {
         return Err(rusqlite::Error::FromSqlConversionFailure(
@@ -342,6 +349,7 @@ fn row_to_usage_detail(row: &Row<'_>) -> rusqlite::Result<UsageDetailRow> {
         attempt,
         provider_id: ProviderId::new(provider_id),
         account_id: account_id.map(AccountId),
+        account_label,
         combo_id: combo_id.map(ComboId),
         combo_target_id: combo_target_id.map(ComboTargetId),
         model_row_id: model_row_id.map(ModelRowId),
@@ -375,19 +383,20 @@ fn row_to_usage_detail(row: &Row<'_>) -> rusqlite::Result<UsageDetailRow> {
 pub fn detail_by_id(conn: &Connection, id: i64) -> Result<Option<UsageDetailRow>> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, request_id, trace_id, attempt, provider_id, account_id, \
-                    combo_id, combo_target_id, model_row_id, upstream_model_id, \
-                    prompt_tokens, completion_tokens, connect_ms, ttft_ms, \
-                    total_ms, tokens_per_sec, status_code, error_msg, \
-                    error_msg_redacted, race_total, race_attempts, race_lost, \
-                    api_key_id, created_at, is_streaming, stream_complete, \
-                    request_body_json, response_body_json, request_headers, \
-                    response_headers, error_message, client_response, \
-                    prompt_tokens_estimated, completion_tokens_estimated, \
-                    endpoint_kind, proxy_url, proxy_status, is_proxy_rotated, \
-                    pii_redacted \
-             FROM usage \
-             WHERE id = ?1",
+            "SELECT u.id, u.request_id, u.trace_id, u.attempt, u.provider_id, u.account_id, \
+                    u.combo_id, u.combo_target_id, u.model_row_id, u.upstream_model_id, \
+                    u.prompt_tokens, u.completion_tokens, u.connect_ms, u.ttft_ms, \
+                    u.total_ms, u.tokens_per_sec, u.status_code, u.error_msg, \
+                    u.error_msg_redacted, u.race_total, u.race_attempts, u.race_lost, \
+                    u.api_key_id, u.created_at, u.is_streaming, u.stream_complete, \
+                    u.request_body_json, u.response_body_json, u.request_headers, \
+                    u.response_headers, u.error_message, u.client_response, \
+                    u.prompt_tokens_estimated, u.completion_tokens_estimated, \
+                    u.endpoint_kind, u.proxy_url, u.proxy_status, u.is_proxy_rotated, \
+                    u.pii_redacted, a.label \
+             FROM usage u \
+             LEFT JOIN accounts a ON u.account_id = a.id \
+             WHERE u.id = ?1",
         )
         .map_err(openproxy_db::error::map_db_error)?;
 
@@ -402,20 +411,21 @@ pub fn detail_by_id(conn: &Connection, id: i64) -> Result<Option<UsageDetailRow>
 pub fn detail_by_trace_id(conn: &Connection, trace_id: &str) -> Result<Option<UsageDetailRow>> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, request_id, trace_id, attempt, provider_id, account_id, \
-                    combo_id, combo_target_id, model_row_id, upstream_model_id, \
-                    prompt_tokens, completion_tokens, connect_ms, ttft_ms, \
-                    total_ms, tokens_per_sec, status_code, error_msg, \
-                    error_msg_redacted, race_total, race_attempts, race_lost, \
-                    api_key_id, created_at, is_streaming, stream_complete, \
-                    request_body_json, response_body_json, request_headers, \
-                    response_headers, error_message, client_response, \
-                    prompt_tokens_estimated, completion_tokens_estimated, \
-                    endpoint_kind, proxy_url, proxy_status, is_proxy_rotated, \
-                    pii_redacted \
-             FROM usage \
-             WHERE trace_id = ?1 \
-             ORDER BY client_response DESC, id DESC \
+            "SELECT u.id, u.request_id, u.trace_id, u.attempt, u.provider_id, u.account_id, \
+                    u.combo_id, u.combo_target_id, u.model_row_id, u.upstream_model_id, \
+                    u.prompt_tokens, u.completion_tokens, u.connect_ms, u.ttft_ms, \
+                    u.total_ms, u.tokens_per_sec, u.status_code, u.error_msg, \
+                    u.error_msg_redacted, u.race_total, u.race_attempts, u.race_lost, \
+                    u.api_key_id, u.created_at, u.is_streaming, u.stream_complete, \
+                    u.request_body_json, u.response_body_json, u.request_headers, \
+                    u.response_headers, u.error_message, u.client_response, \
+                    u.prompt_tokens_estimated, u.completion_tokens_estimated, \
+                    u.endpoint_kind, u.proxy_url, u.proxy_status, u.is_proxy_rotated, \
+                    u.pii_redacted, a.label \
+             FROM usage u \
+             LEFT JOIN accounts a ON u.account_id = a.id \
+             WHERE u.trace_id = ?1 \
+             ORDER BY u.client_response DESC, u.id DESC \
              LIMIT 1",
         )
         .map_err(openproxy_db::error::map_db_error)?;

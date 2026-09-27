@@ -7,6 +7,7 @@
 
 import { html, render, type TemplateResult } from "lit-html";
 import { state } from "../../state/index.js";
+import { api } from "../../lib/api.js";
 import { ensureModalRoot } from "../../lib/ui-utils.js";
 import { icons, endpointIcon } from "../../lib/icons.js";
 import { liveLogsStore } from "../../state/live-logs-store.js";
@@ -28,6 +29,29 @@ import {
   renderResponseTab,
   stringStatusPillClass,
 } from "./index.js";
+
+export function getAccountDisplay(
+  accountId: string | number | null,
+  accountLabelDirect?: string | null
+): { text: string; title?: string } {
+  const direct = accountLabelDirect?.trim();
+  if (direct) {
+    const title = accountId != null && accountId !== "" && accountId !== "—" ? `Account #${accountId}` : undefined;
+    return title ? { text: direct, title } : { text: direct };
+  }
+  if (accountId != null && accountId !== "" && accountId !== "—") {
+    const match = (state.accounts || []).find((a) => String(a.id) === String(accountId));
+    const label = match?.label?.trim();
+    if (label) {
+      return {
+        text: label,
+        title: `Account #${accountId}`,
+      };
+    }
+    return { text: String(accountId) };
+  }
+  return { text: "—" };
+}
 
 export function renderLogDetailModal(log: LogDetailLog): TemplateResult {
   // /usage/detail returns canonical names (status_code, total_ms, upstream_model_id) while the
@@ -66,7 +90,9 @@ export function renderLogDetailModal(log: LogDetailLog): TemplateResult {
     ? log.request_body_json
     : (detail["request_body_json"] != null ? detail["request_body_json"] : null);
   const provider: string = log.provider_id || (readString(meta, "provider_id") ?? "—");
-  const account: string | number | null = log.account_id != null ? log.account_id : meta["account_id"] != null ? (meta["account_id"] as string | number) : "—";
+  const accountId: string | number | null = log.account_id != null ? log.account_id : meta["account_id"] != null ? (meta["account_id"] as string | number) : null;
+  const accountLabelDirect: string | null | undefined = (log.account_label as string | undefined) ?? (detail["account_label"] as string | undefined) ?? (meta["account_label"] as string | undefined);
+  const accountDisplay = getAccountDisplay(accountId, accountLabelDirect);
   const comboRaw: unknown = log.combo_id ?? meta["combo_id"];
   const combo: string | number | null = comboRaw != null && (typeof comboRaw === "string" || typeof comboRaw === "number") ? comboRaw : null;
   const model: string = log.model_id || log.upstream_model || log.upstream_model_id || (readString(meta, "model_id") ?? "—");
@@ -156,7 +182,7 @@ export function renderLogDetailModal(log: LogDetailLog): TemplateResult {
             <div><strong>Tokens:</strong> <span class="mono-val"${compressionTooltip ? html` title=${compressionTooltip}` : ""}>${tokensDisplay}</span></div>
             <div><strong>Speed:</strong> <span class="mono-val">${speedDisplay}</span></div>
             <div><strong>Cost:</strong> <span class="mono-val">${costDisplay}</span></div>
-            <div><strong>Account:</strong> ${String(account)}</div>
+            <div><strong>Account:</strong> ${accountDisplay.title ? html`<span title=${accountDisplay.title}>${accountDisplay.text}</span>` : accountDisplay.text}</div>
             <div><strong>Combo:</strong> ${comboText}</div>
             <div><strong>API Key:</strong> ${apiKeyDisplay}</div>
             <div><strong>Created:</strong> ${String(createdAt)}</div>
@@ -277,6 +303,15 @@ export async function openLogDetail(
     }
   }
 
+  if (!state.accounts || state.accounts.length === 0) {
+    void (api("/accounts") as Promise<typeof state.accounts>).then((accs) => {
+      if (Array.isArray(accs) && isCurrentOpenLogDetailGeneration(gen)) {
+        state.accounts = accs;
+        renderModal();
+      }
+    }).catch(() => {});
+  }
+
   if (!isCurrentOpenLogDetailGeneration(gen)) return;
 
   const hasValidId = Boolean(id && id !== "0");
@@ -309,9 +344,13 @@ function renderModal() {
   const detailObj = attempt?.detail as Record<string, unknown> | undefined;
   const log = attempt.row;
   const safeAttempt = { ...attempt, detail: undefined, row: undefined };
+  const rawLogObj = log as unknown as Record<string, unknown> | null;
+  const rawAttempt = attempt as unknown as Record<string, unknown>;
   const logObj = detailObj && log ? {
     ...detailObj,
     ...log,
+    account_id: detailObj['account_id'] ?? rawLogObj?.['account_id'],
+    account_label: detailObj['account_label'],
     request_body_json: detailObj['request_body_json'] ?? log.request_body_json,
     response_body_json: detailObj['response_body_json'] ?? log.response_body_json,
     request_headers: detailObj['request_headers'] ?? log.request_headers,
@@ -319,14 +358,17 @@ function renderModal() {
     stages: [safeAttempt],
     detail: undefined
   } : {
-    id: attempt.rowId,
+    ...(detailObj ?? {}),
+    id: attempt.rowId ?? detailObj?.['id'],
     request_id: attempt.requestId,
     trace_id: attempt.traceId,
-    status_code: attempt.statusCode,
+    status_code: attempt.statusCode ?? detailObj?.['status_code'],
     total_ms: attempt.elapsedMsAtEvent,
     provider_id: attempt.providerId,
     upstream_model_id: attempt.upstreamModelId,
     error_message: attempt.error,
+    account_id: detailObj?.['account_id'] ?? rawAttempt['account_id'],
+    account_label: detailObj?.['account_label'],
     request_body_json: detailObj?.['request_body_json'],
     response_body_json: detailObj?.['response_body_json'],
     stages: [safeAttempt]

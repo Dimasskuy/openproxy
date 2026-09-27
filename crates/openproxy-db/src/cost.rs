@@ -156,16 +156,36 @@ fn insert_usage_record(
     Ok(conn.last_insert_rowid())
 }
 
+static WARNED_MISSING_PRICING: LazyLock<parking_lot::Mutex<std::collections::HashSet<u64>>> =
+    LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashSet::new()));
+
+fn warn_missing_pricing_once(provider_id: &str, upstream_model_id: &str) {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    provider_id.hash(&mut hasher);
+    upstream_model_id.hash(&mut hasher);
+    let key = hasher.finish();
+
+    let mut warned = WARNED_MISSING_PRICING.lock();
+    if warned.len() > 1024 {
+        warned.clear();
+    }
+    if warned.insert(key) {
+        tracing::warn!(
+            provider_id = %provider_id,
+            upstream_model_id = %upstream_model_id,
+            "no pricing data found; recording cost_usd = NULL (run models.dev sync or set pricing manually)"
+        );
+    }
+}
+
 pub fn record(conn: &Connection, input: &UsageInput) -> openproxy_types::Result<UsageId> {
     let price = pricing::lookup_with_db(conn, input.provider_id.as_str(), &input.upstream_model_id);
     if price.is_none()
         && (input.prompt_tokens.unwrap_or(0) > 0 || input.completion_tokens.unwrap_or(0) > 0)
     {
-        tracing::warn!(
-            provider_id = %input.provider_id,
-            upstream_model_id = %input.upstream_model_id,
-            "no pricing data found; recording cost_usd = NULL (run models.dev sync or set pricing manually)"
-        );
+        warn_missing_pricing_once(input.provider_id.as_str(), &input.upstream_model_id);
     }
     let (cost_usd, tps) = compute(price, input);
     let error_msg_for_db = prepare_usage_error_msg(input.error_msg.as_ref());
