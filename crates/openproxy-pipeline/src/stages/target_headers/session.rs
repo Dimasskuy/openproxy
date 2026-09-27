@@ -180,13 +180,12 @@ pub struct CodeBuddySessionTranslator;
 
 impl ProviderSessionTranslator for CodeBuddySessionTranslator {
     fn apply_session(&self, headers: &mut Vec<(String, String)>, canonical_session: &str) {
-        let session_val = if !canonical_session.is_empty()
-            && !canonical_session.starts_with("sess-openproxy-")
-        {
-            canonical_session.to_string()
-        } else {
-            format_as_uuid(canonical_session)
-        };
+        let session_val =
+            if !canonical_session.is_empty() && !canonical_session.starts_with("sess-openproxy-") {
+                canonical_session.to_string()
+            } else {
+                format_as_uuid(canonical_session)
+            };
         upsert_header(headers, "x-conversation-id", session_val);
     }
 }
@@ -255,13 +254,28 @@ pub struct DefaultSessionTranslator;
 
 impl ProviderSessionTranslator for DefaultSessionTranslator {
     fn apply_session(&self, headers: &mut Vec<(String, String)>, canonical_session: &str) {
-        if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("x-session-affinity")) {
-            headers.push(("x-session-affinity".to_string(), canonical_session.to_string()));
+        if !headers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("x-session-affinity"))
+        {
+            headers.push((
+                "x-session-affinity".to_string(),
+                canonical_session.to_string(),
+            ));
         }
-        if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("x-conversation-id")) {
-            headers.push(("x-conversation-id".to_string(), canonical_session.to_string()));
+        if !headers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("x-conversation-id"))
+        {
+            headers.push((
+                "x-conversation-id".to_string(),
+                canonical_session.to_string(),
+            ));
         }
-        if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("session-id")) {
+        if !headers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("session-id"))
+        {
             headers.push(("session-id".to_string(), canonical_session.to_string()));
         }
     }
@@ -420,8 +434,12 @@ mod tests {
         // 1. Explicit header priority
         headers.insert("x-session-id".into(), "downstream-sess-1".into());
         req.user = Some("user-sess-2".into());
-        req.extra.insert("session_id".into(), serde_json::json!("extra-sess-3"));
-        assert_eq!(resolve_canonical_session(&headers, &req), "downstream-sess-1");
+        req.extra
+            .insert("session_id".into(), serde_json::json!("extra-sess-3"));
+        assert_eq!(
+            resolve_canonical_session(&headers, &req),
+            "downstream-sess-1"
+        );
 
         // 2. OpenAIRequest user priority when header absent
         headers.clear();
@@ -456,11 +474,26 @@ mod tests {
         // Codex
         let mut codex_hdrs = vec![];
         CodexSessionTranslator.apply_session(&mut codex_hdrs, "sess-test-123");
-        assert_eq!(find_header(&codex_hdrs, "session-id"), Some("sess-test-123"));
-        assert_eq!(find_header(&codex_hdrs, "x-session-id"), Some("sess-test-123"));
-        assert_eq!(find_header(&codex_hdrs, "x-conversation-id"), Some("sess-test-123"));
-        assert_eq!(find_header(&codex_hdrs, "x-codex-session"), Some("sess-test-123"));
-        assert_eq!(find_header(&codex_hdrs, "x-session-affinity"), Some("sess-test-123"));
+        assert_eq!(
+            find_header(&codex_hdrs, "session-id"),
+            Some("sess-test-123")
+        );
+        assert_eq!(
+            find_header(&codex_hdrs, "x-session-id"),
+            Some("sess-test-123")
+        );
+        assert_eq!(
+            find_header(&codex_hdrs, "x-conversation-id"),
+            Some("sess-test-123")
+        );
+        assert_eq!(
+            find_header(&codex_hdrs, "x-codex-session"),
+            Some("sess-test-123")
+        );
+        assert_eq!(
+            find_header(&codex_hdrs, "x-session-affinity"),
+            Some("sess-test-123")
+        );
 
         // OpenCode
         let mut opencode_hdrs = vec![];
@@ -478,31 +511,52 @@ mod tests {
         let mut cmd_hdrs = vec![];
         CommandCodeSessionTranslator.apply_session(&mut cmd_hdrs, "sess-cmd-456");
         assert_eq!(find_header(&cmd_hdrs, "x-session-id"), Some("sess-cmd-456"));
-        assert_eq!(find_header(&cmd_hdrs, "x-conversation-id"), Some("sess-cmd-456"));
-        assert_eq!(find_header(&cmd_hdrs, "x-session-affinity"), Some("sess-cmd-456"));
+        assert_eq!(
+            find_header(&cmd_hdrs, "x-conversation-id"),
+            Some("sess-cmd-456")
+        );
+        assert_eq!(
+            find_header(&cmd_hdrs, "x-session-affinity"),
+            Some("sess-cmd-456")
+        );
 
         // MiniMax
         let mut minimax_hdrs = vec![];
         MiniMaxSessionTranslator.apply_session(&mut minimax_hdrs, "abc789");
-        assert_eq!(find_header(&minimax_hdrs, "x-mavis-session-id"), Some("session_abc789"));
+        assert_eq!(
+            find_header(&minimax_hdrs, "x-mavis-session-id"),
+            Some("session_abc789")
+        );
 
         // Kiro
         let mut kiro_hdrs = vec![];
         KiroSessionTranslator.apply_session(&mut kiro_hdrs, "kiro-sess-1");
-        assert_eq!(find_header(&kiro_hdrs, "x-conversation-id"), Some("kiro-sess-1"));
+        assert_eq!(
+            find_header(&kiro_hdrs, "x-conversation-id"),
+            Some("kiro-sess-1")
+        );
 
         // Antigravity
         let mut agy_hdrs = vec![];
         AntigravitySessionTranslator.apply_session(&mut agy_hdrs, "agy-sess-1");
         let agy_sess = find_header(&agy_hdrs, "x-vscode-sessionid").unwrap();
         assert!(uuid::Uuid::parse_str(agy_sess).is_ok());
-        assert_eq!(find_header(&agy_hdrs, "x-session-affinity"), Some("agy-sess-1"));
+        assert_eq!(
+            find_header(&agy_hdrs, "x-session-affinity"),
+            Some("agy-sess-1")
+        );
 
         // Default
         let mut def_hdrs = vec![];
         DefaultSessionTranslator.apply_session(&mut def_hdrs, "def-sess-1");
-        assert_eq!(find_header(&def_hdrs, "x-session-affinity"), Some("def-sess-1"));
-        assert_eq!(find_header(&def_hdrs, "x-conversation-id"), Some("def-sess-1"));
+        assert_eq!(
+            find_header(&def_hdrs, "x-session-affinity"),
+            Some("def-sess-1")
+        );
+        assert_eq!(
+            find_header(&def_hdrs, "x-conversation-id"),
+            Some("def-sess-1")
+        );
         assert_eq!(find_header(&def_hdrs, "session-id"), Some("def-sess-1"));
     }
 
@@ -523,25 +577,39 @@ mod tests {
 
         // Test Antigravity dispatch
         let mut agy_headers = vec![];
-        apply_provider_session_affinity(&mut agy_headers, "antigravity", "antigravity", &req_headers, &openai_req);
+        apply_provider_session_affinity(
+            &mut agy_headers,
+            "antigravity",
+            "antigravity",
+            &req_headers,
+            &openai_req,
+        );
         assert!(find_header(&agy_headers, "x-vscode-sessionid").is_some());
         assert!(find_header(&agy_headers, "x-session-affinity").is_some());
 
         // Test CommandCode dispatch
         let mut cmd_headers = vec![];
-        apply_provider_session_affinity(&mut cmd_headers, "commandcode", "commandcode", &req_headers, &openai_req);
+        apply_provider_session_affinity(
+            &mut cmd_headers,
+            "commandcode",
+            "commandcode",
+            &req_headers,
+            &openai_req,
+        );
         assert!(find_header(&cmd_headers, "x-session-id").is_some());
-        assert_eq!(find_header(&cmd_headers, "x-session-id"), find_header(&cmd_headers, "x-conversation-id"));
-        assert_eq!(find_header(&cmd_headers, "x-session-id"), find_header(&cmd_headers, "x-session-affinity"));
+        assert_eq!(
+            find_header(&cmd_headers, "x-session-id"),
+            find_header(&cmd_headers, "x-conversation-id")
+        );
+        assert_eq!(
+            find_header(&cmd_headers, "x-session-id"),
+            find_header(&cmd_headers, "x-session-affinity")
+        );
     }
 
     #[test]
     fn test_format_as_uuid_rfc4122() {
-        let non_uuids = [
-            "arbitrary-session-token",
-            "sess-openproxy-12345",
-            "",
-        ];
+        let non_uuids = ["arbitrary-session-token", "sess-openproxy-12345", ""];
         for case in non_uuids {
             let res = format_as_uuid(case);
             let u = uuid::Uuid::parse_str(&res).expect("valid uuid");
@@ -555,4 +623,3 @@ mod tests {
         assert_eq!(res, existing);
     }
 }
-

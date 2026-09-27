@@ -375,4 +375,3 @@ fn resolve_commandcode_thread_id(val: &Value, messages: &[Value]) -> String {
     let h = std::hash::Hasher::finish(&hasher);
     openproxy_types::u64_to_v4_uuid(h).to_string()
 }
-

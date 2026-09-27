@@ -32,15 +32,16 @@ pub fn inject_model_and_serialize<T: Serialize>(
     req: &T,
     upstream_model: &str,
 ) -> std::result::Result<Bytes, CoreError> {
-    let mut val = serde_json::to_value(req)
-        .map_err(|e| CoreError::Validation(e.to_string()))?;
+    let mut val = serde_json::to_value(req).map_err(|e| CoreError::Validation(e.to_string()))?;
     if let Some(obj) = val.as_object_mut() {
-        obj.insert("model".to_string(), serde_json::Value::String(upstream_model.to_string()));
+        obj.insert(
+            "model".to_string(),
+            serde_json::Value::String(upstream_model.to_string()),
+        );
     }
     SERIALIZE_BUF.with_borrow_mut(|buf| {
         buf.clear();
-        serde_json::to_writer(&mut *buf, &val)
-            .map_err(|e| CoreError::Validation(e.to_string()))?;
+        serde_json::to_writer(&mut *buf, &val).map_err(|e| CoreError::Validation(e.to_string()))?;
         let bytes = Bytes::copy_from_slice(buf);
         if buf.capacity() > 64 * 1024 {
             buf.shrink_to(16 * 1024);
