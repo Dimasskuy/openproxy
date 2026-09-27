@@ -17,6 +17,7 @@ import {
   clearPinnedIdentity,
   getActiveLogDetailTab,
   isCurrentOpenLogDetailGeneration,
+  matchesPinnedModalIdentity,
   setActiveLogDetailTab,
   setPinnedIdentity,
   type LogDetailLog,
@@ -406,8 +407,9 @@ export function closeLogDetailModal(e: Event | null): void {
   // Case 3: anything else inside .modal; its own handler already ran.
 }
 
-export function updateOpenLogDetail(_row: LogDetailLog | null | undefined): void {
+export function updateOpenLogDetail(row: LogDetailLog | null | undefined): void {
   if (state.logs.selectedIdentity) {
+    if (row && !matchesPinnedModalIdentity(row)) return;
     renderModal();
   }
 }

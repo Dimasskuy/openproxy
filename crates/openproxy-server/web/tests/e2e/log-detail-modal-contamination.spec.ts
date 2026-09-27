@@ -81,7 +81,11 @@ async function injectUpdateLogDetail(page: Page, row: Partial<RecentUsageRow>) {
   const payload = { created_at: new Date().toISOString(), ...row };
   await page.evaluate((r: Record<string, unknown>) => {
     const w = window as any;
-    if (w.__liveLogsStore) w.__liveLogsStore.applyUsageRow(r);
+    if (typeof w.__openproxyUpdateLogDetail === 'function') {
+      w.__openproxyUpdateLogDetail(r);
+    } else if (w.__liveLogsStore) {
+      w.__liveLogsStore.applyUsageRow(r);
+    }
   }, payload);
 }
 

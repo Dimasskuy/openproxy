@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import type { StageEvent, RecentUsageRow } from '../../src/static/src/lib/types/api.js';
 
 const ADMIN_TOKEN_STORAGE_KEY = 'openproxy_admin_token';
-const DUMMY_ADMIN_TOKEN = 'test_token_123';
+const DUMMY_ADMIN_TOKEN = 'op_live_test_dummy_token_for_e2e';
 
 interface FreezeObservation {
   stateExposed: boolean;
