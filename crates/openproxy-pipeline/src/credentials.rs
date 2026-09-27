@@ -6,21 +6,12 @@ use openproxy_types::error::CoreError;
 use openproxy_types::models::Model;
 use std::collections::HashMap;
 
-/// In-memory reader for the Antigravity `project_id` from an already-
-/// loaded `oauth_provider_specific` JSON value.
-///
-/// Used in hot paths where the account is already in memory (the
-/// pipeline's `Credentials` flow and the smart-warmup scheduler) and
-/// issuing a DB query would be wasteful.
-///
-/// Reads the canonical snake_case `project_id` key (post-C.4 wire
-/// format unification; the database migration
-/// `000065_antigravity_project_id_wire_format.sql` normalizes all
-/// pre-existing camelCase rows to snake_case).
-///
-/// Returns `None` when the value is not an object, when no
-/// `project_id` key is present, or when the value is not a
-/// non-empty string.
+/// In-memory reader for the Antigravity `project_id` from an already-loaded
+/// `oauth_provider_specific` JSON value (hot paths where a DB query would be
+/// wasteful). Reads the canonical snake_case `project_id` key; migration
+/// `000065_antigravity_project_id_wire_format.sql` normalizes legacy
+/// camelCase rows. Returns `None` unless the value is an object with a
+/// non-empty `project_id` string.
 pub fn antigravity_project_from_value(value: &serde_json::Value) -> Option<String> {
     let pid = value.get("project_id")?.as_str()?;
     let trimmed = pid.trim();
@@ -339,14 +330,8 @@ mod tests {
 
     #[test]
     fn antigravity_project_skips_camel_case_post_migration() {
-        // Post-migration (snake_case is canonical), the in-memory helper
-        // only inspects `project_id`. Legacy camelCase `projectId` rows
-        // are normalized by DB migration 000065 and the DB-backed reader
-        // (AntigravityMeta's #[serde(alias = "projectId")]) before this
-        // helper is ever called with decrypted JSON. So a still-camelCase
-        // payload reaching the in-memory helper means a row was not
-        // normalized, and we must return `None` rather than silently
-        // shadowing the canonical key.
+        // A still-camelCase payload means the row escaped migration 000065, so
+        // return `None` rather than silently shadowing the canonical key.
         let account = raw_with_meta(Some(r#"{"projectId":"proj-abc"}"#));
         assert_eq!(
             project_id_for(account.oauth_provider_specific.as_deref()).as_deref(),
@@ -371,13 +356,12 @@ mod tests {
             antigravity_project_from_value(&json!({"project_id":"snake"})),
             Some("snake".to_string())
         );
-        // camelCase is NOT supported by the in-memory helper post-C.4
-        // (the migration normalizes legacy rows to snake_case).
+        // camelCase unsupported (migration 000065 normalizes legacy rows);
+        // snake_case wins when both keys are present.
         assert_eq!(
             antigravity_project_from_value(&json!({"projectId":"camel"})),
             None
         );
-        // snake_case wins when both keys are present.
         assert_eq!(
             antigravity_project_from_value(&json!({"project_id":"snake","projectId":"camel"})),
             Some("snake".to_string())

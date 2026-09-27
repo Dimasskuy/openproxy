@@ -1,10 +1,7 @@
-// handlers/proxy-handlers.test.ts — unit tests for
-// buildCustomProxyBodyFromForm().
-//
-// Scope: pure form→JSON builder extracted from `createCustomProxy`.
-// Notes on the `country_code` semantics:
-//   - blank  → `null`  (significant: "" would deserialize as Some(""))
-//   - lowercased → uppercased (ISO-3166 alpha-2 is canonically upper)
+// handlers/proxy-handlers.test.ts — unit tests for buildCustomProxyBodyFromForm(),
+// the pure form→JSON builder extracted from `createCustomProxy`.
+// `country_code` semantics under test: blank → `null` (significant, since "" would deserialize as
+// Some("")) and lowercased → uppercased (ISO-3166 alpha-2 is canonically upper).
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { buildCustomProxyBodyFromForm } from "./proxy-handlers.js";

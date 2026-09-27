@@ -35,7 +35,6 @@ fn test_decode_and_record_line_resets_event_type_on_empty_line() {
     let mut state = super::StreamingState::new(false);
     state.current_event_type = Some("content_block_start".to_string());
 
-    // Non-empty line does not reset
     let line1 = b"event: content_block_delta";
     let res1 = super::processor::decode_and_record_line(&mut state, line1);
     assert_eq!(res1, Some("event: content_block_delta"));
@@ -44,7 +43,6 @@ fn test_decode_and_record_line_resets_event_type_on_empty_line() {
         Some("content_block_start")
     );
 
-    // SSE comment does not reset
     let comment = b": ping";
     let res_comment = super::processor::decode_and_record_line(&mut state, comment);
     assert!(res_comment.is_none());
@@ -53,13 +51,11 @@ fn test_decode_and_record_line_resets_event_type_on_empty_line() {
         Some("content_block_start")
     );
 
-    // Empty line resets current_event_type
     let empty = b"";
     let res_empty = super::processor::decode_and_record_line(&mut state, empty);
     assert!(res_empty.is_none());
     assert!(state.current_event_type.is_none());
 
-    // Empty line with CRLF resets current_event_type
     state.current_event_type = Some("message_delta".to_string());
     let crlf = b"\r";
     let res_crlf = super::processor::decode_and_record_line(&mut state, crlf);
@@ -142,11 +138,7 @@ fn test_anthropic_multi_event_stream_with_comments_and_empty_lines() {
         }
     }
 
-    // Expected chunks:
-    // 1: message_start -> role announcement (has_content = false)
-    // 2: content_block_delta -> "Hello" (has_content = true)
-    // 3: content_block_delta -> " world" (has_content = true)
-    // 4: message_delta -> finish_reason "stop", done: true
+    // message_start, two content_block_delta and message_delta.
     assert_eq!(
         collected_chunks.len(),
         4,

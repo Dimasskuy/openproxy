@@ -319,7 +319,7 @@ mod tests {
         };
         assert_eq!(got, Some(original));
 
-        // Verify that separate rows for pii_enabled, pii_reversible, pii_redact_logs, and pii_entities exist in app_config
+        // Legacy per-flag rows must coexist with the packed pii_config row.
         {
             let w = pool.writer();
             let count: i64 = w

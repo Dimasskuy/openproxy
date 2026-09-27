@@ -1,6 +1,3 @@
-/* ==========================================================================
-   Live Logs — Mobile Responsive Complete Specification (<= 768px)
-   ========================================================================== */
 
 @media (max-width: 768px) {
   .logs {
@@ -12,7 +9,7 @@
     padding: 0;
   }
 
-  /* 1. Header Compacto en 2 Filas */
+  /* Compact two-row header */
   .logs-header {
     display: flex;
     flex-direction: column;
@@ -72,7 +69,7 @@
     width: 100%;
   }
 
-  /* 2. Menú de Columnas en 2 Columnas */
+  /* Columns menu in two columns */
   .columns-menu-wrapper {
     position: relative;
   }
@@ -123,7 +120,7 @@
     margin: 0;
   }
 
-  /* 3. Buscador y Filtros Deslizables */
+  /* Scrollable search and filters */
   .logs-filter-toolbar {
     display: flex !important;
     flex-direction: column !important;
@@ -223,7 +220,7 @@
     font-weight: 600 !important;
   }
 
-  /* 4. In-flight vacío colapsado */
+  /* Collapsed empty in-flight */
   .logs-section-inflight.empty .empty-inflight,
   .logs-section-inflight.empty .logs-empty-placeholder,
   .logs-section-inflight.empty .logs-scroll-area {
@@ -236,7 +233,7 @@
     border-bottom: 1px solid var(--color-border);
   }
 
-  /* 5. Lista de Logs */
+  /* Logs list */
   .logs-section-finished {
     flex: 1 1 0%;
     min-height: 0;
@@ -269,7 +266,7 @@
     display: none;
   }
 
-  /* 6. Tarjeta de Log Móvil */
+  /* Log card */
   .m-card-view {
     display: flex;
     flex-direction: column;
@@ -387,7 +384,7 @@
     flex: 1 1 0%;
   }
 
-  /* 7. Paginación Móvil */
+  /* Pagination */
   .logs-pagination {
     display: flex;
     flex-direction: column;
@@ -435,7 +432,7 @@
 
 
 @media (max-width: 768px) {
-  /* ----- Debug Log Cards on Mobile ----- */
+  /* Debug log cards */
   .debug-log-card-row {
     display: flex;
     flex-direction: column;

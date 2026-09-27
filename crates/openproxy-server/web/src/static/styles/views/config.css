@@ -1,14 +1,9 @@
-/* ==========================================================================
-   VIEW: CONFIGURATION / SETTINGS (Classic, Compact & Responsive)
-   ========================================================================== */
 
-/* ----- Main view container ----- */
 .view-config {
   width: 100%;
   max-width: 100%;
 }
 
-/* ----- Live status banner ----- */
 .config-banner {
   display: flex;
   align-items: flex-start;
@@ -57,7 +52,7 @@
   font-size: var(--fs-sm);
 }
 
-/* ----- Editable Cards Grid (Workbench 2-column layout) ----- */
+/* Editable cards grid, 2 columns on desktop */
 .config-editable-region {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -65,12 +60,11 @@
   margin-bottom: var(--space-4);
 }
 
-/* Timeouts card spans both columns on desktop for optimal horizontal density */
+/* Timeouts card spans both columns */
 .config-card.card-timeouts-full {
   grid-column: 1 / -1;
 }
 
-/* ----- Section Card Styling ----- */
 .config-card {
   background: var(--color-surface);
   border: var(--border-w) var(--border-style) var(--color-border-soft);
@@ -115,7 +109,6 @@
   flex: 1;
 }
 
-/* ----- Fields & Grids ----- */
 .config-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -146,7 +139,6 @@
   line-height: 1.35;
 }
 
-/* ----- Input group with unit badge ----- */
 .config-input-group {
   position: relative;
   display: flex;
@@ -192,7 +184,6 @@
   user-select: none;
 }
 
-/* ----- Compact Horizontal Settings Rows ----- */
 .config-rows-list {
   display: flex;
   flex-direction: column;
@@ -251,7 +242,6 @@
   border-color: var(--color-primary);
 }
 
-/* ----- PII Entity Chips ----- */
 .config-entities-section {
   margin-top: var(--space-3);
   padding-top: var(--space-3);
@@ -306,7 +296,6 @@
   font-size: var(--fs-xs);
 }
 
-/* ----- Database Maintenance Telemetry & Actions ----- */
 .config-maintenance-telemetry {
   margin-top: var(--space-3);
   padding: var(--space-3);
@@ -355,7 +344,6 @@
   font-weight: 600;
 }
 
-/* ----- Collapsible Details & Static Region ----- */
 .config-details {
   margin: var(--space-3) 0 var(--space-4);
   border: var(--border-w) var(--border-style) var(--color-border-soft);
@@ -488,7 +476,6 @@ details[open] > .config-details-summary .summary-chevron {
   border: var(--border-w) var(--border-style) var(--color-border-soft);
 }
 
-/* ----- Dirty Indicator & Actions Bar ----- */
 .config-dirty-indicator {
   display: inline-block;
   width: 6px;
@@ -517,7 +504,6 @@ details[open] > .config-details-summary .summary-chevron {
   margin-left: auto;
 }
 
-/* ----- Responsive Breakpoints ----- */
 @media (max-width: 1024px) {
   .config-editable-region {
     grid-template-columns: 1fr;

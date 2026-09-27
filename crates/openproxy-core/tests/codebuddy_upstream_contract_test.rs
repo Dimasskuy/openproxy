@@ -124,13 +124,12 @@ fn test_codebuddy_adapter_spec_parity() {
     // models_url MUST be None to avoid 404 from upstream
     assert!(adapter.models_url().is_none());
 
-    // Canonical IDs for models.dev
+    // canonical IDs for models.dev
     assert_eq!(
         adapter.models_dev_canonical_ids(),
         &["codebuddy", "tencent"]
     );
 
-    // Headers include both auth and spoofing
     let headers =
         adapter.build_headers("my-api-key", TargetFormat::Openai, &ModelId::new("gpt-5.5"));
     let find = |k: &str| {
@@ -149,7 +148,6 @@ async fn test_codebuddy_static_models_and_product_json_parity() {
     let models = codebuddy_static_models();
     assert_eq!(models.len(), 35, "Must have exactly 35 models");
 
-    // Check key models
     let gpt55 = models
         .iter()
         .find(|m| m.model_id.as_str() == "gpt-5.5")
@@ -176,7 +174,6 @@ async fn test_codebuddy_static_models_and_product_json_parity() {
         .expect("kimi-k3");
     assert_eq!(kimi_k3.context_length, Some(1_000_000));
 
-    // Check parity against local product.json if available
     let local_product = Path::new("/tmp/codebuddy_inspect/package/product.json");
     if local_product.exists() {
         let content = std::fs::read_to_string(local_product).expect("read product.json");
@@ -215,7 +212,6 @@ async fn test_codebuddy_static_models_and_product_json_parity() {
 
 #[test]
 fn test_codebuddy_error_mappings() {
-    // 6000-6008 rate limits
     for code in 6000..=6008 {
         let parsed = CodeBuddyErrorCode::from_code(code).unwrap();
         assert!(parsed.is_rate_limit());
@@ -225,7 +221,6 @@ fn test_codebuddy_error_mappings() {
         );
     }
 
-    // Credits exhausted
     for code in [14001, 14002, 14012, 14013, 14014, 14018, 14019] {
         let parsed = CodeBuddyErrorCode::from_code(code).unwrap();
         assert!(parsed.is_credits_exhausted());
@@ -235,7 +230,6 @@ fn test_codebuddy_error_mappings() {
         );
     }
 
-    // Auth expired
     let expired = CodeBuddyErrorCode::from_code(14015).unwrap();
     assert!(expired.is_auth_error());
     assert_eq!(
@@ -243,16 +237,14 @@ fn test_codebuddy_error_mappings() {
         UpstreamErrorClass::PermissionDenied
     );
 
-    // Parsing from json body
     let json_body = r#"{"code": 14014, "message": "Enterprise credits exhausted"}"#;
     assert_eq!(parse_codebuddy_error_code(json_body), Some(14014));
 
-    // Nested JSON-RPC shell error where outer code is -32603 and data has real code
+    // nested JSON-RPC shell error where outer code is -32603 and data has real code
     let nested_rpc =
         r#"{"status": 400, "error": {"code": -32603, "data": {"code": 14018, "statusCode": 403}}}"#;
     assert_eq!(parse_codebuddy_error_code(nested_rpc), Some(14018));
 
-    // HTTP status code 400 without business code
     let generic_400 = r#"{"error": {"code": 400, "message": "Bad Request"}}"#;
     assert_eq!(parse_codebuddy_error_code(generic_400), None);
 }
@@ -280,7 +272,6 @@ fn test_codebuddy_builtin_seed_and_registration() {
     assert_eq!(cb.auth_type, openproxy_core::providers::AuthType::OAuth);
     assert_eq!(cb.format, openproxy_core::providers::ProviderFormat::Openai);
 
-    // Verify presence in builtin_adapters registry
     let builtins = builtin_adapters();
     assert!(
         builtins
@@ -290,16 +281,12 @@ fn test_codebuddy_builtin_seed_and_registration() {
     );
 }
 
-// ============================================================================
-// 5. Remote Live Upstream Contract & In-Memory Auto-Update Verification
-// ============================================================================
 
 #[tokio::test]
 async fn test_codebuddy_remote_upstream_live_contract_parity() {
     let _lock = CODEBUDDY_ASYNC_TEST_LOCK.lock().await;
     let client = std::sync::Arc::new(UpstreamClient::new());
 
-    // 1. Probe official NPM package registry for CodeBuddy CLI metadata (@tencent-ai/codebuddy-code)
     let npm_url = NPM_CODEBUDDY_METADATA_URL;
     let cancel = openproxy_adapters::upstream::CancellationToken::new();
     let req = UpstreamRequest::get(npm_url);
@@ -332,7 +319,6 @@ async fn test_codebuddy_remote_upstream_live_contract_parity() {
         eprintln!("[CodeBuddyLiveTest] Offline or NPM unreachable, skipping registry check");
     }
 
-    // 2. Test in-memory auto-update via refresh_codebuddy_version
     reset_dynamic_codebuddy_overrides();
 
     assert_eq!(current_codebuddy_version(), "2.157.0");
@@ -375,7 +361,6 @@ async fn test_codebuddy_fetch_models_triggers_background_auto_update() {
 
     assert_eq!(get_codebuddy_version(), "2.157.0");
 
-    // Spin up an ephemeral local HTTP mock registry
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -408,7 +393,6 @@ async fn test_codebuddy_fetch_models_triggers_background_auto_update() {
         .expect("fetch models");
     assert_eq!(models.len(), 35);
 
-    // Give background task a moment to complete
     let mut ok = false;
     for _ in 0..250 {
         if get_codebuddy_version() == "2.188.0" {

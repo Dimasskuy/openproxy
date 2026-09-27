@@ -1,13 +1,7 @@
-// components/theme-toggle.ts — circular button anchored at the
-// bottom-left of the sidebar. Click toggles data-theme between
-// light and dark. Exposes a `mountThemeToggle()` symbol the
-// sidebar can call after rendering.
+// components/theme-toggle.ts — circular button at the sidebar's bottom-left; clicking it
+// toggles `data-theme` between light and dark. Exposes `mountThemeToggle(): void` for
+// the sidebar to call after rendering.
 //
-// Migrated to lit-html: the button markup is now produced by a
-// lit-html template and rendered into the slot with `render()`.
-// The click handler is wired via `@click` instead of
-// `addEventListener`. The `mountThemeToggle()` signature is
-// unchanged (still `void`).
 
 import { html, render } from "lit-html";
 import { toggleTheme, getTheme } from "../state/theme.js";
@@ -37,10 +31,7 @@ function renderThemeToggle(slot: HTMLElement): void {
 export function mountThemeToggle(): void {
   const slot: HTMLElement | null = document.getElementById("theme-toggle-slot");
   if (!slot) return;
-  // lit-html's `render()` diffs against the existing children, so
-  // calling this on a slot that already holds a previously-mounted
-  // button simply updates its content rather than appending a
-  // duplicate. (The old imperative code had to explicitly remove
-  // the previous button; we no longer need to.)
+  // lit-html's `render()` diffs against existing children, so re-rendering a slot that
+  // already holds a button updates it instead of appending a duplicate.
   renderThemeToggle(slot);
 }

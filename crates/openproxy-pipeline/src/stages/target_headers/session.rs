@@ -1,24 +1,24 @@
 //! Provider Session Affinity and Session ID Translation.
 //!
-//! Provides the [`ProviderSessionTranslator`] trait and centralized affinity resolution
-//! to guarantee that multi-turn LLM agent conversations consistently route to the same
-//! upstream GPU worker node for optimal prefix prompt KV cache hits across all providers
-//! (OpenAI Codex, OpenCode, CodeBuddy / Tencent Cloud, CommandCode, MiniMax / Mavis,
-//! Kiro / AWS Bedrock, Google Antigravity, and generic providers).
+//! Provides the [`ProviderSessionTranslator`] trait and centralized affinity
+//! resolution, so multi-turn agent conversations route to the same upstream
+//! GPU worker node for prefix prompt KV cache hits across OpenAI Codex,
+//! OpenCode, CodeBuddy / Tencent Cloud, CommandCode, MiniMax / Mavis,
+//! Kiro / AWS Bedrock, Google Antigravity and generic providers.
 
 use openproxy_adapters::spoofer::translate_session_id;
 use openproxy_types::OpenAIRequest;
 use std::collections::BTreeMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-/// Trait implemented by provider adapters to translate canonical session affinity
-/// into upstream-specific HTTP headers, key conventions, and protocol requirements.
+/// Provider adapters implement this to translate canonical session affinity
+/// into upstream-specific headers, key conventions and protocol requirements.
 pub trait ProviderSessionTranslator: Send + Sync {
-    /// Format and inject provider-specific session affinity headers into `headers`.
     fn apply_session(&self, headers: &mut Vec<(String, String)>, canonical_session: &str);
 }
 
-/// Case-insensitively insert or update a header in a list of `(String, String)` pairs.
+/// Replaces the value of an existing key regardless of its casing, otherwise
+/// appends a new `(key, value)` pair.
 #[inline]
 pub fn upsert_header(headers: &mut Vec<(String, String)>, key: &str, val: impl Into<String>) {
     if let Some(pos) = headers
@@ -31,7 +31,7 @@ pub fn upsert_header(headers: &mut Vec<(String, String)>, key: &str, val: impl I
     }
 }
 
-/// Case-insensitively retrieve header value from a BTreeMap.
+/// Case-insensitive lookup in a `BTreeMap`.
 #[inline]
 pub fn get_header_val<'a>(headers: &'a BTreeMap<String, String>, key: &str) -> Option<&'a str> {
     headers
@@ -40,28 +40,25 @@ pub fn get_header_val<'a>(headers: &'a BTreeMap<String, String>, key: &str) -> O
         .map(|(_, v)| v.as_str())
 }
 
-/// Helper to convert any session string deterministically into a standard UUID v4 string.
+/// Deterministic session string to standard UUID v4.
 #[inline]
 pub fn format_as_uuid(input: &str) -> String {
     openproxy_types::format_as_v4_uuid(input)
 }
 
-/// Derives a deterministic conversation affinity identifier from the root prompt invariant.
-///
-/// In multi-turn chat/agent conversations, the system prompt and the initial user prompt
-/// remain identical across turn 1, 2, ... N. By hashing these invariant root messages,
-/// requests without explicit client session headers still achieve stable upstream session
-/// affinity and maximum prefix prompt KV cache reuse.
+/// Hashes the invariant root messages (system prompt, first user turn).
+/// Those stay identical across turns 1..N, so a request without explicit
+/// client session headers still gets stable upstream session affinity and
+/// prefix prompt KV cache reuse.
 pub fn derive_conversation_affinity(openai_req: &OpenAIRequest) -> String {
     let mut hasher = DefaultHasher::new();
 
-    // 1. Hash system prompt if present (establishes system instructions baseline)
     if let Some(sys) = openai_req.messages.iter().find(|m| m.role == "system") {
         sys.role.hash(&mut hasher);
         openproxy_types::extract_content_text(&sys.content).hash(&mut hasher);
     }
 
-    // 2. Hash first user message (the root prompt invariant across all conversation turns)
+    // First user turn, falling back to the first message of any role.
     if let Some(user) = openai_req.messages.iter().find(|m| m.role == "user") {
         user.role.hash(&mut hasher);
         openproxy_types::extract_content_text(&user.content).hash(&mut hasher);
@@ -73,8 +70,7 @@ pub fn derive_conversation_affinity(openai_req: &OpenAIRequest) -> String {
     format!("sess-openproxy-{:016x}", hasher.finish())
 }
 
-/// Extracts an explicit session ID from request headers or request body,
-/// or derives a deterministic conversation affinity string from conversation history.
+/// Explicit session id from headers or body, else the derived affinity.
 pub fn resolve_canonical_session(
     request_headers: &BTreeMap<String, String>,
     openai_req: &OpenAIRequest,
@@ -97,7 +93,6 @@ pub fn resolve_canonical_session(
         "thread_id",
     ];
 
-    // 1. Check explicit downstream request headers
     for &header_name in CANDIDATE_HEADERS {
         if let Some(val) = get_header_val(request_headers, header_name) {
             let clean = val.trim().trim_matches('"');
@@ -107,7 +102,6 @@ pub fn resolve_canonical_session(
         }
     }
 
-    // 2. Check OpenAIRequest explicit metadata (user or extra fields)
     if let Some(ref user) = openai_req.user {
         let clean = user.trim().trim_matches('"');
         if !clean.is_empty() {
@@ -127,17 +121,12 @@ pub fn resolve_canonical_session(
         }
     }
 
-    // 3. Fallback: derive deterministic conversation affinity
+    // Fallback: derive the deterministic conversation affinity.
     derive_conversation_affinity(openai_req)
 }
 
-// ---------------------------------------------------------------------------
-// Concrete Provider Session Translators
-// ---------------------------------------------------------------------------
-
-/// Session translator for OpenAI Codex (`chatgpt.com`).
-///
-/// Propagates all known session affinity headers used by OpenAI and Cloudflare ingress.
+/// OpenAI Codex (`chatgpt.com`). Propagates every session affinity header
+/// used by OpenAI and Cloudflare ingress.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CodexSessionTranslator;
 
@@ -158,9 +147,8 @@ impl ProviderSessionTranslator for CodexSessionTranslator {
     }
 }
 
-/// Session translator for OpenCode.
-///
-/// Converts arbitrary session tokens into valid OpenCode `ses_{hex24}` identifiers.
+/// OpenCode. Converts arbitrary session tokens into valid OpenCode
+/// `ses_{hex24}` identifiers.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct OpenCodeSessionTranslator;
 
@@ -171,10 +159,9 @@ impl ProviderSessionTranslator for OpenCodeSessionTranslator {
     }
 }
 
-/// Session translator for CodeBuddy (Tencent Cloud).
-///
-/// Tencent Cloud requires UUID formatting for `x-conversation-id`. Explicit downstream
-/// session headers are preserved, while derived sessions are mapped to deterministic UUIDs.
+/// CodeBuddy (Tencent Cloud). Requires UUID formatting for
+/// `x-conversation-id`: explicit downstream session headers pass through,
+/// derived sessions become deterministic UUIDs.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CodeBuddySessionTranslator;
 
@@ -190,9 +177,8 @@ impl ProviderSessionTranslator for CodeBuddySessionTranslator {
     }
 }
 
-/// Session translator for Command Code Go.
-///
-/// Binds session affinity to `x-session-id`, `x-conversation-id`, and `x-session-affinity`.
+/// Command Code Go. Binds session affinity to `x-session-id`,
+/// `x-conversation-id` and `x-session-affinity`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CommandCodeSessionTranslator;
 
@@ -204,9 +190,8 @@ impl ProviderSessionTranslator for CommandCodeSessionTranslator {
     }
 }
 
-/// Session translator for MiniMax Coding (Mavis).
-///
-/// Normalizes session affinity to `x-mavis-session-id` with required `session_` prefix.
+/// MiniMax Coding (Mavis). Normalizes session affinity to
+/// `x-mavis-session-id` with the required `session_` prefix.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MiniMaxSessionTranslator;
 
@@ -222,9 +207,8 @@ impl ProviderSessionTranslator for MiniMaxSessionTranslator {
     }
 }
 
-/// Session translator for Kiro AI (AWS CodeWhisperer Bedrock).
-///
-/// Maps session continuity to `x-conversation-id`.
+/// Kiro AI (AWS CodeWhisperer Bedrock). Maps session continuity to
+/// `x-conversation-id`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct KiroSessionTranslator;
 
@@ -234,9 +218,8 @@ impl ProviderSessionTranslator for KiroSessionTranslator {
     }
 }
 
-/// Session translator for Google Antigravity (Cloud Code).
-///
-/// Maps session continuity to `x-vscode-sessionid` and `x-session-affinity`.
+/// Google Antigravity (Cloud Code). Maps session continuity to
+/// `x-vscode-sessionid` and `x-session-affinity`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AntigravitySessionTranslator;
 
@@ -248,7 +231,6 @@ impl ProviderSessionTranslator for AntigravitySessionTranslator {
     }
 }
 
-/// Default session translator for standard and generic LLM providers.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DefaultSessionTranslator;
 
@@ -281,7 +263,7 @@ impl ProviderSessionTranslator for DefaultSessionTranslator {
     }
 }
 
-/// Returns the static [`ProviderSessionTranslator`] matching the provider or adapter.
+/// The static [`ProviderSessionTranslator`] for this provider or adapter.
 pub fn resolve_session_translator(
     provider_id: &str,
     adapter_id: &str,
@@ -307,7 +289,7 @@ pub fn resolve_session_translator(
     }
 }
 
-/// Seamlessly resolves canonical session affinity and applies provider-specific headers.
+/// Resolves the canonical session affinity and applies provider-specific headers.
 pub fn apply_provider_session_affinity(
     headers: &mut Vec<(String, String)>,
     provider_id: &str,
@@ -342,7 +324,6 @@ mod tests {
         let h1 = derive_conversation_affinity(&req_turn1);
         assert!(h1.starts_with("sess-openproxy-"));
 
-        // Turn 2 adds assistant and 2nd user prompt
         let mut req_turn2 = req_turn1;
         req_turn2.messages.push(OpenAIMessage {
             role: "assistant".into(),
@@ -364,7 +345,6 @@ mod tests {
         let h2 = derive_conversation_affinity(&req_turn2);
         assert_eq!(h1, h2, "Affinity must remain invariant across turn 1 and 2");
 
-        // Turn 3 adds another round
         let mut req_turn3 = req_turn2.clone();
         req_turn3.messages.push(OpenAIMessage {
             role: "assistant".into(),
@@ -431,7 +411,6 @@ mod tests {
         let mut headers = BTreeMap::new();
         let mut req = OpenAIRequest::default();
 
-        // 1. Explicit header priority
         headers.insert("x-session-id".into(), "downstream-sess-1".into());
         req.user = Some("user-sess-2".into());
         req.extra
@@ -441,15 +420,12 @@ mod tests {
             "downstream-sess-1"
         );
 
-        // 2. OpenAIRequest user priority when header absent
         headers.clear();
         assert_eq!(resolve_canonical_session(&headers, &req), "user-sess-2");
 
-        // 3. OpenAIRequest extra session_id priority when user absent
         req.user = None;
         assert_eq!(resolve_canonical_session(&headers, &req), "extra-sess-3");
 
-        // 4. Fallback to derived affinity
         req.extra.clear();
         req.messages = vec![OpenAIMessage {
             role: "user".into(),
@@ -471,7 +447,6 @@ mod tests {
 
     #[test]
     fn test_translators_apply_session() {
-        // Codex
         let mut codex_hdrs = vec![];
         CodexSessionTranslator.apply_session(&mut codex_hdrs, "sess-test-123");
         assert_eq!(
@@ -495,19 +470,16 @@ mod tests {
             Some("sess-test-123")
         );
 
-        // OpenCode
         let mut opencode_hdrs = vec![];
         OpenCodeSessionTranslator.apply_session(&mut opencode_hdrs, "sess-test-123");
         let opencode_sess = find_header(&opencode_hdrs, "x-opencode-session").unwrap();
         assert!(opencode_sess.starts_with("ses_"));
 
-        // CodeBuddy with derived session -> formatted as valid UUID
         let mut cb_hdrs = vec![];
         CodeBuddySessionTranslator.apply_session(&mut cb_hdrs, "sess-openproxy-12345");
         let cb_sess = find_header(&cb_hdrs, "x-conversation-id").unwrap();
         assert!(uuid::Uuid::parse_str(cb_sess).is_ok());
 
-        // CommandCode
         let mut cmd_hdrs = vec![];
         CommandCodeSessionTranslator.apply_session(&mut cmd_hdrs, "sess-cmd-456");
         assert_eq!(find_header(&cmd_hdrs, "x-session-id"), Some("sess-cmd-456"));
@@ -520,7 +492,6 @@ mod tests {
             Some("sess-cmd-456")
         );
 
-        // MiniMax
         let mut minimax_hdrs = vec![];
         MiniMaxSessionTranslator.apply_session(&mut minimax_hdrs, "abc789");
         assert_eq!(
@@ -528,7 +499,6 @@ mod tests {
             Some("session_abc789")
         );
 
-        // Kiro
         let mut kiro_hdrs = vec![];
         KiroSessionTranslator.apply_session(&mut kiro_hdrs, "kiro-sess-1");
         assert_eq!(
@@ -536,7 +506,6 @@ mod tests {
             Some("kiro-sess-1")
         );
 
-        // Antigravity
         let mut agy_hdrs = vec![];
         AntigravitySessionTranslator.apply_session(&mut agy_hdrs, "agy-sess-1");
         let agy_sess = find_header(&agy_hdrs, "x-vscode-sessionid").unwrap();
@@ -546,7 +515,6 @@ mod tests {
             Some("agy-sess-1")
         );
 
-        // Default
         let mut def_hdrs = vec![];
         DefaultSessionTranslator.apply_session(&mut def_hdrs, "def-sess-1");
         assert_eq!(
@@ -575,7 +543,6 @@ mod tests {
             ..Default::default()
         };
 
-        // Test Antigravity dispatch
         let mut agy_headers = vec![];
         apply_provider_session_affinity(
             &mut agy_headers,
@@ -587,7 +554,6 @@ mod tests {
         assert!(find_header(&agy_headers, "x-vscode-sessionid").is_some());
         assert!(find_header(&agy_headers, "x-session-affinity").is_some());
 
-        // Test CommandCode dispatch
         let mut cmd_headers = vec![];
         apply_provider_session_affinity(
             &mut cmd_headers,
@@ -617,7 +583,6 @@ mod tests {
             assert_eq!(u.get_version(), Some(uuid::Version::Random));
         }
 
-        // Existing valid UUID is preserved
         let existing = "123e4567-e89b-12d3-a456-426614174000";
         let res = format_as_uuid(existing);
         assert_eq!(res, existing);

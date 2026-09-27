@@ -11,7 +11,6 @@ use network_finance::collect_network_finance_candidates;
 use person::collect_person_candidates;
 use secrets::collect_secret_candidates;
 
-/// A raw detected PII match candidate before overlap resolution.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Candidate<'a> {
     pub(crate) start: usize,
@@ -20,7 +19,6 @@ pub(crate) struct Candidate<'a> {
     pub(crate) matched_text: &'a str,
 }
 
-/// Collect all raw candidates across enabled entity types.
 pub(crate) fn collect_candidates<'a>(
     entities: &[PiiEntity],
     text: &'a str,

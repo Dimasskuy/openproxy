@@ -26,9 +26,7 @@ use openproxy_adapters::{ProviderAdapter, load_upstream_source};
 use openproxy_pipeline::stages::target_headers::propagate_commandcode_headers;
 use openproxy_types::{ModelId, TargetFormat};
 
-// ============================================================================
 // 1. Golden Contract Spec Parity
-// ============================================================================
 
 #[test]
 fn test_commandcode_golden_contract_spec_parity() {
@@ -37,14 +35,12 @@ fn test_commandcode_golden_contract_spec_parity() {
         .unwrap_or_else(|p| p.into_inner());
     reset_dynamic_commandcode_overrides();
 
-    // 1. Default CLI contract constants
     assert_eq!(DEFAULT_COMMANDCODE_CLI_VERSION, "1.54.0");
     assert_eq!(DEFAULT_COMMANDCODE_CLI_ENVIRONMENT, "production");
     assert_eq!(DEFAULT_COMMANDCODE_PROJECT_SLUG, "project");
     assert_eq!(DEFAULT_COMMANDCODE_TASTE_LEARNING, "true");
     assert_eq!(DEFAULT_COMMANDCODE_UA, "cli");
 
-    // 2. Spoofer headers contract
     let spoofer = CommandCodeSpoofer;
     let headers = spoofer.headers();
     let find_hdr = |k: &str| {
@@ -61,7 +57,6 @@ fn test_commandcode_golden_contract_spec_parity() {
     assert_eq!(find_hdr("x-project-slug"), Some("project"));
     assert_eq!(find_hdr("x-taste-learning"), Some("true"));
 
-    // 3. CommandCodeGoAdapter headers match spoofer + Authorization
     let adapter = CommandCodeGoAdapter::new();
     let model = ModelId::new("claude-sonnet-4-6");
     let adapter_headers =
@@ -81,7 +76,6 @@ fn test_commandcode_golden_contract_spec_parity() {
     assert_eq!(find_adp("x-taste-learning"), Some("true"));
     assert_eq!(find_adp("Authorization"), Some("Bearer test-cc-key-12345"));
 
-    // 4. Default URLs
     assert_eq!(commandcode_base_url(), "https://api.commandcode.ai");
     assert_eq!(
         adapter.build_chat_url(TargetFormat::CommandCodeGo, &model),
@@ -92,7 +86,6 @@ fn test_commandcode_golden_contract_spec_parity() {
         Some("https://api.commandcode.ai/provider/v1/models".to_string())
     );
 
-    // 5. Envelope transform contract
     let mut val = serde_json::json!({
         "messages": [
             {"role": "user", "content": "Hello Command Code!"}
@@ -124,9 +117,7 @@ fn test_commandcode_golden_contract_spec_parity() {
     assert_eq!(msgs[0].get("role").and_then(|v| v.as_str()), Some("user"));
 }
 
-// ============================================================================
 // 2. Upstream Repository Code Drift Parity (Remote HTTP + Local Fallback)
-// ============================================================================
 
 #[tokio::test]
 async fn test_commandcode_remote_or_local_upstream_code_parity() {
@@ -153,7 +144,6 @@ async fn test_commandcode_remote_or_local_upstream_code_parity() {
         return;
     };
 
-    // 1. Verify upstream endpoints parity
     assert!(
         executor_src.contains("https://api.commandcode.ai"),
         "Upstream commandCode.ts must target https://api.commandcode.ai"
@@ -171,7 +161,6 @@ async fn test_commandcode_remote_or_local_upstream_code_parity() {
         "Upstream commandCode.ts must specify 200_000 token ceiling"
     );
 
-    // 2. Verify registry contract parity
     assert!(
         registry_src.contains("id: \"command-code\""),
         "Registry must define id 'command-code'"
@@ -197,7 +186,6 @@ async fn test_commandcode_remote_or_local_upstream_code_parity() {
         "Registry authPrefix must match"
     );
 
-    // 3. Verify all spoofed headers exist in our COMMANDCODE_SPOOFING_HEADERS definition
     for &(hdr, _) in COMMANDCODE_SPOOFING_HEADERS {
         assert!(
             !hdr.is_empty(),
@@ -206,9 +194,7 @@ async fn test_commandcode_remote_or_local_upstream_code_parity() {
     }
 }
 
-// ============================================================================
 // 3. Dynamic Real-time Overrides & Pipeline Propagation
-// ============================================================================
 
 #[test]
 fn test_commandcode_dynamic_overrides_and_pipeline_propagation() {
@@ -217,7 +203,6 @@ fn test_commandcode_dynamic_overrides_and_pipeline_propagation() {
         .unwrap_or_else(|p| p.into_inner());
     reset_dynamic_commandcode_overrides();
 
-    // 1. In-memory spoofer dynamic overrides
     assert_eq!(current_commandcode_version(), "1.54.0");
     assert_eq!(current_commandcode_ua(), "cli");
 
@@ -244,8 +229,7 @@ fn test_commandcode_dynamic_overrides_and_pipeline_propagation() {
     assert_eq!(current_commandcode_version(), "1.54.0");
     assert_eq!(current_commandcode_ua(), "cli");
 
-    // 2. Dynamic endpoint and URL resolvers via environment variables
-    // SAFETY: isolated test holding COMMANDCODE_TEST_LOCK
+    // SAFETY: env var mutation is serialized by COMMANDCODE_TEST_LOCK
     unsafe {
         std::env::set_var("OPENPROXY_COMMANDCODE_BASE_URL", "https://mock-cc.internal");
         std::env::set_var(
@@ -283,7 +267,6 @@ fn test_commandcode_dynamic_overrides_and_pipeline_propagation() {
         "https://api.commandcode.ai/alpha/generate"
     );
 
-    // 3. Pipeline header propagation
     let mut pipe_headers = vec![
         ("Content-Type".into(), "application/json".into()),
         ("x-cli-environment".into(), "production".into()),
@@ -320,7 +303,7 @@ fn test_commandcode_dynamic_overrides_and_pipeline_propagation() {
     assert_eq!(find_pipe("x-conversation-id"), Some("cc-session-987"));
     assert_eq!(find_pipe("Authorization"), Some("Bearer mock-token"));
 
-    // Verify session fallback priority: x-session-id when x-conversation-id is absent
+    // x-conversation-id falls back to x-session-id when absent
     let mut fallback_headers = vec![];
     let mut fallback_req = std::collections::BTreeMap::new();
     fallback_req.insert("x-session-id".into(), "sub-session-456".into());
@@ -334,7 +317,7 @@ fn test_commandcode_dynamic_overrides_and_pipeline_propagation() {
         Some("sub-session-456")
     );
 
-    // Verify session fallback priority: session-id when both x-* are absent
+    // x-conversation-id falls back to session-id when both x-* keys are absent
     let mut fallback_headers2 = vec![];
     let mut fallback_req2 = std::collections::BTreeMap::new();
     fallback_req2.insert("session-id".into(), "raw-session-123".into());
@@ -348,15 +331,12 @@ fn test_commandcode_dynamic_overrides_and_pipeline_propagation() {
     );
 }
 
-// ============================================================================
 // 4. Remote Live Upstream Contract & Drift Detection
-// ============================================================================
 
 #[tokio::test]
 async fn test_commandcode_remote_upstream_live_contract_parity() {
     let client = UpstreamClient::new();
 
-    // 1. Probe official NPM package registry for Command Code CLI metadata
     let npm_url = "https://registry.npmjs.org/command-code/latest";
     let cancel = CancellationToken::new();
     let req = UpstreamRequest::get(npm_url);
@@ -389,7 +369,6 @@ async fn test_commandcode_remote_upstream_live_contract_parity() {
         eprintln!("[CommandCodeLiveTest] Offline or NPM unreachable, skipping registry check");
     }
 
-    // 2. Probe live public /provider/v1/models endpoint from api.commandcode.ai
     let models_url = "https://api.commandcode.ai/provider/v1/models";
     let cancel2 = CancellationToken::new();
     let req2 = UpstreamRequest::get(models_url);

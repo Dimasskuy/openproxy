@@ -1,11 +1,7 @@
-// views/config/maintenance.ts — Database Maintenance card: auto-VACUUM
-// settings, usage retention, manual VACUUM trigger, and the vacuum
-// status poller.
-//
-// VACUUM failure handling: the error message includes repair
-// instructions if the DB is corrupt. It is shown as a toast and, when
-// it mentions "disk I/O" or "integrity", the recover endpoint is
-// queried for diagnostics.
+// views/config/maintenance.ts — auto-VACUUM settings, retention, manual
+// VACUUM trigger, and the vacuum status poller. A failed VACUUM shows
+// repair instructions as a toast and, when the message mentions disk
+// I/O or integrity, queries the recover endpoint for diagnostics.
 
 import { html, type TemplateResult } from "lit-html";
 import { api } from "../../state/api.js";
@@ -43,7 +39,6 @@ export async function loadMaintenanceState(): Promise<void> {
       };
     }
   } catch {
-    // Maintenance endpoint not available — keep defaults
   }
 }
 
@@ -58,7 +53,6 @@ export async function pollVacuumStatus(): Promise<void> {
     };
     requestUpdate();
   } catch {
-    // Non-fatal — the status will update on the next poll.
   }
 }
 
@@ -91,25 +85,21 @@ async function triggerVacuum(): Promise<void> {
       showToast(t("config.maintenance.toast.vacuum_ok"), "success");
     }
   } catch (e: unknown) {
-    // VACUUM failed — the error message includes repair instructions
-    // if the DB is corrupt. Show it as a toast and also try the
-    // recover endpoint for diagnostics.
+    // A corrupt DB yields repair instructions in the error; toast them, then
+    // try the recover endpoint for diagnostics.
     const errMsg = errStr(e);
     showToast(t("config.maintenance.toast.vacuum_failed", { message: errMsg }), "error");
-    // If the error mentions "disk I/O" or "integrity", auto-trigger
-    // the recover diagnostic so the operator sees the repair instructions.
+    // Auto-trigger the recover diagnostic so the operator sees those instructions.
     if (errMsg.includes("disk I/O") || errMsg.includes("integrity")) {
       try {
         const recovery = await api("/debug/recover", { method: "POST" }) as { instructions?: string; tables?: unknown[]; needs_manual_repair?: boolean };
         if (recovery.needs_manual_repair && recovery.instructions) {
-          // Show the repair instructions in a more prominent way —
-          // a longer-lived toast with the full instructions.
+          // Longer-lived toast: the full instructions are in the console too.
           showToast(t("config.maintenance.toast.repair_needed"), "error");
           console.error("=== DATABASE REPAIR INSTRUCTIONS ===\n" + recovery.instructions + "\n=== END INSTRUCTIONS ===");
         }
       } catch {
-        // Recovery endpoint also failed — non-fatal, the operator
-        // already has the VACUUM error message.
+        // Non-fatal: the operator already has the VACUUM error message.
       }
     }
   } finally {

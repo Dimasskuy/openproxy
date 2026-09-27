@@ -44,13 +44,10 @@ struct ModelsDevModalities {
     output: Option<Vec<String>>,
 }
 
-/// Translate models.dev `provider.npm` or provider-level `npm` to OpenProxy `TargetFormat`.
-///
-/// Handles canonical npm packages from OpenCode and AI SDK ecosystem:
-/// - `@ai-sdk/anthropic` (or ending in `anthropic`) -> Anthropic (`/messages`)
-/// - `@ai-sdk/google` (or containing `google`) -> Gemini (`/models/...`)
-/// - `@ai-sdk/openai` -> Responses (`/responses`)
-/// - `@ai-sdk/openai-compatible` -> Openai (`/chat/completions`)
+/// Translate a models.dev `provider.npm` (or the model-level one) to a
+/// `TargetFormat`, matching the canonical npm packages of the OpenCode and AI SDK
+/// ecosystem: `*anthropic` → Anthropic, `*google*` → Gemini, `@ai-sdk/openai` →
+/// Responses, `@ai-sdk/openai-compatible` → Openai.
 pub fn resolve_routing_format(
     model_npm: Option<&str>,
     provider_npm: Option<&str>,
@@ -206,9 +203,8 @@ fn commit_or_rollback(conn: &Connection, is_in_tx: bool, result: Result<usize>) 
     }
 }
 
-/// Fetch models.dev data, map providers, upsert into DB.
-/// The caller must supply the already-fetched API response bytes so
-/// that `&Connection` is not held across async boundaries.
+/// Map and upsert a models.dev payload. The caller passes already-fetched bytes so
+/// `&Connection` is never held across an async boundary.
 pub fn upsert_models_dev(body: &[u8], conn: &Connection) -> Result<usize> {
     let root: HashMap<String, serde_json::Value> = serde_json::from_slice(body)
         .map_err(|e| CoreError::Parse(format!("models.dev parse: {e}")))?;

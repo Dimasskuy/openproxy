@@ -1,8 +1,6 @@
-// views/playground/formatted-response.ts — Per-modality formatted response.
-//
-// Renders the "Formatted" tab of the response inspector: error banner with
+// views/playground/formatted-response.ts — the "Formatted" tab: error banner with
 // cURL replay, chat reasoning/content bubbles, image gallery, embedding
-// vectors, and audio transcription. Dispatched by modality from the inspector.
+// vectors, audio transcription. Dispatched by modality from the inspector.
 
 import { html, type TemplateResult } from 'lit-html';
 import { unsafeHTML } from 'lit-html/directives/unsafe-html.js';
@@ -15,9 +13,6 @@ import { extractThinkingProcess, copyText } from './shared.js';
 import { renderMarkdownAndMath } from '../../lib/markdown.js';
 import { generateCurlCommand } from './curl.js';
 
-// ==========
-// Error banner
-// ==========
 
 function renderErrorBanner(st: PlaygroundState): TemplateResult {
   const errorDetails = (typeof st.parsedResponseJson === 'object' && st.parsedResponseJson !== null)
@@ -63,9 +58,6 @@ function renderErrorBanner(st: PlaygroundState): TemplateResult {
   `;
 }
 
-// ==========
-// Chat response (reasoning + content bubbles)
-// ==========
 
 function renderChatResponse(st: PlaygroundState): TemplateResult {
   const { reasoning, content, isThinking } = extractThinkingProcess(
@@ -138,9 +130,6 @@ function renderChatResponse(st: PlaygroundState): TemplateResult {
   `;
 }
 
-// ==========
-// Image gallery
-// ==========
 
 async function sendImageToInpainting(st: PlaygroundState, b64OrUrl: string, isBase64: boolean): Promise<void> {
   try {
@@ -215,9 +204,6 @@ function renderImageResponse(st: PlaygroundState): TemplateResult {
   `;
 }
 
-// ==========
-// Embedding vectors
-// ==========
 
 function renderEmbeddingResponse(st: PlaygroundState): TemplateResult {
   const data = (st.parsedResponseJson as { data?: Array<{ embedding?: number[]; index?: number }> })?.data;
@@ -250,9 +236,6 @@ function renderEmbeddingResponse(st: PlaygroundState): TemplateResult {
   `;
 }
 
-// ==========
-// Audio transcription
-// ==========
 
 function renderAudioResponse(st: PlaygroundState): TemplateResult {
   if (!st.rawResponseText && !st.parsedResponseJson) {
@@ -327,9 +310,6 @@ function renderDecisionResponse(st: PlaygroundState): TemplateResult {
   `;
 }
 
-// ==========
-// Public dispatcher
-// ==========
 
 export function renderFormattedResponse(st: PlaygroundState): TemplateResult {
   if (st.responseError) {

@@ -4,22 +4,16 @@ use crate::streaming::{StreamAction, StreamingChunkStage};
 use aho_corasick::{AhoCorasick, MatchKind};
 use std::collections::{HashMap, HashSet};
 
-/// Streaming window replacer that handles placeholders split across SSE chunk boundaries
-/// (e.g. chunk 1 has `alex.turn`, chunk 2 has `er1@fastmail.com`) and emits restored text smoothly
-/// in strict O(N) linear time using an Aho-Corasick multi-pattern automaton.
+/// Placeholders split across SSE chunk boundaries (chunk 1 has `alex.turn`,
+/// chunk 2 has `er1@fastmail.com`) are buffered until the match is decidable,
+/// so restoration stays O(N) through one Aho-Corasick automaton.
 #[derive(Debug, Clone)]
 pub struct StreamingWindowReplacer {
-    /// Mapping of placeholder -> original value
     mapping: HashMap<String, String>,
-    /// Precompiled Aho-Corasick automaton with LeftmostLongest semantics
     automaton: Option<AhoCorasick>,
-    /// Parallel array of replacement strings corresponding to automaton pattern indices
     replacements: Vec<String>,
-    /// Set of proper prefixes for all patterns to support constant-time boundary checking
     prefixes: HashSet<String>,
-    /// Pending partial placeholder buffer (e.g. "alex.tur")
     pending: String,
-    /// Maximum length of any placeholder in mapping
     max_len: usize,
 }
 
@@ -37,7 +31,6 @@ impl StreamingWindowReplacer {
         }
 
         let mut pairs: Vec<(String, String)> = mapping.into_iter().collect();
-        // Sort patterns by length descending
         pairs.sort_by_key(|(k, _)| std::cmp::Reverse(k.len()));
 
         let max_len = pairs.first().map_or(0, |(k, _)| k.len());
@@ -83,12 +76,10 @@ impl StreamingWindowReplacer {
         self.mapping.is_empty()
     }
 
-    /// Process an incoming chunk of text and return the reconstituted string.
     pub fn process(&mut self, chunk: &str) -> String {
         self.process_internal(chunk, false)
     }
 
-    /// Flush any remaining buffered characters at end of stream.
     pub fn flush(&mut self) -> String {
         if self.pending.is_empty() {
             return String::new();
@@ -117,7 +108,6 @@ impl StreamingWindowReplacer {
             return String::new();
         }
 
-        // On EOF, run direct complete Aho-Corasick replacement without boundary buffering
         if is_eof {
             return ac.replace_all(&input, &self.replacements);
         }
@@ -131,7 +121,7 @@ impl StreamingWindowReplacer {
                 continue;
             }
 
-            // If match touches the very trailing edge of chunk and could be a prefix of a longer pattern
+            // A match at the trailing edge may be the prefix of a longer pattern.
             if mat.end() == len {
                 let candidate = &input[mat.start()..];
                 if self.prefixes.contains(&candidate.to_ascii_lowercase()) {
@@ -147,7 +137,6 @@ impl StreamingWindowReplacer {
             last_end = mat.end();
         }
 
-        // Check if any suffix of trailing uncommitted text is in self.prefixes
         let trailing = &input[last_end..];
         if trailing.is_empty() {
             return out;
@@ -173,8 +162,7 @@ impl StreamingWindowReplacer {
     }
 }
 
-/// Stage for the streaming chunk pipeline that restores placeholders in SSE payloads.
-/// Implements StreamingChunkStage to cleanly integrate with the upstream pipeline.
+/// Restores placeholders in SSE payloads.
 pub struct PiiRestorationStage {
     content_replacer: StreamingWindowReplacer,
     reasoning_replacer: StreamingWindowReplacer,
@@ -205,7 +193,6 @@ impl PiiRestorationStage {
         self.content_replacer.is_empty()
     }
 
-    /// Helper to process a full SSE wire frame or multi-event chunk.
     pub fn process_frame(&mut self, frame: &str) -> String {
         if self.is_empty() || frame.is_empty() {
             return frame.to_string();
@@ -258,12 +245,11 @@ impl PiiRestorationStage {
         out
     }
 
-    /// Flushes any pending partial placeholder buffers as a single OpenAI-compatible SSE data frame.
+    /// Flushes pending partial placeholder buffers as one OpenAI-compatible SSE data frame.
     pub fn flush_residual_frame(&mut self) -> Option<String> {
         self.finalize().map(|json| format!("data: {json}\n\n"))
     }
 
-    /// Inherent finalization to flush buffered replacers without requiring trait in scope.
     pub fn finalize(&mut self) -> Option<String> {
         let content_flushed = self.content_replacer.flush();
         let reasoning_flushed = self.reasoning_replacer.flush();
@@ -312,7 +298,6 @@ impl StreamingChunkStage for PiiRestorationStage {
             return StreamAction::Passthrough;
         }
 
-        // Handle possible TCP packet fragmentation across JSON boundaries
         let (to_parse, is_buffered) = if !self.buffered_json.is_empty() {
             self.buffered_json.push_str(payload);
             let combined = std::mem::take(&mut self.buffered_json);
@@ -393,12 +378,12 @@ impl StreamingChunkStage for PiiRestorationStage {
                 }
             }
             Err(_) => {
-                // If payload starts like a JSON object but failed to parse, it may be fragmented
+                // A JSON-looking payload that failed to parse may be fragmented.
                 if to_parse.trim_start().starts_with('{') {
                     self.buffered_json = to_parse;
                     StreamAction::Skip
                 } else {
-                    // Non-JSON pure text line (e.g. raw text stream)
+                    // Non-JSON text line (raw text stream).
                     let restored = self.content_replacer.process(&to_parse);
                     if restored != to_parse {
                         StreamAction::Mutate(restored)

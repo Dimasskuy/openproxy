@@ -60,7 +60,6 @@ async fn drive_retry_success_after_one_invalid_grant() {
     assert_eq!(token.access_token, "access-recovered");
     assert_eq!(calls.load(Ordering::Relaxed), 2);
     assert_eq!(unhealthy_calls.load(Ordering::Relaxed), 0);
-    // Counter reset on success.
     assert!(!INVALID_GRANT_COUNTERS.contains_key(&account_id.0));
 }
 
@@ -91,9 +90,7 @@ async fn drive_retry_marks_unhealthy_after_threshold() {
         err.to_string().contains("invalid_grant"),
         "expected invalid_grant in error chain, got: {err}"
     );
-    // 3 attempts (initial + 2 retries) before threshold fires.
     assert_eq!(calls.load(Ordering::Relaxed), 3);
-    // `on_unhealthy` fires exactly once.
     assert_eq!(unhealthy_calls.load(Ordering::Relaxed), 1);
     assert_eq!(*unhealthy_account.lock().unwrap(), Some(account_id));
     assert!(INVALID_GRANT_COUNTERS.contains_key(&account_id.0));
@@ -111,11 +108,7 @@ async fn drive_retry_marks_unhealthy_after_threshold() {
 
 #[tokio::test]
 async fn drive_retry_ignores_non_invalid_grant_errors() {
-    // Sequence: invalid_grant, network, invalid_grant, invalid_grant.
-    // The network error must short-circuit; the trailing two
-    // `invalid_grant` errors must NOT be reached because the
-    // loop returned on the network error. Counter should record
-    // only the single initial `invalid_grant`.
+    // the trailing two `invalid_grant` errors must never be reached
     let account_id = AccountId(9004);
     clear_counter(account_id);
 
@@ -149,11 +142,8 @@ async fn drive_retry_ignores_non_invalid_grant_errors() {
         err.to_string().contains("connection refused"),
         "expected network error to short-circuit, got: {err}"
     );
-    // Only the first two attempts ran (invalid_grant then network).
     assert_eq!(calls.load(Ordering::Relaxed), 2);
     assert_eq!(unhealthy_calls.load(Ordering::Relaxed), 0);
-    // Counter recorded only the 1 invalid_grant before the network
-    // error short-circuited.
     assert_eq!(
         INVALID_GRANT_COUNTERS
             .get(&account_id.0)
@@ -168,10 +158,6 @@ async fn drive_retry_ignores_non_invalid_grant_errors() {
 
 #[tokio::test(start_paused = true)]
 async fn drive_retry_backoff_delays_grow_exponentially() {
-    // Verifies that the backoff schedule is approximately
-    // [500ms, 1000ms, 2000ms] by capturing timestamps around each
-    // sleep. Paused time means we can run this without burning
-    // wall-clock seconds.
     let account_id = AccountId(9005);
     clear_counter(account_id);
 
@@ -196,9 +182,8 @@ async fn drive_retry_backoff_delays_grow_exponentially() {
     assert_eq!(attempts.len(), 3);
     let d1 = attempts[1].duration_since(attempts[0]).as_millis();
     let d2 = attempts[2].duration_since(attempts[1]).as_millis();
-    // Paused clock: time advances only as fast as the runtime
-    // advances it. We assert the observed delay is within a small
-    // tolerance of the documented schedule.
+    // paused clock: assert the observed delays against the schedule with a
+    // small tolerance
     assert!(
         (495..=510).contains(&d1),
         "first backoff should be ~500ms, got {d1}ms"
@@ -214,22 +199,14 @@ async fn drive_retry_backoff_delays_grow_exponentially() {
 
 #[tokio::test(start_paused = true)]
 async fn drive_retry_cancellation_releases_counter() {
-    // N5 cross-spec fix verification: when the caller's context is
-    // cancelled mid-loop, the sleep must short-circuit and the
-    // counter must remain in a coherent state (visible to the
-    // next call, but with the count reflecting only completed
-    // invalid_grant bumps). We simulate cancellation by racing the
-    // retry helper against a `tokio::time::timeout` that fires
-    // before the second backoff completes.
+    // N5: a cancelled caller must leave the counter coherent, counting only the
+    // completed `invalid_grant` bumps
     let account_id = AccountId(9006);
     clear_counter(account_id);
 
     let calls = AtomicU32::new(0);
 
-    // Wrap the retry helper in an outer timeout shorter than the
-    // total backoff (500 + 1000 = 1500ms). 750ms guarantees we
-    // observe at least one `invalid_grant` bump but cut off
-    // before the loop completes.
+    // 750ms is past the first backoff (500ms) but short of the full 1500ms
     let result = tokio::time::timeout(
         std::time::Duration::from_millis(750),
         drive_invalid_grant_retry(
@@ -243,20 +220,14 @@ async fn drive_retry_cancellation_releases_counter() {
     )
     .await;
 
-    // The outer timeout fires; we don't care what the inner
-    // result is (it may have errored with `invalid_grant` before
-    // the timeout, or it may still be sleeping).
     let _ = result;
 
-    // At least one attempt must have run.
     let calls_so_far = calls.load(Ordering::Relaxed);
     assert!(
         calls_so_far >= 1,
         "expected at least 1 invalid_grant attempt, got {calls_so_far}"
     );
 
-    // The counter is observable and bounded by the threshold (the
-    // helper never leaves it above 3 by design).
     if let Some(entry) = INVALID_GRANT_COUNTERS.get(&account_id.0) {
         let v = entry.value().load(Ordering::Relaxed);
         assert!(

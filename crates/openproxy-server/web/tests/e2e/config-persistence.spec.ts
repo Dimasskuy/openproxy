@@ -4,19 +4,14 @@ import { readFileSync } from 'node:fs';
 // Real round-trip persistence coverage for the Recording TTL config card.
 // No page.route mocks: the browser, the waitForResponse predicates, and the
 // `page.request` API probes below all hit the real admin API of the server
-// spawned by playwright.config.js (separate concern from
-// config-recording-ttl.spec.ts, which covers the save wiring with mocked
-// responses).
+// spawned by playwright.config.js.
 
 const recordingTtlEndpoint = '/admin/api/config/recording-ttl';
 const runtimeConfigEndpoint = '/admin/api/config';
 const storageStatePath = 'tests/e2e/storageState.json';
 
-// The dashboard authenticates /admin/api/* with a Bearer token kept in
-// localStorage (state/auth.ts). `page.request` shares cookies only, not
-// localStorage, so API probes must send the header explicitly. The token is
-// read from the same storageState.json the browser context is seeded with —
-// single source of truth for test credentials.
+// `page.request` shares cookies, not localStorage, so API probes must send the
+// Bearer token (state/auth.ts) read from the seeded storageState.json.
 function adminAuthHeaders(): Record<string, string> {
   const storageState = JSON.parse(readFileSync(storageStatePath, 'utf8')) as {
     origins: Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }>;

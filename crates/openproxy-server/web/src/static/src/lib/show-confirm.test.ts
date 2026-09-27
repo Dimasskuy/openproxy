@@ -1,9 +1,6 @@
-// lib/show-confirm.test.ts — unit tests for showConfirm(), showPrompt(),
-// and showCopyError().
-//
-// These render lit-html modals into a real DOM wrapper under document.body,
-// so jsdom suffices. We interact with the rendered buttons and keydown
-// events to drive the Promise resolution.
+// lib/show-confirm.test.ts — unit tests for showConfirm(), showPrompt() and showCopyError().
+// These render lit-html modals into a real DOM wrapper under document.body, so jsdom suffices;
+// the tests drive the Promise resolution through the rendered buttons and keydown events.
 
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { showConfirm, showPrompt, showCopyError } from "./show-confirm.js";
@@ -119,7 +116,7 @@ describe("showConfirm", () => {
     document.querySelector<HTMLButtonElement>(".modal-footer button:last-child")?.click();
     await promise;
 
-    // The wrapper div is removed (it's no longer connected).
+    // The wrapper div is removed (no longer connected).
     const dialog = document.querySelector('[role="dialog"]');
     expect(dialog).toBeNull();
   });

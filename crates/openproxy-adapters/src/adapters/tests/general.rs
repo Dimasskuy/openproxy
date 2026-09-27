@@ -3,7 +3,7 @@ use crate::adapters::opencode_common::classify_zen_target_format;
 use crate::adapters::*;
 use openproxy_types::{ModelId, TargetFormat};
 
-// ---- OpenRouter -----------------------------------------------------
+// OpenRouter
 
 #[test]
 fn openrouter_builds_correct_url() {
@@ -48,7 +48,7 @@ fn openrouter_headers_include_referer_and_content_type() {
     assert_eq!(first_header(&headers, "X-Title"), Some("openproxy"));
 }
 
-// ---- MiniMax -----------------------------------------------------
+// MiniMax
 
 #[test]
 fn minimax_builds_messages_url_managed_and_byok() {
@@ -89,7 +89,7 @@ fn minimax_builds_anthropic_headers() {
     );
 }
 
-// ---- OpenCode Zen ------------------------------------------------
+// OpenCode Zen
 
 #[test]
 fn opencode_zen_routes_anthropic_to_messages() {
@@ -217,7 +217,7 @@ fn classify_zen_target_format_heuristic() {
     );
 }
 
-// ---- Factory & Enums -------------------------------------------------
+// Factory & Enums
 
 #[test]
 fn builtin_adapters_returns_all() {

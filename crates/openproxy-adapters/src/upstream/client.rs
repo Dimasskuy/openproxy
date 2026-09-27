@@ -1,8 +1,7 @@
-//! The `UpstreamClient` — the hyper-based replacement for the
-//! UpstreamClient-based `UpstreamClient` used by the chat pipeline.
+//! The `UpstreamClient`: a hyper-based HTTP client with per-phase timeouts.
 //!
-//! See the module-level docs in `mod.rs` for the full architecture;
-//! this file is the implementation.
+//! See the module-level docs in `mod.rs` for the architecture; this file is
+//! the implementation.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -29,24 +28,19 @@ use hyper_util::client::legacy::connect::Connection as HyperConnection;
 #[cfg(feature = "upstream-hyper")]
 use hyper_util::rt::TokioExecutor;
 
-// -----------------------------------------------------------------------
 // UpstreamRequest
-// -----------------------------------------------------------------------
 
-/// Caller-supplied request shape. The client only needs a URL, method,
-/// headers, and a body. The body is bounded to keep the simple
-/// non-streaming path easy; streaming bodies are a Gate-4 concern.
+/// Caller-supplied request shape: URL, method, headers and a bounded body.
 #[derive(Debug, Clone)]
 pub struct UpstreamRequest {
     pub method: Method,
     pub url: String,
     pub headers: HeaderMap,
     pub body: Option<Bytes>,
-    /// When `false`, the body-chunk gap timeout (idle_chunk_ms) is NOT
-    /// applied to the response body. Only `total_ms` bounds the body
-    /// read. Set to `false` for non-streaming requests where the LLM
-    /// generates the full response server-side before sending anything.
-    /// Default: `true` (streaming).
+    /// `false` disables the `idle_chunk_ms` body-chunk gap timeout, leaving
+    /// only `total_ms` on the body read. Set it for non-streaming requests,
+    /// where the upstream generates the full reply before sending anything.
+    /// Default: `true`.
     pub is_streaming: bool,
     pub proxy: Option<String>,
     pub proxy_status: Option<String>,
@@ -97,18 +91,11 @@ impl UpstreamRequest {
         }
     }
 
-    /// Create a POST request with a custom Content-Type (for
-    /// `multipart/form-data`). The caller must build the multipart
-    /// body themselves and pass a `Content-Type` value that includes
-    /// the boundary (e.g.
-    /// `multipart/form-data; boundary=----WebKitFormBoundary...`).
-    ///
-    /// Used by the audio-transcription handler to forward the
-    /// pre-built multipart body to the upstream's
-    /// `/audio/transcriptions` endpoint. The hyper-based
-    /// `UpstreamClient` does not need to know about the multipart
-    /// shape — it just ships the bytes through with the supplied
-    /// Content-Type.
+    /// A POST with a caller-built multipart body. `content_type` must carry
+    /// the boundary, e.g.
+    /// `multipart/form-data; boundary=----WebKitFormBoundary...`. The audio
+    /// transcription handler uses this to forward a pre-built body to
+    /// `/audio/transcriptions`.
     pub fn post_multipart(url: impl Into<String>, content_type: &str, body: Bytes) -> Self {
         let mut headers = HeaderMap::with_capacity(1);
         headers.insert(
@@ -122,9 +109,7 @@ impl UpstreamRequest {
             headers,
             body: Some(body),
             // Non-streaming: the upstream builds the full transcription
-            // server-side before sending the response. Disabling the
-            // body-chunk gap timeout keeps the (potentially long)
-            // transcription from being killed by an idle-chunk watchdog.
+            // server-side, so the body-chunk gap timeout would kill it.
             is_streaming: false,
             proxy: None,
             proxy_status: None,
@@ -132,17 +117,8 @@ impl UpstreamRequest {
     }
 }
 
-// -----------------------------------------------------------------------
 // UpstreamClient
-// -----------------------------------------------------------------------
 
-/// A hyper-based HTTP client with per-phase timeouts and a per-host
-/// connection pool.
-///
-/// The struct is private; users get an `Arc<UpstreamClient>` from
-/// `new()`. Internally we keep the hyper `Client` and the per-host
-/// pool (which is just the observability layer over the hyper
-/// client's own internal pool).
 pub trait UpstreamTransport: Send + Sync + std::fmt::Debug {
     fn send_request(
         &self,
@@ -164,10 +140,8 @@ pub trait UpstreamTransport: Send + Sync + std::fmt::Debug {
 /// A hyper-based HTTP client with per-phase timeouts and a per-host
 /// connection pool.
 ///
-/// The struct is private; users get an `Arc<UpstreamClient>` from
-/// `new()`. Internally we keep the hyper `Client` and the per-host
-/// pool (which is just the observability layer over the hyper
-/// client's own internal pool).
+/// `Pool` is only the observability layer over the hyper client's own
+/// internal pool.
 pub struct UpstreamClient {
     pool: Pool,
     #[cfg(feature = "upstream-hyper")]
@@ -335,9 +309,7 @@ where
 }
 
 impl UpstreamClient {
-    /// Build a new client with the default connector (HTTPS via rustls
-    /// with safe defaults, HTTP plain). Returns an `Arc<UpstreamClient>`
-    /// per the spec API.
+    /// A client with the default connector (HTTPS via rustls, HTTP plain).
     pub fn new() -> Arc<Self> {
         #[cfg(feature = "upstream-hyper")]
         {
@@ -356,13 +328,11 @@ impl UpstreamClient {
         }
     }
 
-    /// Test-only: build a client with a custom connector. The
-    /// connector must be `Clone` and implement
-    /// `tower_service::Service<Uri>` with the hyper-util connect
-    /// future type. The supplied `phase_hint` is consulted when a
-    /// timeout fires during the connect/headers phase: if set, the
-    /// returned error is `Timeout(phase_hint)`; if not, it falls
-    /// back to `Timeout(Headers)`.
+    /// Test-only client with a custom connector (`Clone` +
+    /// `tower_service::Service<Uri>` over the hyper-util connect future type).
+    /// `phase_hint` is reported when a timeout fires during the
+    /// connect/headers phase; without one the error falls back to
+    /// `Timeout(Headers)`.
     #[cfg(feature = "upstream-hyper")]
     pub fn for_test_with_connector<C, T>(
         connector: C,
@@ -654,11 +624,10 @@ fn push_unique_source_str(parts: &mut Vec<String>, s: String) {
     }
 }
 
-/// Format a hyper-util legacy `Error` with its full `source()` chain
-/// so the operator can see the root cause (e.g. "connection closed
-/// before message completed", "broken pipe", "tls handshake eof").
-/// The default `Display` only gives "client error (SendRequest)"
-/// which is useless for debugging.
+/// Format a hyper-util legacy `Error` with its full `source()` chain, so the
+/// root cause surfaces ("connection closed before message completed", "broken
+/// pipe", "tls handshake eof"). The default `Display` is only
+/// "client error (SendRequest)".
 #[cfg(feature = "upstream-hyper")]
 fn format_hyper_error(e: &hyper_util::client::legacy::Error) -> String {
     use std::error::Error as _;
@@ -689,8 +658,8 @@ fn map_phased_connector_error(p: &super::connector::PhasedConnectorError) -> Ups
     }
 }
 
-/// Walk the `source()` chain of a hyper `Error` looking for a
-/// `PhasedConnectorError` and map it to an `UpstreamError`.
+/// Map the first `PhasedConnectorError` in a hyper `Error` source chain to an
+/// `UpstreamError`.
 #[cfg(feature = "upstream-hyper")]
 fn hyper_source_connector_error(e: &hyper_util::client::legacy::Error) -> Option<UpstreamError> {
     use std::error::Error as _;
@@ -704,9 +673,9 @@ fn hyper_source_connector_error(e: &hyper_util::client::legacy::Error) -> Option
     None
 }
 
-/// Walk the `source()` chain of a hyper `Error` looking for a
-/// `PhasedConnectorError` and return its phase. Returns `None` if
-/// the chain does not contain one (e.g. a non-phased test connector).
+/// Walk a hyper `Error` source chain for a `PhasedConnectorError` and map it
+/// to an `UpstreamError`. `None` when the chain holds none (e.g. a non-phased
+/// test connector).
 #[cfg(feature = "upstream-hyper")]
 fn hyper_source_phase(e: &hyper_util::client::legacy::Error) -> Option<UpstreamPhase> {
     use std::error::Error as _;
@@ -720,13 +689,10 @@ fn hyper_source_phase(e: &hyper_util::client::legacy::Error) -> Option<UpstreamP
     None
 }
 
-/// Walk the `source()` chain of an `UpstreamError` looking for a
-/// `PhasedConnectorError` and return its phase. This is the fallback
-/// used in `call_inner` for any error variant that exposes a source
-/// (currently only `UpstreamError::Connection`). In the normal flow,
-/// `ProductionDispatch` and `TestDispatch` convert the phased
-/// connector error to `Timeout(phase)` directly, so this is a
-/// belt-and-suspenders for any path that doesn't.
+/// Recover the phase from an `UpstreamError` source chain. `call_inner` uses
+/// it for any variant exposing a source (currently only
+/// `UpstreamError::Connection`); the normal flow converts the phased error in
+/// `ProductionDispatch` / `TestDispatch`.
 #[cfg(feature = "upstream-hyper")]
 fn recover_phased_phase(e: &UpstreamError) -> Option<UpstreamPhase> {
     use std::error::Error as _;

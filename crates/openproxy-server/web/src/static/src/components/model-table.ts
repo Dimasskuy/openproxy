@@ -1,24 +1,15 @@
-// components/model-table.ts — render the inner HTML of the
-// provider-detail models table. Pulled out of the old monolithic
-// renderProviderDetail() so updateProviderFilter() can re-paint
-// just the rows (the search input lives outside the tbody, so its
-// focus survives the partial re-paint).
+// Provider-detail models table. Split out of the old monolithic
+// `renderProviderDetail()` so `updateProviderFilter()` can re-paint just the
+// rows; the search input lives outside the tbody, so its focus survives.
 //
-// Migrated to lit-html: every render function now returns a
-// `TemplateResult` instead of an HTML string, and the per-row
-// `data-action` / `data-arg-N` attributes have been replaced with
-// direct `@click` / `@change` handlers wired to the handlers in
-// `handlers/model-handlers.ts`. The handlers module imports
-// `renderModelRows` from here, so importing them back creates a
-// module cycle; the cycle is safe because the imported bindings
-// are referenced only inside `@click` / `@change` closures
-// (runtime), never at module top-level. `syncModelRowActive` and
-// the other DOM-patch helpers keep their original signatures —
-// they mutate the table in place rather than re-rendering.
+// The handlers module imports `renderModelRows` from here, and this file
+// imports the handlers back: a module cycle, safe because the handlers are only
+// referenced inside `@click` / `@change` closures, never at module top level.
+// `syncModelRowActive` and the other DOM-patch helpers keep mutating the table
+// in place instead of re-rendering.
 //
-// All exports are pure functions of `(state, props)`. They mutate
-// only the DOM via `render()` on the tbody — never the `state`
-// singleton.
+// Every export is a pure function of `(state, props)`. They touch the DOM via
+// `render()` on the tbody, never the `state` singleton.
 
 import { html, type TemplateResult } from "lit-html";
 import { state } from "../state/index.js";
@@ -34,14 +25,11 @@ import {
 } from "../handlers/model-handlers/index.js";
 import type { Model } from "../lib/types/api.js";
 
-// Map an HTTP status code to a status-pill CSS class. The server
-// stamps `0` when the request never reached the upstream (DNS /
-// connect / TLS / timeout); treat it as the red "off" pill so it
-// reads as a network error at a glance.
+// HTTP status to a status-pill CSS class. The server stamps `0` when the
+// request never reached the upstream (DNS, connect, TLS, timeout), which reads
+// as the red "off" pill.
 //
-// Returns a plain string (a CSS class name), NOT a TemplateResult —
-// this is a class-name helper used inside `class=${...}`
-// compositions, never a top-level render.
+// Returns a CSS class name, not a TemplateResult: it feeds `class=${...}`.
 export function modelStatusPillClass(status: number | null): string {
   if (status == null) return "off";
   if (status === 0) return "off";
@@ -51,10 +39,8 @@ export function modelStatusPillClass(status: number | null): string {
   return "";
 }
 
-// Render the per-model capability badges (vision/tools/reasoning/…).
-// Accepts either a JSON string (the wire shape from /admin/models)
-// or a plain object (in case a caller pre-parsed it). Bad input
-// renders as an em-dash rather than throwing — the admin list should
+// Capability badges. Accepts the wire JSON string or a pre-parsed object.
+// Bad input renders as an em-dash rather than throwing.
 export function renderCapabilityBadges(json: string | null | undefined, modelType?: string | null): TemplateResult {
   const badges: TemplateResult[] = [];
   if (modelType && modelType !== "chat") {
@@ -81,10 +67,8 @@ export function renderCapabilityBadges(json: string | null | undefined, modelTyp
   return badges.length > 0 ? html`${badges}` : html`<span class="muted">—</span>`;
 }
 
-// Build a single <tr> for a model row. The caller passes the
-// already-filtered model object. The row id is the server-side
-// `row_id` (numeric primary key) — the /admin/models/:id/...
-// endpoints key off that.
+// One <tr> for an already-filtered model. The row id is the numeric
+// `row_id` primary key, which is what /admin/models/:id/... endpoints key off.
 export function renderModelRow(m: Model): TemplateResult {
   const lastTest: TemplateResult = m.last_test_status != null
     ? html`<span class=${"status-pill " + statusPillClass(m.last_test_status)}>${String(m.last_test_status)}</span> <small>${m.last_test_at || ""}</small>`
@@ -110,18 +94,14 @@ export function renderModelRow(m: Model): TemplateResult {
   `;
 }
 
-// Concatenate the row TemplateResults for an array of model rows.
-// Caller supplies the pre-filtered list (e.g. search + active/
-// inactive filter already applied). Renders into a single
-// TemplateResult so the caller can `render()` it into the tbody.
+// Rows for a pre-filtered list (search plus active/inactive already applied),
+// as a single TemplateResult for `render()` into the tbody.
 export function renderModelRows(rows: readonly Model[]): TemplateResult {
   return html`${rows.map((m) => renderModelRow(m))}`;
 }
 
-// Apply the per-provider search+filter state to the global models
-// cache and return the row_ids of the visible models. Used by
-// `toggleSelectAllModels` so the master "select all" checkbox only
-// catches the rows the user can actually see.
+// Row ids passing the current search+filter, so the master "select all"
+// checkbox only catches rows the user can see.
 export function getVisibleModelRowIds(): number[] {
   if (!state.currentView || state.currentView.context == null) return [];
   const providerId: string = state.currentView.context;
@@ -140,9 +120,8 @@ export function getVisibleModelRowIds(): number[] {
     .map((m) => m.row_id);
 }
 
-// Rewrite the (All / Active / Inactive) counts on the filter tabs
-// so the user sees the totals for the provider, not for the
-// current filter. Cheaper than a full re-render.
+// Rewrite the filter-tab counts to the provider's totals rather than the
+// current filter's. Cheaper than a full re-render.
 export function updateFilterTabCounts(providerId: string, allProviderModels: readonly Model[]): void {
   const active: number = allProviderModels.filter((m) => m.active).length;
   const inactive: number = allProviderModels.length - active;
@@ -154,50 +133,35 @@ export function updateFilterTabCounts(providerId: string, allProviderModels: rea
   if (inactiveBtn) inactiveBtn.textContent = `Inactive (${inactive})`;
 }
 
-// Patch a single model row's active-state UI in place — toggle the
-// row's `inactive` class, swap the status-pill text/class, and
-// relabel the Enable/Disable button — without a full re-render.
-// Used by `toggleModel` and `bulkSetSelected` (model-handlers.ts)
-// and `bulkToggleModels` (provider-handlers.ts) so the user sees
-// their click reflected immediately while any open `<select>` /
-// `<input>` elsewhere on the page keeps its focus. Mirrors the
-// patchComboField pattern in combo-handlers.ts.
+// Patch one row's active state in place (class, status pill, button label)
+// instead of re-rendering, so an open <select> or <input> elsewhere keeps
+// focus. Mirrors patchComboField in combo-handlers.ts.
 //
-// NOTE: This is a direct DOM mutation, NOT a lit-html re-render —
-// the row was rendered by lit-html (either from renderModelRow in
-// views/providers.ts or from renderModelRows here), but the
-// per-row active-state patch is small and local enough that
-// hand-toggling classes + text is cheaper than diffing the whole
-// tbody. The next full `requestUpdate()` from the parent view
-// reconciles any drift.
+// A direct DOM mutation, not a lit-html re-render: the patch is small and
+// local, and the next `requestUpdate()` reconciles any drift.
 export function syncModelRowActive(rowId: number, active: boolean): void {
   const row = document.getElementById(`model-row-${rowId}`);
   if (!row) return;
   row.classList.toggle("inactive", !active);
-  // The active-state status pill is in a regular <td>; the
-  // last-test pill is in <td class="last-test-cell">. Use
-  // :not(.last-test-cell) to disambiguate.
+  // The active pill sits in a plain <td>; the last-test pill in
+  // <td class="last-test-cell">.
   const pill = row.querySelector("td:not(.last-test-cell) > .status-pill");
   if (pill) {
     pill.className = `status-pill ${active ? "on" : "off"}`;
     pill.textContent = active ? "active" : "inactive";
   }
-  // The Enable/Disable button — update its text. The button is
-  // rendered with the `model-toggle-btn` class so we can find it
-  // without the old `data-action` attribute. (The original
-  // `data-arg2` mutation is gone — the @click closure captures
-  // `!m.active` at click time, and `toggleModel` mutates `m.active`
-  // in place, so the next click already sees the new state.)
+  // Located by the `model-toggle-btn` class. The @click closure captures
+  // `!m.active` at click time and `toggleModel` mutates `m.active` in place,
+  // so the next click already sees the new state.
   const toggleBtn = row.querySelector<HTMLButtonElement>(".model-toggle-btn");
   if (toggleBtn) {
     toggleBtn.textContent = active ? "Disable" : "Enable";
   }
 }
 
-// Sync the master "select all" checkbox state with the in-flight
-// selection: checked if all visible rows are selected,
-// indeterminate if some, unchecked if none. Used by both the
-// initial render and the partial re-paint in updateProviderFilter.
+// Master "select all": checked when every visible row is selected,
+// indeterminate on a partial selection. Shared by the initial render and the
+// partial re-paint in updateProviderFilter.
 export function syncSelectAllCheckbox(visibleRowIds: readonly number[]): void {
   const master: HTMLInputElement | null = document.getElementById("model-select-all") as HTMLInputElement | null;
   if (!master) return;
@@ -219,23 +183,11 @@ export function syncSelectAllCheckbox(visibleRowIds: readonly number[]): void {
   }
 }
 
-// ---- Column sorting ------------------------------------------------------
-//
-// The user can click any header in the models table to sort by that
-// column. Each click cycles through three states:
-//
-//   none → asc → desc → none → asc → ...
-//
-// "none" restores the original upstream order (which is itself
-// meaningful — the rows came back in the same order the provider
-// returned them, e.g. family groupings from OpenRouter). The active
-// state is persisted per-provider in `state.providerDetail[id].sort`
-// so a navigation away and back doesn't lose the user's choice.
-//
-// The indicator (▲/▼) is rendered inline in the <th> as a Unicode
-// arrow next to the column label; empty cells mean "not sorted".
-// Sortable columns get the `sortable` CSS class (cursor: pointer +
-// hover background) so the affordance is obvious.
+// Column sorting. A header click cycles none → asc → desc, and "none" restores
+// the upstream order, which is itself meaningful (e.g. OpenRouter's family
+// groupings). The choice persists per provider in
+// `state.providerDetail[id].sort`. The indicator is a Unicode arrow inline in
+// the <th>; sortable headers carry the `sortable` class.
 
 export interface SortableColumn {
   key: string;
@@ -244,9 +196,7 @@ export interface SortableColumn {
 }
 
 export const SORTABLE_COLUMNS: readonly SortableColumn[] = [
-  // key matches `data-sort-key`; label is the human text; value
-  // is the extractor for the model row. `null` extractors mean
-  // "stable" (the upstream order is preserved).
+  // A null extractor means "stable": keep the upstream order.
   { key: "usage_model", label: "Model",      value: (m) => (`${m.provider_id}/${m.model_id}`).toLowerCase() },
   { key: "format",     label: "Format",     value: (m) => (m.target_format || "").toLowerCase() },
   { key: "context",    label: "Context",    value: (m) => m.context_length || 0 },
@@ -258,16 +208,13 @@ export interface ModelSort {
   dir: "asc" | "desc" | string;
 }
 
-// Apply the per-provider sort (if any) to the filtered row list.
-// Returns a new array; the input is not mutated. `null`/missing
-// sort state returns the input unchanged.
+// Sorted copy of the row list. Missing sort state returns the input unchanged.
 export function applySort(rows: readonly Model[], sort: ModelSort | null): readonly Model[] {
   if (!sort || !sort.key) return rows;
   const col: SortableColumn | undefined = SORTABLE_COLUMNS.find((c) => c.key === sort.key);
   if (!col) return rows;
   const dir: number = sort.dir === "desc" ? -1 : 1;
-  // Stable sort: when two rows compare equal, keep their original
-  // relative order. Array.prototype.sort is stable in modern V8.
+  // Array.prototype.sort is stable in modern V8, so equal rows keep order.
   const out: Model[] = rows.slice();
   out.sort((a, b) => {
     const va: string | number = col.value(a);
@@ -279,10 +226,7 @@ export function applySort(rows: readonly Model[], sort: ModelSort | null): reado
   return out;
 }
 
-// Render the <th> for a sortable column with the right indicator.
-// `sort` is the per-provider sort state (or null for unsorted).
-// Clicking the header cycles the sort via `cycleProviderSort` in
-// model-handlers.ts.
+// <th> with the sort indicator. Clicking cycles the sort via `cycleProviderSort`.
 export function renderSortableTh(col: SortableColumn, sort: ModelSort | null, providerId: string): TemplateResult {
   const isActive: boolean = !!(sort && sort.key === col.key);
   const indicator: TemplateResult | string = isActive ? (sort && sort.dir === "desc" ? icons.caretDown() : icons.caretUp()) : "";

@@ -36,8 +36,8 @@ class MockWebSocket {
   simulateError() { this.fire("error", new Event("error")); }
 }
 
-/** Stub `fetch` so `POST /admin/api/ws-ticket` answers with a ticket
- *  (or a failure). Records every call for assertions. */
+/** Stub `fetch` so `POST /admin/api/ws-ticket` answers with a ticket (or a failure) and
+ *  records every call for assertions. */
 interface RecordedFetch { url: string; init: RequestInit | undefined }
 interface TicketFetchStub { calls: RecordedFetch[] }
 
@@ -56,8 +56,7 @@ function stubTicketFetch(opts: { ticket?: string; status?: number } = {}): Ticke
   return { calls };
 }
 
-/** Kick off a connect and let the (async) ticket round-trip settle so
- *  the MockWebSocket instance exists. */
+/** Kick off a connect and let the async ticket round-trip settle so the MockWebSocket exists. */
 async function connectAndSettle(): Promise<void> {
   const { connectLogsWebSocket } = await import("./ws.js");
   connectLogsWebSocket();
@@ -142,7 +141,7 @@ describe("ws store — connection and cursors", () => {
     await connectAndSettle();
     expect(MockWebSocket.instances.length).toBe(0);
     expect(statuses).toContain("disconnected");
-    // backoff elapses → a fresh ticket attempt (still failing → still no WS)
+    // Backoff elapsed → a fresh ticket attempt (still failing → still no WS).
     await vi.advanceTimersByTimeAsync(300);
     expect(MockWebSocket.instances.length).toBe(0);
     expect(statuses).toContain("reconnecting");

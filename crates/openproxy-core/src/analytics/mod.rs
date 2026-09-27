@@ -1,16 +1,10 @@
-//! Analytics: latency percentiles (t-digest) and race statistics.
+//! Latency percentiles (t-digest) and race statistics, backing
+//! `/admin/usage/latency` and `/admin/usage/races`. Spec: docs/mvp-spec.md §7.
 //!
-//! See docs/mvp-spec.md §7 (Analytics Queries). This module backs the
-//! `/admin/usage/latency` and `/admin/usage/races` admin endpoints.
-//!
-//! Two queries live here:
-//!
-//! * [`latency_percentiles`] — streams `connect_ms`, `ttft_ms`, `total_ms`,
-//!   and `tokens_per_sec` for race winners (`race_lost = 0`) matching the
-//!   filter, feeds them into per-metric t-digests, and returns p50/p95.
-//! * [`race_stats`] — streams rows where `race_total > 1` matching the filter
-//!   and aggregates totals, average winner position, and per-target wins in
-//!   Rust.
+//! [`latency_percentiles`] streams the latency columns of race winners
+//! (`race_lost = 0`) into per-metric t-digests and returns p50/p95.
+//! [`race_stats`] streams rows with `race_total > 1` and aggregates totals,
+//! average winner position and per-target wins in Rust.
 
 #[cfg(test)]
 mod tests;
@@ -21,13 +15,12 @@ use rusqlite::{Connection, ToSql, params_from_iter};
 use serde::{Deserialize, Serialize};
 use tdigest::TDigest;
 
-/// Number of centroids per t-digest. Spec §7 prescribes 200.
+/// Centroids per t-digest. Spec §7 prescribes 200.
 const TDIGEST_CENTROIDS: usize = 200;
 
-/// Batch size for accumulating samples before merging into the running
-/// t-digest. We buffer raw `f64` values and call `merge_unsorted` once per
-/// batch; this keeps the per-row merge cost amortized to O(max_size) instead
-/// of O(max_size) per row.
+/// Samples buffered before merging into the running t-digest. Raw `f64` values
+/// go into one `merge_unsorted` per batch, amortizing the O(max_size) merge over
+/// the whole batch instead of paying it per row.
 const MERGE_BATCH: usize = 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,30 +38,24 @@ pub struct LatencyPercentiles {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RaceStats {
-    /// `COUNT(DISTINCT request_id)` over rows where `race_total > 1`.
+    /// `COUNT(DISTINCT request_id)` over rows with `race_total > 1`.
     pub total_races: u64,
-    /// `COUNT(*)` of winners (`race_lost = 0`) in races. Equals `total_races`
-    /// when every race produced exactly one winner; can diverge if a race
-    /// ended with all losers or with multiple winners.
+    /// `COUNT(*)` of winners (`race_lost = 0`). Equals `total_races` when every
+    /// race produced exactly one winner; diverges when a race ends with no
+    /// winner or several.
     pub winners: u64,
     /// `COUNT(*)` of losers (`race_lost = 1`).
     pub losers: u64,
-    /// Average `priority_order` of the winning target across races. `None`
-    /// when no race winner has a resolvable `combo_target_id`. Lower is
-    /// better; a value of `1.0` means the first target always wins.
+    /// Average `priority_order` of the winning target. `None` when no winner has
+    /// a resolvable `combo_target_id`. `1.0` means the first target always wins.
     pub avg_winner_position: Option<f64>,
-    /// `None` for MVP. The spec reserves this for a future metric that
-    /// subtracts the winner's `ttft` from the first target's `ttft`; we do
-    /// not yet persist the per-target first-byte data needed to compute it.
+    /// Always `None`: the spec reserves it for the winner's `ttft` minus the first
+    /// target's `ttft`, and that per-target first-byte data is not persisted yet.
     pub avg_ttft_savings_ms: Option<f64>,
-    /// `(combo_target_id, win_count)` ordered by `win_count` DESC, then by
+    /// `(combo_target_id, win_count)` ordered by `win_count` DESC, then
     /// `combo_target_id` ASC for stable output.
     pub wins_by_target: Vec<(i64, u64)>,
 }
-
-// ---------------------------------------------------------------------------
-// WHERE-clause builder
-// ---------------------------------------------------------------------------
 
 struct BuiltWhere<'a> {
     sql: String,
@@ -119,10 +106,6 @@ impl<'a> BuiltWhere<'a> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// T-digest plumbing
-// ---------------------------------------------------------------------------
-
 struct StreamingDigest {
     digest: TDigest,
     buffer: Vec<f64>,
@@ -163,10 +146,6 @@ impl StreamingDigest {
         self.digest.estimate_quantile(q)
     }
 }
-
-// ---------------------------------------------------------------------------
-// latency_percentiles
-// ---------------------------------------------------------------------------
 
 pub fn latency_percentiles(conn: &Connection, f: &UsageFilter) -> Result<LatencyPercentiles> {
     let w = BuiltWhere::from_filter(f);
@@ -248,10 +227,6 @@ fn map_row_err(e: rusqlite::Error, column: &'static str) -> CoreError {
         source: Some(std::sync::Arc::new(e)),
     }
 }
-
-// ---------------------------------------------------------------------------
-// race_stats
-// ---------------------------------------------------------------------------
 
 fn build_race_where_clause(where_sql: &str) -> String {
     let mut clauses: Vec<String> = Vec::new();

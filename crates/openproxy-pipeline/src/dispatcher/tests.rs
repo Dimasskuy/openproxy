@@ -1,13 +1,9 @@
-//! Tests de wiring del dispatcher. Verifican invariantes cross-submódulo
-//! que solo son observables con la composición completa:
+//! Tests de wiring del dispatcher: invariantes cross-submódulo que solo
+//! son observables con la composición completa de
 //! `dispatcher::{fail, rotation, proxy, stream, unary, horde, mod}`.
 //!
-//! - `handle_non_2xx_response_wires_is_hard_skip_for_validation_required`:
-//!   audit fix #1 — 403 + body `VALIDATION_REQUIRED` debe propagar
-//!   `is_hard_skip=true` para que el circuit breaker no penalice la cuenta.
-//!
-//! Este archivo se declara como `#[cfg(test)] mod tests;` desde
-//! `dispatcher/mod.rs`, así que `super::*` resuelve contra el orquestador.
+//! `super::*` resuelve contra el orquestador porque el archivo se declara
+//! como `#[cfg(test)] mod tests;` desde `dispatcher/mod.rs`.
 
 use super::UpstreamDispatcher;
 use super::types::DispatchContext;
@@ -16,9 +12,7 @@ use openproxy_db::MasterKey;
 use openproxy_types::combos::{Combo, ComboTarget, PriorityMode, Strategy};
 use openproxy_types::providers::{AuthType, ProviderFormat, RateLimitScope};
 
-/// Build a minimal in-memory-ish DB+pool pair compatible with
-/// `UpstreamDispatcher::new`. Mirrors el helper que previamente vivía
-/// en `upstream_dispatcher.rs` (test L1995).
+/// DB+pool pair compatible con `UpstreamDispatcher::new`.
 pub(super) fn fresh_pool() -> (
     openproxy_db::DbPool,
     std::sync::Arc<parking_lot::Mutex<rusqlite::Connection>>,
@@ -36,8 +30,7 @@ pub(super) fn fresh_pool() -> (
 async fn handle_non_2xx_response_wires_is_hard_skip_for_validation_required() {
     let (_pool, conn_arc, _path) = fresh_pool();
 
-    // Seed a provider so the proxy-rotation branch (which is
-    // a no-op when `use_proxies=0` — the SQL default) succeeds.
+    // Seeder un provider da a la rama de rotación un target válido.
     let provider_id = "wired-test";
     let pid = openproxy_types::ids::ProviderId::new(provider_id);
     {
@@ -85,7 +78,6 @@ async fn handle_non_2xx_response_wires_is_hard_skip_for_validation_required() {
         id: openproxy_types::ids::ComboTargetId(1),
         combo_id: openproxy_types::ids::ComboId(1),
         provider_id: pid.clone(),
-        // account_id = None so the 401/403 broadcast branch is skipped.
         account_id: None,
         model_row_id: None,
         sub_combo_id: None,
@@ -119,7 +111,6 @@ async fn handle_non_2xx_response_wires_is_hard_skip_for_validation_required() {
         ..Default::default()
     };
 
-    // Build the dispatcher.
     let repo = std::sync::Arc::new(crate::repository::SqlitePipelineRepository::new(
         std::sync::Arc::clone(&conn_arc),
     ));
@@ -171,7 +162,6 @@ async fn handle_non_2xx_response_wires_is_hard_skip_for_validation_required() {
         proxy_status: None,
     };
 
-    // Build a PipelineRequest.
     let (_tx, rx) = tokio::sync::watch::channel::<Option<openproxy_types::CancelReason>>(None);
     let req = crate::PipelineRequest {
         request_id: openproxy_types::ids::RequestId::new(),
@@ -214,7 +204,7 @@ async fn handle_non_2xx_response_wires_is_hard_skip_for_validation_required() {
         proxy_override: None,
     };
 
-    // 403 + VALIDATION_REQUIRED body → must produce is_hard_skip=true.
+    // 403 + VALIDATION_REQUIRED no debe penalizar la cuenta.
     let result = dispatcher
         .handle_non_2xx_response(
             403,
@@ -280,7 +270,6 @@ fn test_translate_non_streaming_body_commandcode_raw_chunk_and_full_response() {
         proxy_override: None,
     };
 
-    // 1. Raw CommandCode chunk
     let raw_chunk = serde_json::json!({
         "type": "text-delta",
         "text": "Hello world from CommandCode"
@@ -300,7 +289,6 @@ fn test_translate_non_streaming_body_commandcode_raw_chunk_and_full_response() {
         Some("Hello world from CommandCode")
     );
 
-    // 2. Full OpenAI response shape
     let full_openai = serde_json::json!({
         "id": "chatcmpl_test",
         "object": "chat.completion",

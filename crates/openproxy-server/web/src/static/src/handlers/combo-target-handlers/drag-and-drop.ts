@@ -1,21 +1,19 @@
-// handlers/combo-target-handlers/drag-and-drop.ts — drag-and-drop
-// reorder for the combo targets table.
-//
+// handlers/combo-target-handlers/drag-and-drop.ts — drag-and-drop reorder for the combo
+// targets table. Split from combo-target-handlers.ts to keep each module < 600 LOC.
 // Split from combo-target-handlers.ts to keep each module < 600 LOC.
 
 import { api } from "../../state/api.js";
 import { html, render } from "lit-html";
 import { mutateAndRefresh } from "../../lib/mutate.js";
 
-// ---- Drag-and-Drop module state ----
+// ── Drag-and-Drop module state ─────────────────────────────────────────────
 let dragSourceId: number | null = null;
 let dragComboId: number | null = null;
 let dropPlaceholder: HTMLTableRowElement | null = null;
 let dragFromHandle = false;
 
-// Number of columns in the targets table. Computed once on
-// `initDragAndDrop` from the `<thead>` so the drop placeholder's
-// `<td colspan>` matches the actual layout.
+// Targets-table column count, computed once in `initDragAndDrop` from the `<thead>` so the
+// drop placeholder's `<td colspan>` matches the real layout.
 let dropPlaceholderColspan = 8;
 
 function removePlaceholder(): void {
@@ -98,8 +96,8 @@ function onDragLeave(e: DragEvent): void {
   removePlaceholder();
 }
 
-// CRITICAL FIX C2: compute drop position from e.clientY + bounding rects,
-// NOT from e.target.closest() which fails when dropping on placeholder.
+  // CRITICAL FIX C2: derive the drop position from e.clientY + bounding rects, not
+  // e.target.closest(), which fails when dropping onto the placeholder.
 async function onDrop(e: DragEvent): Promise<void> {
   e.preventDefault();
   if (dragSourceId === null || dragComboId === null) { removePlaceholder(); return; }

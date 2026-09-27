@@ -21,16 +21,13 @@ use openproxy_core::oauth::kiro::{
 use openproxy_pipeline::stages::target_headers::propagate_kiro_headers;
 use openproxy_types::{ModelId, TargetFormat};
 
-// ============================================================================
 // 1. Golden Contract Spec Parity
-// ============================================================================
 
 #[test]
 fn test_kiro_golden_contract_spec_parity() {
     let _guard = KIRO_TEST_LOCK.lock().unwrap();
     reset_dynamic_kiro_overrides();
 
-    // 1. Default OIDC endpoints & region
     assert_eq!(DEFAULT_REGION, "us-east-1");
     assert_eq!(
         REGISTER_URL,
@@ -42,12 +39,11 @@ fn test_kiro_golden_contract_spec_parity() {
     );
     assert_eq!(TOKEN_URL, "https://oidc.us-east-1.amazonaws.com/token");
 
-    // 2. Canonical CodeWhisperer OAuth scopes
+    // canonical CodeWhisperer OAuth scopes
     assert!(SCOPES.contains(&"codewhisperer:completions"));
     assert!(SCOPES.contains(&"codewhisperer:analysis"));
     assert!(SCOPES.contains(&"codewhisperer:conversations"));
 
-    // 3. Spoofer headers contract
     let spoofer = KiroSpoofer;
     let headers = spoofer.headers();
     let find_hdr = |k: &str| {
@@ -75,7 +71,6 @@ fn test_kiro_golden_contract_spec_parity() {
         "Invocation ID must be a valid UUID v4"
     );
 
-    // 4. KiroAdapter headers match spoofer
     let adapter = KiroAdapter::new();
     let model = ModelId::new("claude-3-7-sonnet");
     let adapter_headers = adapter.build_headers("test-token-xyz", TargetFormat::Openai, &model);
@@ -93,7 +88,6 @@ fn test_kiro_golden_contract_spec_parity() {
     assert_eq!(find_adp("Amz-Sdk-Request"), Some("attempt=1; max=3"));
     assert_eq!(find_adp("Authorization"), Some("Bearer test-token-xyz"));
 
-    // 5. Runtime URL host resolution
     assert_eq!(
         kiro_runtime_url("us-east-1"),
         "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse"
@@ -104,9 +98,7 @@ fn test_kiro_golden_contract_spec_parity() {
     );
 }
 
-// ============================================================================
 // 2. Upstream Repository Code Drift Parity (Remote HTTP + Local Fallback)
-// ============================================================================
 
 #[tokio::test]
 async fn test_kiro_remote_or_local_upstream_code_parity() {
@@ -121,7 +113,6 @@ async fn test_kiro_remote_or_local_upstream_code_parity() {
         return;
     };
 
-    // 1. Verify upstream headers parity
     assert!(
         executor_src.contains("Amz-Sdk-Request"),
         "Upstream kiro.ts must define Amz-Sdk-Request header"
@@ -147,7 +138,6 @@ async fn test_kiro_remote_or_local_upstream_code_parity() {
         "Upstream kiro.ts prompt caching beta flag must match"
     );
 
-    // 2. Verify all spoofed headers exist in our KiroSpoofer definition
     for &(hdr, _) in KIRO_SPOOFING_HEADERS {
         if hdr != "Content-Type" && hdr != "x-amz-user-agent" {
             assert!(
@@ -158,16 +148,13 @@ async fn test_kiro_remote_or_local_upstream_code_parity() {
     }
 }
 
-// ============================================================================
 // 3. Dynamic Real-time Overrides & Pipeline Propagation
-// ============================================================================
 
 #[test]
 fn test_kiro_dynamic_overrides_and_pipeline_propagation() {
     let _guard = KIRO_TEST_LOCK.lock().unwrap();
     reset_dynamic_kiro_overrides();
 
-    // 1. In-memory spoofer dynamic overrides
     assert_eq!(current_kiro_ua(), "aws-sdk-js/3.0.0 kiro/0.1");
 
     set_dynamic_kiro_ua("aws-sdk-js/3.20.0 kiro/0.2.0");
@@ -190,8 +177,7 @@ fn test_kiro_dynamic_overrides_and_pipeline_propagation() {
     reset_dynamic_kiro_overrides();
     assert_eq!(current_kiro_ua(), "aws-sdk-js/3.0.0 kiro/0.1");
 
-    // 2. Dynamic endpoint and URL resolvers via environment variables
-    // SAFETY: isolated test holding KIRO_TEST_LOCK
+    // SAFETY: env var mutation is serialized by KIRO_TEST_LOCK
     unsafe {
         std::env::set_var("OPENPROXY_KIRO_OIDC_BASE_URL", "https://mock-oidc.internal");
         std::env::set_var("OPENPROXY_KIRO_HOST", "https://mock-host.internal");
@@ -244,7 +230,6 @@ fn test_kiro_dynamic_overrides_and_pipeline_propagation() {
         "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse"
     );
 
-    // 3. Pipeline header propagation
     let mut pipe_headers = vec![
         ("Content-Type".into(), "application/json".into()),
         (

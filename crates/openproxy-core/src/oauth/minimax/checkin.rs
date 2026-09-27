@@ -72,7 +72,7 @@ fn current_now_ms() -> u64 {
         .map_or(0, |d| d.as_millis() as u64)
 }
 
-/// Fetches the 7-day sign-in panel and today's status.
+/// 7-day sign-in panel plus today's status.
 pub async fn fetch_signin_panel(
     upstream: &Arc<UpstreamClient>,
     token: &str,
@@ -127,7 +127,7 @@ pub async fn fetch_signin_panel(
         .map_err(|e| CoreError::Parse(format!("minimax checkin panel parse: {e}")))
 }
 
-/// Claims the daily sign-in reward.
+/// Claim today's sign-in reward.
 pub async fn claim_signin(
     upstream: &Arc<UpstreamClient>,
     token: &str,
@@ -182,7 +182,7 @@ pub async fn claim_signin(
         .map_err(|e| CoreError::Parse(format!("minimax claim data parse: {e}")))
 }
 
-/// Computes the current consecutive signin streak in days.
+/// Consecutive sign-in streak in days.
 pub fn calculate_streak(days: &[SigninDayItem]) -> u8 {
     let mut sorted = days.to_vec();
     sorted.sort_by_key(|d| d.day_no);
@@ -211,7 +211,7 @@ pub fn calculate_streak(days: &[SigninDayItem]) -> u8 {
     streak
 }
 
-/// Executes daily checkin for an account: inspects status and claims if claimable.
+/// Daily check-in for an account: read the status, claim when claimable.
 pub async fn execute_daily_checkin(
     upstream: &Arc<UpstreamClient>,
     token: &str,

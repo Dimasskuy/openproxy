@@ -2,7 +2,6 @@ use super::super::*;
 
 #[test]
 fn anthropic_full_stream_simulation() {
-    // Simulate a realistic Anthropic SSE stream
     let lines = vec![
         "event: message_start",
         r#"data: {"type":"message","role":"assistant","content":[],"model":"claude-3","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}"#,
@@ -37,12 +36,8 @@ fn anthropic_full_stream_simulation() {
         }
     }
 
-    // Expected chunks:
-    // 1. message_start -> assistant role announcement
-    // 2. content_block_delta -> "Hi"
-    // 3. content_block_delta -> " there"
-    // 4. message_delta -> finish_reason: "stop", done: true
-    // message_stop -> None (not a chunk)
+    // message_start, two content_block_delta and message_delta yield
+    // chunks. message_stop yields none.
     assert_eq!(chunks.len(), 4);
 
     assert_eq!(
@@ -193,21 +188,10 @@ fn anthropic_tool_use_full_stream_simulation() {
     );
 }
 
-// ====================================================================
-// Tier 2 Gap 1: Anthropic SSE translation concurrency stress test
-//
-// Proves that when multiple threads/tasks translate Anthropic SSE
-// streams concurrently, each task's `AnthropicToolUseAccumulator`
-// and chunk stream state remain strictly isolated:
-//   1. No tool_use arguments bleed across requests.
-//   2. `tool_call_index_counter` stays strictly local to each request
-//      (every task sees index 0 for its first tool call).
-//   3. Chunks emitted for request A never contain chunk_id, model, or
-//      tool IDs belonging to request B.
-// ====================================================================
-// Under the old singleton / static design, parallel SSE translation
-// would share state across concurrent tasks and this stress
-// test fails with cross-contamination.
+// Concurrency stress: each task's `AnthropicToolUseAccumulator` and
+// `tool_call_index_counter` must stay request-local. Shared or static
+// state here bleeds tool arguments, chunk_id, model and tool ids
+// across concurrent translations.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn sse_translation_isolates_parallel_requests() {
     use std::sync::Arc;
@@ -225,13 +209,11 @@ async fn sse_translation_isolates_parallel_requests() {
             let mut tool_use_acc: Option<AnthropicToolUseAccumulator> = None;
             let mut tool_call_index_counter: u32 = 0;
 
-            // Wait until all tasks are queued so they race in
-            // parallel (not sequentially).
+            // All tasks race at once rather than running sequentially.
             barrier.wait().await;
 
-            // Sequence: content_block_start (tool_use) → deltas →
-            // message_delta (stop). Each task sees a distinct
-            // tool id+name so any cross-talk would be visible.
+            // Each task uses a distinct tool id+name so any cross-talk
+            // is visible.
             let id = format!("toolu_{i:08x}");
             let name = format!("fn_{i}");
             let start_payload = format!(
@@ -261,14 +243,12 @@ async fn sse_translation_isolates_parallel_requests() {
     let mut seen_models = std::collections::HashSet::new();
     while let Some(j) = joins.join_next().await {
         let (i, chunk_id, model, outs) = j.expect("join");
-        // chunk_id must round-trip exactly, no cross-talk from peers.
         assert_eq!(chunk_id, format!("chatcmpl-{i}"));
         assert_eq!(model, format!("claude-isolated-{i}"));
         assert!(seen_ids.insert(chunk_id.clone()), "duplicate chunk_id");
         assert!(seen_models.insert(model.clone()), "duplicate model");
 
-        // First chunk must carry THIS task's tool id and name,
-        // not any other task's.
+        // This task's own tool id and name.
         let first_payload = &outs[0].as_ref().expect("first chunk").payload;
         let tool_id = first_payload["choices"][0]["delta"]["tool_calls"][0]["id"]
             .as_str()
@@ -287,8 +267,7 @@ async fn sse_translation_isolates_parallel_requests() {
             "tool name leaked from another parallel task"
         );
 
-        // Model and chunk_id in the wire payload also must be
-        // THIS task's, not a peer's.
+        // This task's own model and chunk_id on the wire too.
         assert_eq!(first_payload["model"].as_str().unwrap(), model);
         assert_eq!(first_payload["id"].as_str().unwrap(), chunk_id);
     }

@@ -1,12 +1,9 @@
 // views/keys.ts — API keys list.
 //
-// MIGRATED to lit-html for atomic DOM updates. The create / edit /
-// regen / revoke / delete handlers are wired directly to @click
-// listeners; the create/edit modal HTML is still built by
-// `handlers/key-handlers.ts` (it lives at <body> level so it
-// survives re-renders). Regenerate / revoke / delete are written
-// locally so they can use `showToast()` for errors and call
-// `requestUpdate()` instead of `rerenderCurrentView()`.
+// The create/edit modal HTML is still built by `handlers/key-handlers.ts`
+// (it lives at <body> level so it survives re-renders). Regenerate /
+// revoke / delete are written locally so they can use `showToast()` for
+// errors and call `requestUpdate()` instead of `rerenderCurrentView()`.
 
 import { html, type TemplateResult } from 'lit-html';
 import { state } from "../state/index.js";
@@ -23,28 +20,18 @@ import { t } from "../i18n/index.js";
 import type { Model, ApiKey } from "../lib/types/api.js";
 import { renderResponsiveCardTable, type ResponsiveColumn } from "../components/render-responsive-card-table.js";
 
-// The api_key row shape. Defined locally (not in lib/types/api.ts)
-// because the server-side `pub struct ApiKey` lives in a separate
-// file (`crates/openproxy-core/src/api_keys.rs`) and G3 only
-// exported the core ids/enums/structs that the rest of the
-// dashboard already uses. This interface mirrors the columns the
-// `/admin/api-keys` endpoint serialises — `id`, `label`,
-// `key_prefix`, `scopes` (array of strings), `allowed_models`
-// (null = all, [] = empty whitelist, [...]= explicit list),
-// `is_active`, `revoked_at`, `last_used_at`, `created_at`,
-// `created_by`. Everything is nullable where the DB allows it.
+// Mirrors the columns `/admin/api-keys` serialises. `allowed_models`:
+// null = all, [] = empty whitelist, [...] = explicit list.
 type ApiKeyRow = ApiKey;
 
-// Shape of the POST /keys/:id/regenerate response.
+// POST /keys/:id/regenerate response.
 interface KeyPlaintextResponse {
   plaintext: string;
   key: { label?: string | null; key_prefix?: string | null } | null;
 }
 
-// ---- Module-local state ----
 let loadError: string | null = null;
 
-// ---- Handlers ----
 
 function onShowCreateKey(): void { void showCreateKey(); }
 function onShowEditKey(id: number): void { void showEditKey(id); }
@@ -135,7 +122,6 @@ async function onDeleteKey(id: number, label: string | null): Promise<void> {
   }
 }
 
-// ---- Helpers ----
 
 function formatAllowedModels(k: ApiKeyRow): string {
   let allowedModels: string;
@@ -169,7 +155,6 @@ function formatKeyStatus(k: ApiKeyRow) {
   return { text: t("keys.list.status.inactive"), cssClass: "off inactive" };
 }
 
-// ---- Templates ----
 
 function renderKeys(): TemplateResult {
   if (loadError) {
@@ -262,7 +247,6 @@ function renderKeys(): TemplateResult {
   `;
 }
 
-// ---- Mount ----
 
 export async function mountKeys(): Promise<(() => void) | void> {
   loadError = null;

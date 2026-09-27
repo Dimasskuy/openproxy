@@ -15,9 +15,8 @@
 //!
 //! 3. **Not found**: return a 404 to the client.
 //!
-//! This module is intentionally a pure function (`resolve`) over a
-//! `&Connection`. Side effects (insert into the DB, mutate state) are
-//! pushed to the chat handler, which is the only caller.
+//! Side effects belong to the chat handler, the only caller: [`resolve`] is a
+//! pure function over a `&Connection`.
 
 use crate::error::Result;
 use crate::ids::{AccountId, ComboId, ComboTargetId, ModelRowId, ProviderId};
@@ -80,7 +79,6 @@ pub fn flatten_targets(conn: &Connection, targets: Vec<ComboTarget>) -> Result<V
         return Ok(targets);
     }
     let mut out = Vec::with_capacity(targets.len());
-    // Use rust std collection for faster O(1) hash map indexing on lookups instead of linear search in Vec
     let mut visited = std::collections::HashSet::new();
     for t in targets {
         if let Some(sub_id) = t.sub_combo_id {
@@ -113,7 +111,7 @@ fn resolve_combo_to_targets(
     }
     visited.insert(combo_id);
 
-    // Usa list_targets base (sin cooldown filter para audio/chat pre-flight)
+    // list_targets base, sin cooldown filter: pre-flight de audio/chat
     let targets = combos::list_targets(conn, combo_id)?;
     let mut flat = Vec::with_capacity(targets.len());
     for t in targets {
@@ -163,31 +161,19 @@ pub enum RoutingPlan {
 
 /// Resolve a model string to a routing plan.
 ///
-/// `model_str` is the raw `model` field from the chat request. The
-/// resolver:
+/// `model_str` is the raw `model` field from the chat request: strip a matching
+/// `<provider>/` prefix, try a `models` row (active, not expired), then a combo
+/// (after an optional `combo:` prefix), then `NotFound`.
 ///
-/// 1. Strips the proxy-level `<provider>/` prefix if one matches a
-///    known provider id.
-/// 2. Tries to match the result as a row in `models` (active + not
-///    expired).
-/// 3. Tries to match the result as a combo (after stripping an
-///    optional `combo:` prefix).
-/// 4. Returns `NotFound` otherwise.
-///
-/// The match is case-sensitive. A `model` value of `ComBo:nerd` will
-/// not resolve to combo `nerd` — the same convention the rest of the
-/// code uses for stored names.
+/// Matching is case-sensitive. `ComBo:nerd` does not resolve to combo `nerd`,
+/// the same convention stored names use.
 pub fn resolve(conn: &Connection, model_str: &str) -> Result<RoutingPlan> {
-    // 1. Strip proxy-level provider prefix if present.
     let (stripped, provider_prefix) = strip_proxy_prefix(conn, model_str);
 
-    // 2. Try direct model resolution.
     if let Some(plan) = try_resolve_direct_model(conn, stripped, provider_prefix)? {
         return Ok(plan);
     }
 
-    // 3. Try combo resolution: strip "combo:" if present, look up by
-    //    name.
     let combo_name = stripped.strip_prefix("combo:").unwrap_or(stripped);
     if let Some(combo) = combos::get_combo_by_name(conn, combo_name)? {
         let targets = combos::list_targets(conn, combo.id)?;
@@ -200,12 +186,10 @@ pub fn resolve(conn: &Connection, model_str: &str) -> Result<RoutingPlan> {
         });
     }
 
-    // 4. Not found.
     let hint = if combo_name == stripped {
         None
     } else {
-        // The original input had a `combo:` prefix; include the
-        // normalised name in the hint.
+        // input carried a `combo:` prefix: hand back the normalised name
         Some(format!("combo:{combo_name}"))
     };
     Ok(RoutingPlan::NotFound {
@@ -214,27 +198,13 @@ pub fn resolve(conn: &Connection, model_str: &str) -> Result<RoutingPlan> {
     })
 }
 
-/// Async wrapper around [`resolve`] that moves the synchronous
-/// SQLite lookups off the Tokio worker thread.
+/// [`resolve`] on the blocking pool: its `SELECT`s take the [`DbPool`] reader
+/// mutex, a blocking `parking_lot` lock that must not be held on a Tokio
+/// worker (AGENTS §4.3).
 ///
-/// `routing::resolve` performs multiple `SELECT`s against the
-/// `models`, `combos`, `providers` and `accounts` tables. Each of
-/// those reads takes the [`DbPool`] reader mutex, which is a
-/// blocking `parking_lot::Mutex::lock()`. Holding that lock on the
-/// Tokio worker is exactly the pattern the AGENTS §4.3 rules
-/// forbid ("Aislamiento de SQLite en Async" + "Prohibición de Locks
-/// a través de `.await`"). By spawning the work onto the blocking
-/// pool we keep the Tokio worker free for other requests.
-///
-/// [`DbPool`] is `Clone` and the clone is O(1) — every field is
-/// already an `Arc` — so the pool handle is cloned into the
-/// blocking closure by value. The `model` argument is likewise
-/// captured as an owned `String` so the blocking thread does not
-/// borrow from a stack frame owned by the caller.
-///
-/// `JoinError`s are mapped to [`CoreError::Internal`] — they only
-/// occur if the blocking task is cancelled or panics, which is a
-/// hard server bug, not a client-visible failure.
+/// The pool and `model` are cloned into the closure by value so the blocking
+/// thread borrows no caller frame. A `JoinError` means the task was cancelled
+/// or panicked, which maps to [`CoreError::Internal`].
 pub async fn resolve_routing(db_pool: &DbPool, model: &str) -> Result<RoutingPlan> {
     let pool = db_pool.clone();
     let model = model.to_owned();
@@ -251,8 +221,6 @@ fn try_resolve_direct_model(
     model_id: &str,
     provider_prefix: Option<&str>,
 ) -> Result<Option<RoutingPlan>> {
-    // If a provider prefix was given, look for the model specifically
-    // under that provider. Otherwise, find any active model by name.
     let model: Option<Model> = if let Some(prefix) = provider_prefix {
         models::find_active_by_provider_and_name(conn, &ProviderId::new(prefix), model_id)?
     } else {
@@ -262,17 +230,15 @@ fn try_resolve_direct_model(
         return Ok(None);
     };
 
-    // The provider must be active; a deactivated provider means the
-    // model is not routable today. We surface this as "no match"
-    // rather than a 5xx — the operator can re-enable the provider.
+    // a deactivated provider makes the model unroutable. Reported as "no
+    // match" rather than 5xx: the operator can re-enable the provider.
     let (active, rate_limit_scope) = provider_active_and_scope(conn, &model.provider_id)?;
     if !active {
         return Ok(None);
     }
 
-    // `account_id = None` on the synthetic target tells the pipeline
-    // to fall back to the auto-rotation path, which is the documented
-    // behaviour for a provider with no pinned account.
+    // `account_id = None` on the synthetic target hands the choice to the
+    // pipeline's auto-rotation path.
     let account_id = None;
 
     let (combo, targets) = build_synthetic_combo(
@@ -291,10 +257,9 @@ fn try_resolve_direct_model(
     }))
 }
 
-/// Cheap "is this provider active?" probe plus its rate limit scope.
-/// Returns `Ok((false, RateLimitScope::Account))` when
-/// the row is missing so a deleted provider (e.g. after a race with
-/// the admin UI) is treated as inactive.
+/// "Is this provider active?" probe plus its rate limit scope. A missing row
+/// reads as inactive so a provider deleted mid-race with the admin UI does not
+/// route.
 fn provider_active_and_scope(
     conn: &Connection,
     provider_id: &ProviderId,
@@ -320,27 +285,17 @@ fn provider_active_and_scope(
 
 pub use openproxy_db::models::strip_proxy_prefix;
 
-/// Build a synthetic in-memory `Combo` plus its single `ComboTarget`
-/// for a direct-model dispatch.
-///
-/// The combo has `combo.id = SYNTHETIC_COMBO_ID` (a negative sentinel
-/// that can never collide with a real `combos.id`) and
-/// `combo.name = SYNTHETIC_COMBO_NAME`. The `Combo` is shaped so the
-/// pipeline's `load_combo` accepts it; the targets are returned
-/// alongside in a parallel vec that the chat handler threads into the
-/// `PipelineRequest::targets_override` slot.
+/// Synthetic in-memory `Combo` plus its single `ComboTarget` for a
+/// direct-model dispatch. The `Combo` is shaped so the pipeline's `load_combo`
+/// accepts it. Targets go into the `PipelineRequest::targets_override` slot.
 pub fn build_synthetic_combo(
     provider_id: ProviderId,
     account_id: Option<AccountId>,
     model_row_id: ModelRowId,
     rate_limit_scope: crate::providers::RateLimitScope,
 ) -> (Combo, Vec<ComboTarget>) {
-    // The synthetic target uses an all-zero id so the row never
-    // collides with a real `combo_targets.id`. The pipeline
-    // serialises `target.id` into the `usage` table's
-    // `combo_target_id` column; the FK is not enforced there
-    // (combo_target_id is a free-form INTEGER), so a sentinel is
-    // safe.
+    // id 0 never collides with a real `combo_targets.id`, and usage rows carry
+    // `target.id` in `combo_target_id`, a free-form INTEGER with no FK.
     let target = ComboTarget {
         id: ComboTargetId(0),
         combo_id: ComboId(SYNTHETIC_COMBO_ID),
@@ -366,9 +321,8 @@ pub fn build_synthetic_combo(
         race_size: 1,
         created_at: String::new(),
         context_window: None,
-        // Synthetic combos use the legacy defaults (strict priority,
-        // flat cooldown) so a direct-model dispatch behaves exactly
-        // like a single-target user combo.
+        // strict priority + flat cooldown: a direct-model dispatch must behave
+        // like a single-target user combo
         priority_mode: openproxy_types::combos::PriorityMode::Strict,
         cooldown_mode: openproxy_types::config::CooldownMode::Flat,
         cooldown_base_secs: None,
@@ -382,10 +336,6 @@ pub fn build_synthetic_combo(
     };
     (combo, vec![target])
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -449,10 +399,6 @@ mod tests {
         AccountId(id)
     }
 
-    // -----------------------------------------------------------------------
-    // resolve → Direct
-    // -----------------------------------------------------------------------
-
     #[test]
     fn resolve_direct_model_returns_plan() {
         let (pool, _path) = fresh_pool();
@@ -472,10 +418,6 @@ mod tests {
             "resolver always uses auto-rotation"
         );
     }
-
-    // -----------------------------------------------------------------------
-    // resolve → Combo (with and without the `combo:` prefix)
-    // -----------------------------------------------------------------------
 
     #[test]
     fn resolve_combo_with_prefix() {
@@ -515,17 +457,12 @@ mod tests {
         assert_eq!(combo_name, "smart");
     }
 
-    // -----------------------------------------------------------------------
-    // resolve → NotFound
-    // -----------------------------------------------------------------------
-
     #[test]
     fn resolve_not_found() {
         let (pool, _path) = fresh_pool();
         let conn = pool.writer();
         seed_provider(&conn, "openrouter");
         seed_model(&conn, "openrouter", "real-model");
-        // The probe name is neither a model nor a combo.
         let plan = resolve(&conn, "ghost").expect("resolve");
         let RoutingPlan::NotFound { model, hint } = plan else {
             panic!("expected NotFound, got {plan:?}");
@@ -534,10 +471,6 @@ mod tests {
         assert!(hint.is_none(), "no combo: prefix → no hint");
     }
 
-    // -----------------------------------------------------------------------
-    // resolve → NotFound when the provider is inactive
-    // -----------------------------------------------------------------------
-
     #[test]
     fn resolve_inactive_provider_returns_not_found() {
         let (pool, _path) = fresh_pool();
@@ -545,9 +478,7 @@ mod tests {
         seed_provider(&conn, "openrouter");
         seed_healthy_account(&conn, "openrouter");
         seed_model(&conn, "openrouter", "anthropic/claude-3.5");
-        // Deactivate the provider. The model row is still active in
-        // the table, but the provider gate fails and we treat the
-        // model as not routable.
+        // the model row is still active, the provider gate is what fails
         providers::set_active(&conn, &ProviderId::new("openrouter"), false).expect("deactivate");
 
         let plan = resolve(&conn, "anthropic/claude-3.5").expect("resolve");
@@ -556,20 +487,13 @@ mod tests {
         };
     }
 
-    // -----------------------------------------------------------------------
-    // resolve → Direct with account_id = None when no healthy account exists
-    // -----------------------------------------------------------------------
-
     #[test]
     fn resolve_unhealthy_account_returns_direct_with_none() {
         let (pool, _path) = fresh_pool();
         let conn = pool.writer();
         seed_provider(&conn, "openrouter");
-        // No healthy account seeded. The resolver should still
-        // produce a `Direct` plan; the pipeline's account-rotation
-        // path is the one that will either find a healthy account
-        // at request time (race-losing accounts are filtered by the
-        // circuit breaker) or drop the target entirely.
+        // no healthy account: the plan still resolves, rotation happens at
+        // request time
         seed_model(&conn, "openrouter", "anthropic/claude-3.5");
 
         let plan = resolve(&conn, "anthropic/claude-3.5").expect("resolve");
@@ -582,19 +506,14 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
-    // resolve honours the `<provider>/<upstream_id>` proxy-level id
-    // -----------------------------------------------------------------------
-
     #[test]
     fn resolve_strips_known_provider_prefix() {
         let (pool, _path) = fresh_pool();
         let conn = pool.writer();
         seed_provider(&conn, "openrouter");
         seed_healthy_account(&conn, "openrouter");
-        // The upstream model id happens to contain another `/`:
-        // "openrouter/foo/bar" must resolve to the model whose
-        // model_id is "foo/bar" (not to a different one).
+        // upstream ids may carry their own `/`: "openrouter/foo/bar" must
+        // resolve to model_id "foo/bar"
         seed_model(&conn, "openrouter", "foo/bar");
 
         let plan = resolve(&conn, "openrouter/foo/bar").expect("resolve");
@@ -603,19 +522,14 @@ mod tests {
         };
     }
 
-    // -----------------------------------------------------------------------
-    // resolve does NOT strip an unknown provider prefix
-    // -----------------------------------------------------------------------
-
     #[test]
     fn resolve_does_not_strip_unknown_provider_prefix() {
         let (pool, _path) = fresh_pool();
         let conn = pool.writer();
-        // No provider named "anthropic" in the table.
         seed_provider(&conn, "openrouter");
         seed_healthy_account(&conn, "openrouter");
-        // The model id is stored verbatim with the `anthropic/`
-        // prefix because that's what the upstream surfaces.
+        // no provider named "anthropic": `anthropic/` stays part of the
+        // model id
         seed_model(&conn, "openrouter", "anthropic/claude-3.5");
 
         let plan = resolve(&conn, "anthropic/claude-3.5").expect("resolve");
@@ -623,10 +537,6 @@ mod tests {
             panic!("expected Combo, got {plan:?}");
         };
     }
-
-    // -----------------------------------------------------------------------
-    // build_synthetic_combo produces a well-formed Combo
-    // -----------------------------------------------------------------------
 
     #[test]
     fn build_synthetic_combo_is_well_formed() {

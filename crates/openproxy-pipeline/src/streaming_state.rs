@@ -103,7 +103,6 @@ impl StreamingState {
             return Ok(pipeline_result);
         }
 
-        // Cancellation checkpoint
         if ctx
             .req
             .race_cancel

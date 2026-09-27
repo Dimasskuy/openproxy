@@ -1,5 +1,4 @@
-// views/analytics/shared.ts — shared types, state, formatters, URL helpers,
-// data transforms, and utility templates used across the analytics sub-modules.
+// views/analytics/shared.ts — view-local state, types, formatters, hash helpers, data transforms.
 
 import { html, type TemplateResult } from "lit-html";
 import type uPlot from "uplot";
@@ -154,8 +153,6 @@ export function parseHashParams(): AnalyticsHashParams {
   };
 }
 
-/** Swap any subset of the hash params. Setting a filter to `""`
- *  deletes it from the URL so a cleared filter doesn't linger. */
 export function setHashParams(updates: Partial<AnalyticsHashParams>): void {
   const hash = location.hash || "#/analytics";
   const qIdx = hash.indexOf("?");
@@ -212,11 +209,8 @@ export function pivotMonthlyByProvider(
   }
 
   const allMonths = [...monthsSet].sort();
-  // `Array.prototype.slice(-0)` is identical to `slice(0)` (JS coerces
-  // `-0` → `0`), so a `maxMonths` of `0` would silently return every
-  // month. Coerce to `0` and short-circuit: a caller asking for zero
-  // months has explicitly opted out of the window, so we honour it
-  // with an empty list rather than handing them the whole timeline.
+  // `slice(-0)` === `slice(0)`, so a `maxMonths` of 0 would return every month.
+  // Short-circuit: zero months means an empty list, not the whole timeline.
   const windowSize = Math.max(0, maxMonths | 0);
   const months = windowSize === 0 ? [] : allMonths.slice(-windowSize);
   const monthSet = new Set(months);
@@ -347,8 +341,7 @@ export let errors: ErrorRow[] = [];
 export let providers: Provider[] = [];
 export let apiKeys: ApiKeyFilterRow[] = [];
 
-/** Bulk-set view-local state. Importing modules read live bindings
- *  so the updated values are visible after this call. */
+/** Bulk-set view-local state; importers read live bindings. */
 export function setViewState(next: {
   loading?: boolean;
   errorMsg?: string | null;

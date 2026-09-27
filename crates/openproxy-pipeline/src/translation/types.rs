@@ -1,10 +1,6 @@
 pub use openproxy_types::{OpenAIChoice as Choice, OpenAIChoice, OpenAIResponse, OpenAIUsage};
 use serde::{Deserialize, Serialize};
 
-// =====================
-// Anthropic Messages types
-// =====================
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnthropicRequest {
     pub model: String,
@@ -34,27 +30,18 @@ pub struct AnthropicRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnthropicMessage {
-    /// "user" | "assistant"
     pub role: String,
-    /// Anthropic accepts `content` as either a plain string
-    /// (`"content": "text"`) or an array of typed content blocks
-    /// (`"content": [{"type":"text","text":"..."},
-    /// {"type":"tool_use","id":"...","name":"...","input":{...}},
-    /// {"type":"tool_result","tool_use_id":"...","content":"..."}]`).
-    /// We use `serde_json::Value` so the translator can emit either
-    /// form depending on whether the source OpenAI message carried
-    /// only text or also carried `tool_calls` / was a `tool`-role
-    /// message.
+    /// `Value` because Anthropic accepts either a plain string or an array
+    /// of typed content blocks (`text`, `tool_use`, `tool_result`), and the
+    /// translator picks the form from the source OpenAI message.
     pub content: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnthropicResponse {
     pub id: String,
-    /// "message"
     #[serde(rename = "type")]
     pub response_type: String,
-    /// "assistant"
     pub role: String,
     pub content: Vec<serde_json::Value>,
     pub model: String,
@@ -65,7 +52,6 @@ pub struct AnthropicResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnthropicContentBlock {
-    /// "text"
     #[serde(rename = "type")]
     pub block_type: String,
     pub text: String,

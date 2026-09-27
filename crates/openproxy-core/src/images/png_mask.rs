@@ -41,9 +41,6 @@ pub(crate) fn write_png_chunk(buf: &mut Vec<u8>, chunk_type: [u8; 4], data: &[u8
     buf.extend_from_slice(&crc.to_be_bytes());
 }
 
-/// Extract an inpainting mask from the transparent alpha channel of a PNG image.
-/// Returns `Some(mask_png_bytes)` if transparency was found, or `None` if the image
-/// has no transparency, is opaque, or is not a valid 8-bit RGBA/GA PNG.
 struct PngHeader {
     width: u32,
     height: u32,

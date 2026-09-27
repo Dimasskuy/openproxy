@@ -1,24 +1,11 @@
-// components/log-detail/index.ts — public facade + the Request / Response
-// tab renderers (and their local helpers). Everything else is re-exported
-// here so external callers (views/logs.ts, handlers/registry.ts) keep
-// importing from "../components/log-detail.js" with no API change.
+// Public facade plus the Request / Response tab renderers. The rest is
+// re-exported so external callers (views/logs.ts, handlers/registry.ts) keep
+// importing from "../components/log-detail.js".
 //
-// SPLIT LAYOUT (Q19):
-//   index.ts            — facade + renderRequestTab/renderResponseTab + helpers
-//   json-prune.ts       — formatJson + prune*/truncate* helpers
-//   response-parser.ts  — OpenAI/Anthropic response parsing + block renderers
-//   modal.ts            — renderLogDetailModal + modal lifecycle + clock/window hooks
-//   debug-bundle.ts     — buildDebugBundle + summarize/truncate + copy handlers
-//   state.ts            — LogDetailLog type + pinned identity + generation + active tab
-//
-// KNOWN CYCLE (index ↔ modal): modal.ts calls the tab renderers exported from
-// this module (renderRequestTab, renderResponseTab, jsonSection,
-// statusPillClass, readString) when it composes the modal template; this
-// module references modal.ts only through `export { ... } from "./modal.js"`
-// re-export statements (no runtime calls in index.ts). Because index.ts never
-// invokes a modal function and modal.ts only calls these hoisted function
-// declarations at render time (never at module-evaluation time), the cycle
-// resolves safely under ESM live-binding semantics.
+// KNOWN CYCLE (index ↔ modal): modal.ts calls the tab renderers below while
+// composing the modal template; this module touches modal.ts only through
+// `export { ... } from "./modal.js"`. The cycle resolves under ESM live
+// bindings because neither side calls the other at module-evaluation time.
 
 import { html, type TemplateResult } from "lit-html";
 import { formatJson } from "./json-prune.js";
@@ -35,8 +22,7 @@ import {
   renderRawResponseBodyBlock,
 } from "./response-parser.js";
 
-// Public API — re-exported unchanged so the former `log-detail.ts`
-// module surface is preserved (same function names, same signatures).
+// Public API
 export type { LogDetailLog } from "./state.js";
 export {
   bumpOpenLogDetailGeneration,
@@ -55,7 +41,8 @@ export {
   updateOpenLogDetail,
 } from "./modal.js";
 
-// ---- local helpers used only by the tab renderers below ----
+/** String status ("ok" | "error" | "timeout") to a CSS pill class. Distinct
+ *  from the numeric HTTP-code mapping in lib/constants.ts. */
 
 /** Maps string status values ("ok"|"error"|"timeout"...) to CSS pill classes.
  *  Note: distinct from lib/constants.ts statusPillClass which maps numeric HTTP codes. */
@@ -66,16 +53,15 @@ export function stringStatusPillClass(s: string | null | undefined): string {
   return "warn";
 }
 
-/** Read a string field out of a record, or null when absent/non-string.
- *  Used by renderLogDetailModal (modal.ts) for meta lookups. */
+/** String field of a record, or null. Used by modal.ts for meta lookups. */
 export function readString(o: Record<string, unknown> | null | undefined, k: string): string | null {
   if (!o) return null;
   const v: unknown = o[k];
   return typeof v === "string" ? v : null;
 }
 
-/** Render a `<section data-log-tab>` with a pretty-printed JSON viewer.
- *  Used by renderLogDetailModal (modal.ts) for the Errors / Raw tabs. */
+/** A `<section data-log-tab>` with a pretty-printed JSON viewer, for the
+ *  Errors / Raw tabs. */
 export function jsonSection(title: string, value: unknown, tabKey: string): TemplateResult {
   return html`<section class="log-detail-section" data-log-tab=${tabKey}>
     <h4>${title}</h4>
@@ -83,9 +69,8 @@ export function jsonSection(title: string, value: unknown, tabKey: string): Temp
   </section>`;
 }
 
-/** Top-level keys in the Request body that are rendered first, in
- *  this fixed order, and given the `log-detail-key-pinned` class so
- *  operators can spot them quickly. */
+/** Request-body keys rendered first, in this order, tagged
+ *  `log-detail-key-pinned`. */
 const PINNED_REQUEST_KEYS: readonly string[] = [
   "model", "system", "messages", "tools", "temperature", "stream", "max_tokens",
 ];
@@ -312,19 +297,12 @@ function renderObjectRequestBody(obj: Record<string, unknown>): TemplateResult[]
   return blocks;
 }
 
-/** Render the Request tab. Returns the full
- *  `<section data-log-tab="request">…</section>` TemplateResult.
- *  Handles the empty / object / non-object fallback shapes per
- *  the spec.
+/** Request tab, handling the empty / object / non-object body shapes.
  *
- *  `createdAt` is the row's `created_at` timestamp (ISO string).
- *  When the request body is null, we use it to compute the row's
- *  age and show a more helpful message: if the row is older than
- *  the recording TTL (5 min default), the body was likely pruned
- *  by `prune_expired_recording_bodies`; otherwise recording was
- *  OFF when the request was made. */
+ *  With a null body, `createdAt` dates the row so the message can say whether
+ *  the TTL prune took it (past 5 min) or recording was simply off. */
 export function renderRequestTab(requestBody: unknown, createdAt?: string): TemplateResult {
-  // Empty state: same predicate as the previous inline logic.
+
   const hasRequestBody: boolean = requestBody != null
     && !(typeof requestBody === "string" && requestBody.trim() === "")
     && !(typeof requestBody === "object" && requestBody !== null
@@ -347,7 +325,7 @@ export function renderRequestTab(requestBody: unknown, createdAt?: string): Temp
     </section>`;
   }
 
-  // Normalize string bodies that look like JSON.
+
   let body: unknown = requestBody;
   if (typeof body === "string") {
     const trimmed = body.trimStart();
@@ -357,7 +335,7 @@ export function renderRequestTab(requestBody: unknown, createdAt?: string): Temp
     }
   }
 
-  // Object body (non-array): per-key collapsibles.
+
   if (body != null && typeof body === "object" && !Array.isArray(body)) {
     const blocks = renderObjectRequestBody(body as Record<string, unknown>);
     return html`<section class="log-detail-section" data-log-tab="request">
@@ -366,7 +344,7 @@ export function renderRequestTab(requestBody: unknown, createdAt?: string): Temp
     </section>`;
   }
 
-  // Array or primitive fallback.
+
   return html`<section class="log-detail-section" data-log-tab="request">
     <h4>Request</h4>
     <details class="log-detail-collapsible" open>
@@ -376,40 +354,24 @@ export function renderRequestTab(requestBody: unknown, createdAt?: string): Temp
   </section>`;
 }
 
-/** Render the Response tab. Handles null, string, and object inputs.
+/** Response tab for null, string, and object inputs.
  *
- *  Layout (top to bottom):
- *    1. Message (content) — only if non-empty
- *    2. Reasoning — only if non-empty
- *    3. Each tool call as its own collapsible block (collapsed by
- *       default), one per tool call
- *    4. Other properties (id, model, usage, finish_reason, …) —
- *       collapsed by default
- *    5. Raw response — collapsed by default, ALWAYS present
+ *  Sections are independent: message, reasoning, one collapsible per tool
+ *  call, remaining properties, and a raw block that is always present even
+ *  when content and tool_calls are both empty, so a `finish_reason:
+ *  "tool_calls"` response whose calls arrived in an earlier streamed chunk
+ *  still shows evidence the request succeeded.
  *
- *  Each section is independent: a response with content + tool_calls
- *  shows all three; a response with only tool_calls shows just the
- *  tool calls + other properties + raw; a response with empty
- *  content and no tool_calls (e.g. a `finish_reason: "tool_calls"`
- *  response whose tool_calls were emitted in a prior streamed chunk)
- *  still shows other properties + raw so the operator can see the
- *  request actually succeeded.
- *
- *  @param streamingHint - set to true when the request is streaming
- *        but the response body is null (e.g. interrupted mid-stream).
- *  @param isPartial - When true, the response was interrupted
- *        mid-stream — show a "Partial response" banner so the
- *        operator knows the response didn't complete normally even
- *        though there IS a body to inspect. Passed from the caller
- *        which reads `is_streaming && !stream_complete` (and the
- *        `partial` marker inside the JSON, when present). */
+ *  `streamingHint` marks a streaming request with no body. `isPartial` marks
+ *  a stream cut short, which raises the partial banner even though a body
+ *  exists to inspect. */
 export function renderResponseTab(
   response: unknown,
   streamingHint?: boolean,
   createdAt?: string,
   isPartial?: boolean,
 ): TemplateResult {
-  // Empty state.
+
   if (response == null) {
     let placeholder = streamingHint
       ? "Response body not captured (streaming request may have been interrupted)."
@@ -431,8 +393,7 @@ export function renderResponseTab(
     ? renderRawResponseBodyBlock(rawResponseBody)
     : null;
 
-  // String: try to parse as JSON; on success, recurse with parsed
-  // value; on failure, show the raw string in a collapsible.
+
   if (typeof response === "string") {
     let parsed: Record<string, unknown> | null = null;
     try {
@@ -451,7 +412,7 @@ export function renderResponseTab(
     </section>`;
   }
 
-  // Try to recognize an OpenAI chat-completion shape.
+
   const parsed = parseOpenAiChatResponse(response);
   const blocks = parsed != null
     ? renderParsedResponseBlocks(parsed, response)

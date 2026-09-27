@@ -1,19 +1,13 @@
-// components/log-detail/state.ts — modal state: the shared row shape
-// (LogDetailLog), the pinned modal identity, the openLogDetail
-// generation counter, and the hasCompleteLogDetail predicate.
+// Modal state: the shared row shape (LogDetailLog), the pinned modal identity,
+// the openLogDetail generation counter, and hasCompleteLogDetail.
 //
-// This module is intentionally dependency-free within the log-detail
-// family (no sibling imports) so every other module can import from
-// it without cycles.
-//
-// Split out of the former components/log-detail.ts monolith (Q19).
+// No sibling imports, so the rest of the log-detail family can import from
+// here without cycles.
 
-/** Loose shape for the `log` arg in renderLogDetailModal. The
- *  modal accepts the long-poll row shape (RecentUsageRow) and the
- *  detail-endpoint row shape (UsageDetailRow) — they overlap but
- *  neither is a strict superset. We model the union as an open
- *  record so the various `||` lookups in the body still typecheck
- *  without losing field-level narrowing. */
+/** Loose shape for the `log` arg in renderLogDetailModal. RecentUsageRow
+ *  (long-poll feed) and UsageDetailRow (detail endpoint) overlap without one
+ *  being a superset, so the union is an open record that keeps the `||`
+ *  lookups in the body typechecking. */
 export interface LogDetailLog {
   // RecentUsageRow (long-poll feed)
   id?: number;
@@ -39,10 +33,8 @@ export interface LogDetailLog {
   response_body_json?: unknown;
   error_message?: string | null;
   created_at?: string;
-  // RecentUsageRow fields accessed by buildDebugBundle but not
-  // listed above. Added here so the typechecker accepts the
-  // dot-notation access (the interface has no index signature,
-  // so missing fields are a compile error under `noPropertyAccessFromIndexSignature`).
+  // The interface has no index signature, so an unlisted field would fail under
+  // `noPropertyAccessFromIndexSignature`.
   trace_id?: string;
   endpoint_kind?: string;
   request_headers?: Record<string, string> | null;
@@ -72,13 +64,9 @@ export interface LogDetailLog {
   stages?: unknown[];
 }
 
-// ----------
-// Active tab — which `[data-log-tab]` section is visible in the modal
-// ("request" | "response" | "errors" | "raw"). Mutated by
-// logDetailTabClick / initializeLogDetailTabs (modal.ts), read by
-// renderLogDetailModal (modal.ts) so clock-tick re-renders keep the
-// user's selected tab.
-// ----------
+// Active tab ("request" | "response" | "errors" | "raw"). Set by
+// logDetailTabClick / initializeLogDetailTabs so clock-tick re-renders keep the
+// user's selection.
 let currentActiveTab: string = "request";
 
 /** Read the currently-active modal tab. */
@@ -91,102 +79,76 @@ export function setActiveLogDetailTab(tab: string): void {
   currentActiveTab = tab;
 }
 
-// ----------
-// Pinned modal identity — the IMMUTABLE request_id + trace_id of the row the
-// user opened. Set in `openLogDetail` (modal.ts), cleared in
-// `removeLogDetailModal` (modal.ts).
+// The immutable request_id + trace_id of the row the user opened, set in
+// `openLogDetail` and cleared in `removeLogDetailModal` (modal.ts).
 //
-// WHY: `state.logs.selectedRow` is a mutable reference that can be reassigned
-// by `updateOpenLogDetail` itself (circular dependency) or by a race condition
-// in `openLogDetail` (user clicks row B while row A's detail fetch is in
-// flight). If `selectedRow` is somehow reassigned to a different row, the
-// filter in `updateOpenLogDetail` (which checks `sel.request_id !==
-// row.request_id`) would let the WRONG row's updates through, causing the
-// modal to be replaced by background requests — the exact "modal content
-// changes to other requests while I'm debugging" bug the user reported.
-//
-// The pinned identity is set ONCE when the modal opens and NEVER changes
-// until the modal closes. `updateOpenLogDetail` checks the incoming row
-// against the PINNED identity (not `state.logs.selectedRow`), making the
-// filter immune to any reassignment bugs in `selectedRow`.
-// ----------
+// `state.logs.selectedRow` is a mutable reference that `updateOpenLogDetail`
+// itself, or a race in `openLogDetail` (user clicks row B while row A's detail
+// fetch is in flight), can reassign. Filtering on it would let another row's
+// updates replace the modal mid-debug. Filtering on the pinned identity, fixed
+// for the modal's lifetime, makes that impossible.
 let pinnedRequestId: string | null = null;
 let pinnedTraceId: string | null = null;
 
-/** Pin the modal identity to the given request/trace pair. Called at the
- *  end of `openLogDetail` once the modal is (re)rendered. */
+/** Pin the modal identity, called once `openLogDetail` has rendered. */
 export function setPinnedIdentity(requestId: string, traceId: string): void {
   pinnedRequestId = requestId;
   pinnedTraceId = traceId;
 }
 
-/** Clear the pinned identity. Called when the modal is removed so
- *  subsequent WS events don't try to update a now-closed modal. */
+/** Clear the pinned identity on modal removal, so later WS events do not
+ *  target a closed modal. */
 export function clearPinnedIdentity(): void {
   pinnedRequestId = null;
   pinnedTraceId = null;
 }
 
-// Generation counter for `openLogDetail` race-condition protection. Each
-// `openLogDetail` call captures the current generation; after the async
-// `/usage/detail` fetch completes, the callback checks whether the generation
-// is still current. If the user clicked another row in the meantime (which
-// increments the generation), the stale fetch's result is discarded — it
-// doesn't overwrite the modal the user is now looking at.
+// Race protection across the async `/usage/detail` fetch: each `openLogDetail`
+// captures the generation, and the callback discards its result if the user
+// clicked another row in the meantime.
 let openLogDetailGeneration: number = 0;
 
-/** Increment the generation counter. Returns the new (current) generation.
- *  Call this at the START of `openLogDetail` to invalidate any in-flight
- *  fetch from a previous click. */
+/** Bump and return the generation. Call at the START of `openLogDetail` to
+ *  invalidate an in-flight fetch from a previous click. */
 export function bumpOpenLogDetailGeneration(): number {
   openLogDetailGeneration += 1;
   return openLogDetailGeneration;
 }
 
-/** Returns true iff `gen` is the current generation (i.e. the caller is
- *  the most recent `openLogDetail` invocation). Call this AFTER an async
- *  await to decide whether to proceed with the result or discard it. */
+/** Whether `gen` is still the latest `openLogDetail`. Check after an await to
+ *  decide whether to apply or discard the result. */
 export function isCurrentOpenLogDetailGeneration(gen: number): boolean {
   return gen === openLogDetailGeneration;
 }
 
-/** Returns true iff `row` matches the pinned modal identity (the row the
- *  user opened). When no modal is open (pinned identity is null), returns
- *  false so no update is applied.
+/** Whether `row` is the pinned row. False when no modal is open.
  *
- *  STRICT trace_id matching: if the pinned identity has a trace_id, the
- *  incoming row MUST have the SAME trace_id. If the pinned identity has
- *  NO trace_id (empty/null), the incoming row MUST ALSO have no trace_id.
- *  This prevents a row with an empty trace_id from matching retries that
- *  have the same request_id but a non-empty trace_id (which would let
- *  sibling retry events bleed into the modal — the exact "model name
- *  changes while I'm debugging" bug). */
+ *  trace_id matching is strict and symmetric: a pinned trace_id demands the
+ *  same one on the row, and an empty pinned trace_id demands an empty row
+ *  trace_id. Without that, a row with no trace_id would match its own retries
+ *  and the modal's model name would shift mid-debug. */
 export function matchesPinnedModalIdentity(
   row: { request_id?: string; trace_id?: string } | null | undefined,
 ): boolean {
   if (pinnedRequestId === null) return false;
   if (!row) return false;
-  // request_id MUST match (it's the primary identity).
+  // request_id is the primary identity.
   if (row.request_id !== pinnedRequestId) return false;
   // STRICT trace_id matching — no skipping. Normalize empty/null/undefined
   // to a single canonical value so "" === null === undefined.
   const pinnedTid = pinnedTraceId || "";
   const rowTid = row.trace_id || "";
-  // If both trace_ids are empty, we cannot positively confirm identity.
-  // Returning false here keeps the modal frozen on its snapshot rather
-  // than risk overlaying data from a different request that happens to
-  // share request_id with empty trace_id (HALLAZGO 6, rare in production
-  // because the backend always emits trace_id, but defensive).
+  // Two empty trace_ids cannot confirm identity, so the modal stays frozen on
+  // its snapshot rather than risk overlaying a sibling request.
   if (pinnedTid === "" && rowTid === "") return false;
   if (pinnedTid !== rowTid) return false;
   return true;
 }
 
-// A row has complete detail if it carries a request body, a response
-// body, or an error block. In-flight rows (only the request_id is
-// known) return false so the caller can fetch the detail via
-// /usage/detail. We also keep `requests[]` / `stages[]` as a fallback
-// signal in case some older codepath still produces those.
+/** A row is complete once it carries a request body, a response body, or an
+ *  error block. In-flight rows (request_id only) return false so the caller
+ *  fetches /usage/detail. `requests[]` / `stages[]` count as fallback signals
+ *  for older codepaths. */
 export function hasCompleteLogDetail(row: LogDetailLog | null | undefined): boolean {
   if (!row) return false;
   if (row.request_body_json != null) return true;

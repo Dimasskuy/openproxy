@@ -1,11 +1,5 @@
-/* ==========================================================================
-   COMBOS VIEW — Responsive Mobile Cards Specification (<= 768px)
-   ========================================================================== */
 
 @media (max-width: 768px) {
-  /* ------------------------------------------------------------------------
-     1. Page Header & Toolbar Controls
-     ------------------------------------------------------------------------ */
   .combos-list-container {
     width: 100%;
     box-sizing: border-box;
@@ -23,9 +17,6 @@
     box-sizing: border-box;
   }
 
-  /* ------------------------------------------------------------------------
-     2. Combos List — Modern Responsive Entity Cards
-     ------------------------------------------------------------------------ */
   .combos-table.responsive-card-table {
     display: block;
     width: 100%;
@@ -60,7 +51,6 @@
     border-color: var(--color-primary);
   }
 
-  /* Card Header: Combo Name + ID + State Badges */
   .combos-table .responsive-card-row > td[data-label="Name"] {
     display: block;
     padding: 0 0 var(--space-2) 0;
@@ -69,7 +59,7 @@
   }
 
   .combos-table .responsive-card-row > td[data-label="Name"]::before {
-    display: none; /* Hide redundant "Name" label */
+    display: none;
   }
 
   .combos-table .combo-table-name-wrap {
@@ -97,7 +87,6 @@
     border: 1px solid var(--color-border-soft);
   }
 
-  /* Card Meta Properties (Strategy, Priority Mode, Race, Context) */
   .combos-table .responsive-card-row > td:not([data-label="Name"]):not([data-label="Actions"]) {
     display: flex;
     align-items: center;
@@ -116,7 +105,6 @@
     letter-spacing: normal;
   }
 
-  /* Card Footer Actions */
   .combos-table .responsive-card-row > td[data-label="Actions"] {
     display: block;
     padding: var(--space-2) 0 0 0;
@@ -125,7 +113,7 @@
   }
 
   .combos-table .responsive-card-row > td[data-label="Actions"]::before {
-    display: none; /* Hide redundant "Actions" label */
+    display: none;
   }
 
   .combos-table .combo-table-actions {
@@ -148,18 +136,14 @@
     border-radius: var(--radius-sm);
   }
 
-  /* Auto Combos Accordion */
   .auto-combos-summary {
     padding: var(--space-2) var(--space-3);
   }
 
   .auto-combos-summary .auto-combos-hint {
-    display: none; /* Hide hint on mobile to keep header clean */
+    display: none;
   }
 
-  /* ------------------------------------------------------------------------
-     3. Combo Detail View — Settings Bar & Controls
-     ------------------------------------------------------------------------ */
   .combo-settings-bar {
     flex-direction: column;
     align-items: stretch;
@@ -212,9 +196,6 @@
     color: var(--color-text-muted);
   }
 
-  /* ------------------------------------------------------------------------
-     4. Combo Targets — Intuitive Mobile Cards (.combo-target-card-row)
-     ------------------------------------------------------------------------ */
   .combo-targets-table thead {
     display: none;
   }
@@ -250,7 +231,6 @@
     box-sizing: border-box;
   }
 
-  /* Order Badge: pill at top-left */
   .combo-target-card-row .col-target-order {
     order: 1;
     display: inline-flex;
@@ -276,7 +256,6 @@
     margin-right: 2px;
   }
 
-  /* Touch Drag Handle: subtle indicator on top-right */
   .combo-target-card-row .col-target-drag {
     position: absolute;
     top: var(--space-3);
@@ -301,7 +280,6 @@
     color: var(--color-primary);
   }
 
-  /* Model Title: bold, clear, full width with right padding for drag handle */
   .combo-target-card-row .col-target-model {
     order: 2;
     padding: 0 36px 0 0;
@@ -335,7 +313,6 @@
     border-radius: var(--radius-sm);
   }
 
-  /* Metadata Rows (Provider, Account, Context, Health) */
   .combo-target-card-row .col-target-provider,
   .combo-target-card-row .col-target-account,
   .combo-target-card-row .col-target-context,
@@ -359,7 +336,6 @@
   .combo-target-card-row .col-target-context::before  { content: "Context"; font-weight: 500; color: var(--color-text-muted); }
   .combo-target-card-row .col-target-test-status::before { content: "Test Status"; font-weight: 500; color: var(--color-text-muted); }
 
-  /* Target Parameters (Thinking, Cooldown, Weight) */
   .combo-target-card-row .col-target-thinking,
   .combo-target-card-row .col-target-cooldown,
   .combo-target-card-row .col-target-weight {
@@ -398,7 +374,6 @@
     border-radius: var(--radius-sm);
   }
 
-  /* Actions Toolbar at Bottom */
   .combo-target-card-row .col-target-actions {
     order: 10;
     display: block;
@@ -443,9 +418,6 @@
     padding: 0;
   }
 
-  /* ------------------------------------------------------------------------
-     5. Sub-combos Accordion and Nested Child Rows
-     ------------------------------------------------------------------------ */
   .subcombo-group-row {
     border-left: 4px solid var(--chart-indigo, #6366f1) !important;
   }

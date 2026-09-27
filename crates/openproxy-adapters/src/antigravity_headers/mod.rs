@@ -1,12 +1,10 @@
 //! Antigravity (Google Cloud Code) client identity headers.
 //!
-//! The cloudcode-pa.googleapis.com API requires specific headers to
-//! identify the client as a legitimate Antigravity installation.
-//! Without these headers, the API may reject requests or return
-//! errors. This module centralizes the header construction so the
-//! executor, quota fetch, and OAuth flow all send identical headers.
+//! cloudcode-pa.googleapis.com rejects requests that do not carry the
+//! Antigravity client-identity headers, so the executor, quota fetch and OAuth
+//! flow all build them here.
 //!
-//! Headers (from the Antigravity-Manager reference implementation):
+//! From the Antigravity-Manager reference implementation:
 //! - `User-Agent: Antigravity/{version} ({platform}) Chrome/{chrome} Electron/{electron}`
 //! - `x-client-name: antigravity`
 //! - `x-client-version: {version}`
@@ -14,10 +12,9 @@
 //! - `x-vscode-sessionid: {per-launch UUID}`
 //! - `x-goog-user-project: {project_id}` (when project_id is known)
 //!
-//! The `x-machine-id` is generated once per process lifetime (using
-//! the `machine-uid` crate's equivalent — a hash of the hostname +
-//! platform-specific machine GUID). The `x-vscode-sessionid` is a
-//! UUID generated once per process launch.
+//! `x-machine-id` hashes hostname + OS once per process, since the API uses it
+//! for rate limiting and session tracking. `x-vscode-sessionid` is a UUID
+//! minted once per process launch.
 
 use http::{HeaderValue, header::HeaderName};
 use sha2::{Digest, Sha256};
@@ -31,14 +28,12 @@ static HEADER_X_MACHINE_ID: HeaderName = HeaderName::from_static("x-machine-id")
 static HEADER_X_VSCODE_SESSIONID: HeaderName = HeaderName::from_static("x-vscode-sessionid");
 static HEADER_X_GOOG_USER_PROJECT: HeaderName = HeaderName::from_static("x-goog-user-project");
 
-/// Known stable Antigravity version (must be >= the version Google's
-/// API requires to accept requests). Updated from the
+/// Floor for the version Google's API accepts. Taken from the
 /// Antigravity-Manager reference.
 pub const KNOWN_STABLE_VERSION: &str = "4.3.0";
 pub const KNOWN_STABLE_CHROME: &str = "132.0.6834.160";
 pub const KNOWN_STABLE_ELECTRON: &str = "39.2.3";
 
-/// Platform info for the User-Agent string.
 fn platform_info() -> &'static str {
     match std::env::consts::OS {
         "macos" => "Macintosh; Intel Mac OS X 10_15_7",
@@ -49,15 +44,13 @@ fn platform_info() -> &'static str {
 
 static DYNAMIC_VERSION: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 
-/// Set dynamic version override in memory at runtime without recompiling.
 pub fn set_dynamic_version(ver: impl Into<String>) {
     if let Ok(mut lock) = DYNAMIC_VERSION.write() {
         *lock = Some(ver.into());
     }
 }
 
-/// Dynamic resolution of current Antigravity version.
-/// Priority: in-memory dynamic override > OPENPROXY_ANTIGRAVITY_VERSION env var > KNOWN_STABLE_VERSION.
+/// In-memory override > `OPENPROXY_ANTIGRAVITY_VERSION` > [`KNOWN_STABLE_VERSION`].
 pub fn current_version() -> String {
     if let Ok(lock) = DYNAMIC_VERSION.read()
         && let Some(ref ver) = *lock
@@ -75,14 +68,12 @@ pub fn current_version() -> String {
 static DYNAMIC_EXTRA_HEADERS: std::sync::RwLock<std::collections::BTreeMap<String, String>> =
     std::sync::RwLock::new(std::collections::BTreeMap::new());
 
-/// Set dynamic extra header override for Antigravity in memory at runtime without recompiling.
 pub fn set_dynamic_extra_header(key: impl Into<String>, val: impl Into<String>) {
     if let Ok(mut lock) = DYNAMIC_EXTRA_HEADERS.write() {
         lock.insert(key.into(), val.into());
     }
 }
 
-/// Reset dynamic in-memory overrides for Antigravity (useful for tests and cleanup).
 pub fn reset_dynamic_overrides() {
     if let Ok(mut lock) = DYNAMIC_VERSION.write() {
         *lock = None;
@@ -112,10 +103,9 @@ static EXTRA_HEADERS: LazyLock<Vec<(HeaderName, HeaderValue)>> = LazyLock::new(|
         .collect()
 });
 
-/// Persistent machine ID. Generated once per process lifetime from
-/// the hostname + OS. This mimics the `machine_uid` crate used by the
-/// Antigravity-Manager — it produces a stable-per-machine identifier
-/// that the API uses for rate-limiting and session tracking.
+/// SHA-256 of hostname + OS, minted once per process. Stands in for the
+/// `machine_uid` crate, whose stable-per-machine id the API uses for rate
+/// limiting and session tracking.
 static MACHINE_ID: LazyLock<String> = LazyLock::new(|| {
     let raw = hostname().map_or_else(
         || format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
@@ -164,8 +154,7 @@ static HOSTNAME: LazyLock<Option<String>> = LazyLock::new(|| {
     None
 });
 
-/// Best-effort hostname read. Returns `None` if the hostname can't be
-/// determined (e.g. in a container without hostname configured).
+/// `None` when the hostname is undetermined, e.g. a container without one.
 fn hostname() -> Option<&'static str> {
     HOSTNAME.as_deref()
 }
@@ -183,7 +172,6 @@ fn session_id() -> &'static str {
     &SESSION_ID
 }
 
-/// Build a User-Agent header value for a given Antigravity version.
 pub fn build_user_agent(ver: &str) -> HeaderValue {
     let mut bytes = bytes::BytesMut::with_capacity(128);
     bytes.extend_from_slice(b"Antigravity/");
@@ -198,13 +186,12 @@ pub fn build_user_agent(ver: &str) -> HeaderValue {
         .unwrap_or_else(|_| HeaderValue::from_static("Antigravity/4.3.0"))
 }
 
-/// Dynamic User-Agent reflecting current version.
 pub fn user_agent() -> HeaderValue {
     build_user_agent(&current_version())
 }
 
-/// Native OAuth User-Agent (used for token exchange / refresh / userinfo):
-/// `vscode/1.X.X (Antigravity/{version})`
+/// `vscode/1.X.X (Antigravity/{version})`, the User-Agent Google's native
+/// OAuth endpoints expect for token exchange, refresh and userinfo.
 pub fn oauth_user_agent() -> String {
     let mut out = String::with_capacity(64);
     let _ = write!(out, "vscode/1.X.X (Antigravity/{})", current_version());
@@ -215,13 +202,11 @@ fn is_valid_project_id(pid: &str) -> bool {
     !pid.is_empty() && pid != "test-project" && pid != "project-id"
 }
 
-/// Inject all Antigravity client-identity headers into an
-/// `http::HeaderMap`. The caller is responsible for setting
-/// `Authorization` and `Content-Type` separately.
+/// Inject the client-identity headers. The caller sets `Authorization` and
+/// `Content-Type`.
 ///
-/// `project_id` is optional — when present, `x-goog-user-project` is
-/// set to the project ID (required for the API to route the request
-/// to the correct Cloud Code project).
+/// `x-goog-user-project` is set only when `project_id` is present, since the
+/// API needs it to route the request to the right Cloud Code project.
 pub fn inject_antigravity_headers(headers: &mut http::HeaderMap, project_id: Option<&str>) {
     let ver = current_version();
     headers.insert(http::header::USER_AGENT, build_user_agent(&ver));
@@ -256,7 +241,6 @@ pub fn inject_antigravity_headers(headers: &mut http::HeaderMap, project_id: Opt
     }
 }
 
-/// Build a zero-allocation `Authorization: Bearer <token>` header value.
 pub fn build_bearer_header(
     token: &str,
 ) -> std::result::Result<HeaderValue, http::header::InvalidHeaderValue> {
@@ -266,7 +250,6 @@ pub fn build_bearer_header(
     http::HeaderValue::from_maybe_shared(buf.freeze())
 }
 
-/// Convenience: insert a Bearer `Authorization` header into a request.
 pub fn insert_bearer(
     req: &mut crate::upstream::UpstreamRequest,
     token: &str,
@@ -276,8 +259,6 @@ pub fn insert_bearer(
     Ok(())
 }
 
-/// POST JSON to a Google Cloud Code endpoint with Bearer auth and
-/// Antigravity client-identity headers.
 pub async fn oauth_post_json<T: serde::Serialize>(
     upstream: &std::sync::Arc<crate::upstream::UpstreamClient>,
     url: &str,
@@ -310,8 +291,6 @@ pub async fn oauth_post_json<T: serde::Serialize>(
         .map_err(|e| format!("{url} collect: {e}"))
 }
 
-/// Iterate over `endpoints` and POST JSON to each in order with Bearer
-/// auth + Antigravity headers.
 pub async fn fetch_with_fallback<T, R>(
     upstream: &std::sync::Arc<crate::upstream::UpstreamClient>,
     endpoints: &[&str],

@@ -97,6 +97,5 @@ fn test_compression_multibyte_and_emoji_stress() {
     assert!(out.contains("🌟 Star 🌟"));
     assert!(out.contains("🚀 Rocket 🚀"));
     assert!(out.contains("🦀 Rust 🦀"));
-    // Verify no 3+ consecutive newlines exist
     assert!(!out.contains("\n\n\n"));
 }

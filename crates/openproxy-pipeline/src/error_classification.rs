@@ -1,11 +1,9 @@
-//! Classify upstream error bodies into "account fault" vs. "request fault".
+//! Classify upstream error bodies into account fault vs. request fault, so the
+//! circuit breaker does not trip on request-shaped errors.
 //!
-//! Used by the circuit breaker to avoid tripping on request-shaped errors.
-//! Per GAP-4 in `docs/specs/antigravity-gaps-p2.md` §2.
-//!
-//! The enum lives in `openproxy-types` (so it can be embedded in
-//! `CoreError::UpstreamError`). This module re-exports it and adds the
-//! classification policy.
+//! Rationale in `docs/specs/antigravity-gaps-p2.md` §2. The enum lives in
+//! `openproxy-types` so `CoreError::UpstreamError` can embed it; this module
+//! holds the classification policy.
 
 pub use openproxy_types::UpstreamErrorClass;
 
@@ -13,7 +11,7 @@ use openproxy_types::CoreError;
 
 #[must_use]
 pub fn classify_upstream_error(status: u16, body: &str) -> UpstreamErrorClass {
-    // 1. Structured CodeBuddy / Tencent Cloud Copilot business error code classification
+    // CodeBuddy business error codes take priority over the text markers.
     if let Some(code) = openproxy_adapters::adapters::codebuddy::parse_codebuddy_error_code(body)
         && let Some(cb_err) =
             openproxy_adapters::adapters::codebuddy::CodeBuddyErrorCode::from_code(code)
@@ -24,7 +22,6 @@ pub fn classify_upstream_error(status: u16, body: &str) -> UpstreamErrorClass {
         }
     }
 
-    // 2. Text marker fallback for CodeBuddy specific exception classes
     if body.contains("UsageLimitEnterpriseExhausted")
         || body.contains("UsageLimitUserExhausted")
         || body.contains("UsageLimitExceeded")
@@ -237,21 +234,14 @@ mod tests {
     }
 }
 
-// ============================================================
-// GAP-4: Adversarial tests for error classification
-// ============================================================
 #[cfg(test)]
 mod adversarial_tests {
     use super::*;
 
-    // --- Body with embedded error markers inside large payloads ---
-
     #[test]
     fn adv_large_body_with_marker_inside_json() {
-        // 10MB body that contains VALIDATION_REQUIRED buried in JSON.
-        // The classifier does substring matching, so it should find it.
+        // Substring matching must find a marker buried in a ~1MB JSON body.
         let mut body = String::from(r#"{"data":""#);
-        // Add filler
         for _ in 0..100_000 {
             body.push_str("abcdefghij");
         }
@@ -263,12 +253,9 @@ mod adversarial_tests {
         );
     }
 
-    // --- Status/body mismatch: body marker present but wrong status ---
-
     #[test]
     fn adv_validation_required_with_wrong_status_500() {
-        // VALIDATION_REQUIRED in body but status=500 → must NOT classify as
-        // ValidationRequired (classification is status-gated).
+        // Classification is status-gated: a 500 never matches, marker or not.
         assert_eq!(
             classify_upstream_error(500, r#"{"error":"VALIDATION_REQUIRED"}"#),
             UpstreamErrorClass::Generic
@@ -293,14 +280,12 @@ mod adversarial_tests {
 
     #[test]
     fn adv_malformed_tool_call_marker_with_status_403() {
-        // "2013" in body but status=403 → must NOT classify as MalformedToolCall
+        // The 2013 marker is gated to status 400.
         assert_eq!(
             classify_upstream_error(403, "code 2013 error"),
             UpstreamErrorClass::Generic
         );
     }
-
-    // --- Body with no markers at various statuses ---
 
     #[test]
     fn adv_empty_body_all_statuses() {
@@ -313,11 +298,9 @@ mod adversarial_tests {
         }
     }
 
-    // --- Body contains BOTH markers (priority test) ---
-
     #[test]
     fn adv_400_body_with_both_2013_and_permission_denied() {
-        // Both markers in body, status=400 → MalformedToolCall wins (400 checked first)
+        // The 400 branch is checked first.
         assert_eq!(
             classify_upstream_error(400, r#"{"error":"2013 PERMISSION_DENIED"}"#,),
             UpstreamErrorClass::MalformedToolCall
@@ -326,8 +309,7 @@ mod adversarial_tests {
 
     #[test]
     fn adv_403_body_with_validation_and_permission_denied() {
-        // Both VALIDATION_REQUIRED and PERMISSION_DENIED in body, status=403
-        // → ValidationRequired wins (checked first in the 403 branch)
+        // The 403 branch is checked first.
         assert_eq!(
             classify_upstream_error(
                 403,
@@ -337,12 +319,8 @@ mod adversarial_tests {
         );
     }
 
-    // --- Body with control characters ---
-
     #[test]
     fn adv_body_with_null_bytes() {
-        // The classification does substring matching — null bytes are
-        // just more chars in the &str.
         let body = "VALIDATION_REQUIRED\u{0000}\n";
         assert_eq!(
             classify_upstream_error(403, body),
@@ -359,8 +337,6 @@ mod adversarial_tests {
         );
     }
 
-    // --- Body that's actually HTML ---
-
     #[test]
     fn adv_503_html_body_is_generic() {
         let body = "<html><body><h1>503 Service Unavailable</h1></body></html>";
@@ -370,11 +346,8 @@ mod adversarial_tests {
         );
     }
 
-    // --- Body with JSON array containing error codes ---
-
     #[test]
     fn adv_403_body_with_json_array_of_error_strings() {
-        // Array of error strings: marker is present → must classify
         let body = r#"["VALIDATION_REQUIRED", "PERMISSION_DENIED"]"#;
         assert_eq!(
             classify_upstream_error(403, body),
@@ -382,14 +355,11 @@ mod adversarial_tests {
         );
     }
 
-    // --- is_hard_skip_error on UpstreamError without classification ---
-
     #[test]
     fn adv_is_hard_skip_default_upstream_error_is_false() {
+        // is_hard_skip_error re-runs classification on the body, so a matching
+        // marker overrides the constructor default of false.
         let err = CoreError::upstream_error(403, "p", "m", "VALIDATION_REQUIRED", false);
-        // upstream_error() sets is_hard_skip=false (default).
-        // But is_hard_skip_error() also re-runs classification on the body.
-        // So this should return true because the body matches.
         assert!(is_hard_skip_error(&err));
     }
 
@@ -398,8 +368,6 @@ mod adversarial_tests {
         let err = CoreError::upstream_error_with_skip(403, "p", "m", "anything", false, true);
         assert!(is_hard_skip_error(&err));
     }
-
-    // --- Timeout and connection errors are NOT hard_skip ---
 
     #[test]
     fn adv_timeout_error_not_hard_skip() {
@@ -416,19 +384,14 @@ mod adversarial_tests {
         assert!(!is_hard_skip_error(&err));
     }
 
-    // --- Large body with Unicode characters ---
-
     #[test]
     fn adv_unicode_body_ascii_marker_still_matches() {
-        // Unicode prefix before ASCII marker — should still match.
         let body = "\u{1F600}\u{1F4A5} some VALIDATION_REQUIRED here";
         assert_eq!(
             classify_upstream_error(403, body),
             UpstreamErrorClass::ValidationRequired
         );
     }
-
-    // --- "function name or parameters is empty" variant ---
 
     #[test]
     fn adv_400_text_marker_function_name_empty() {
@@ -447,11 +410,8 @@ mod adversarial_tests {
         );
     }
 
-    // --- is_hard_skip is const fn ---
-
     #[test]
     fn adv_all_variants_hard_skip_correctness() {
-        // Every non-Generic variant must be hard_skip
         assert!(UpstreamErrorClass::ValidationRequired.is_hard_skip());
         assert!(UpstreamErrorClass::PermissionDenied.is_hard_skip());
         assert!(UpstreamErrorClass::ResourceExhausted.is_hard_skip());
@@ -487,7 +447,7 @@ mod adversarial_tests {
             UpstreamErrorClass::PermissionDenied
         );
 
-        // Nested JSON-RPC shell where outer code is -32603 and inner business code is 11115 (ContextTooLong)
+        // JSON-RPC shell: outer code -32603, inner business code 11115.
         let body_nested = r#"{"status": 400, "error": {"code": -32603, "data": {"code": 11115, "statusCode": 400}}}"#;
         assert_eq!(
             classify_upstream_error(400, body_nested),
@@ -497,8 +457,9 @@ mod adversarial_tests {
 
     #[test]
     fn test_no_false_positive_on_unrelated_numbers() {
-        // A 400 error from an unrelated upstream that happens to mention "6000" in its text (e.g. token limit or port).
-        // With naive `body.contains("6000")`, this would falsely return `ResourceExhausted` and trip the circuit breaker.
+        // `body.contains("6000")` would read this token limit as a CodeBuddy
+        // rate-limit code and trip the circuit breaker, so the code must be
+        // parsed out of the envelope rather than substring-matched.
         let body = r#"{"error":{"message":"Invalid parameter: max_tokens 6000 exceeds maximum allowable value","code":400}}"#;
         assert_ne!(
             classify_upstream_error(400, body),

@@ -1,8 +1,5 @@
-/* ==========================================================================
-   Log Detail Modal — Universal Specification (Desktop & Mobile)
-   ========================================================================== */
 
-/* Reglas Generales / Esquinas Rectas Dell 1996 */
+/* Square corners */
 .log-detail-modal-wrapper .modal,
 .log-detail-modal .modal {
   background: var(--color-bg);
@@ -33,7 +30,7 @@
   color: var(--color-text);
 }
 
-/* Toolbar de Pestañas y Botón Copiar */
+/* Tab toolbar and copy button */
 .tabs-toolbar,
 .tabs-and-actions-bar {
   display: flex;
@@ -105,14 +102,12 @@
   border-color: var(--color-text-muted);
 }
 
-/* Ocultar encabezados redundantes dentro del contenido de pestañas */
+/* Hide redundant headers inside tab content */
 .log-detail-section h4 {
   display: none;
 }
 
-/* ==========================================================================
-   DESKTOP ONLY (min-width: 768px)
-   ========================================================================== */
+/* Desktop only (min-width: 768px) */
 @media (min-width: 768px) {
   .log-detail-modal-wrapper .modal,
   .log-detail-modal .modal {
@@ -176,12 +171,11 @@
     word-break: normal;
   }
 
-  /* ===== Desktop log-detail modal: single-Y-scroll layout =====
-     AC1: .modal-body absorbe todo el scroll vertical del contenido.
-     AC5: header/summary/tabs nunca se comprimen (flex-shrink: 0).
-     B1:  .json-viewer conserva overflow-x: auto como red de seguridad
-          contra tokens sin breakpoint (base64, URLs, hashes hex).
-          overflow-y: hidden cede el scroll vertical al .modal-body. */
+  /* Single-Y-scroll layout: .modal-body takes all vertical scroll, so
+     header/summary/tabs never shrink (flex-shrink: 0).
+     .json-viewer keeps overflow-x: auto as the safety net for tokens
+     with no breakpoint (base64, URLs, hex hashes); its overflow-y is
+     hidden so the vertical scroll belongs to .modal-body. */
 
   .log-detail-modal .modal-body {
     flex: 1 1 auto;
@@ -201,8 +195,8 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    /* overflow intencionalmente NO definido (default: visible)
-       para que los <details> expandidos fluyan sin recorte. */
+    /* overflow left at the default (visible) so expanded
+       <details> flow without clipping. */
   }
 
   .log-detail-modal .json-viewer {
@@ -212,9 +206,7 @@
   }
 }
 
-/* ==========================================================================
-   MOBILE ONLY (max-width: 768px)
-   ========================================================================== */
+/* Mobile only (max-width: 768px) */
 @media (max-width: 768px) {
   .log-detail-modal-wrapper .modal,
   .log-detail-modal .modal {
@@ -248,7 +240,7 @@
     gap: 6px;
   }
 
-  /* 4 Mini-Cards KPI en Móvil */
+  /* 4 KPI mini-cards */
   .mobile-modal-kpi-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -294,7 +286,7 @@
     text-overflow: ellipsis;
   }
 
-  /* Visor JSON Maximizado en Móvil */
+  /* Maximized JSON viewer */
   .log-detail-content {
     flex: 1 1 0%;
     min-height: 0;

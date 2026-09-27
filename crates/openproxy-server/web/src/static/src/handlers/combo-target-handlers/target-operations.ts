@@ -1,7 +1,5 @@
-// handlers/combo-target-handlers/target-operations.ts — target
-// PATCH, selection sync, bulk actions, single-target CRUD (delete,
-// cooldown reset, priority reorder), weight update.
-//
+// handlers/combo-target-handlers/target-operations.ts — target PATCH, selection sync, bulk
+// actions, single-target CRUD (delete, cooldown reset, priority reorder) and weight update.
 // Split from combo-target-handlers.ts to keep each module < 600 LOC.
 
 import { state } from "../../state/index.js";
@@ -12,16 +10,13 @@ import { showToast } from "../../components/toast.js";
 import { showApiError } from "../../lib/ui-utils.js";
 import { showConfirm } from "../../lib/show-confirm.js";
 
-// ---- PATCH helper (no re-render) ----
+// ── PATCH helper (no re-render) ────────────────────────────────────────────
 //
-// Mirrors `patchComboField` in combo-handlers.ts: send the PATCH,
-// swallow the success path (the DOM already reflects the user's
-// choice — see `updateTargetWeight` below), and surface errors via
-// a toast instead of `alert()` + `requestUpdate()`. The
-// original `requestUpdate()` was the root cause of the
-// "me cierra el dropdown" bug: a full DOM rebuild would close any
-// open `<select>` (priority mode, cooldown mode) and steal focus
-// from any `<input>` (weight, race size) the user was still editing.
+// Mirrors `patchComboField` in combo-handlers.ts: send the PATCH, swallow the success path (the
+// DOM already reflects the user's choice — see `updateTargetWeight` below) and surface errors via
+// a toast instead of `alert()` + `requestUpdate()`. That `requestUpdate()` was the root cause of
+// the "me cierra el dropdown" bug: a full DOM rebuild closes any open <select> (priority mode,
+// cooldown mode) and steals focus from any <input> (weight, race size) still being edited.
 async function patchTargetField(
   comboId: number,
   targetId: number,
@@ -40,11 +35,9 @@ async function patchTargetField(
   }
 }
 
-// Targeted DOM patch for the multi-select checkbox UI on the
-// targets table. Toggles each row's `selected` class, refreshes
-// the master "select all" checkbox indeterminate state, and
-// re-paints the "N selected / Delete selected / Clear selection"
-// bulk-action bar — all without a full re-render.
+// Targeted DOM patch of the targets-table multi-select UI: toggle each row's `selected` class,
+// refresh the master "select all" indeterminate state and repaint the
+// "N selected / Delete selected / Clear selection" bulk bar — all without a full re-render.
 function syncTargetSelectionUI(comboId: number): void {
   const checkboxes = Array.from(
     document.querySelectorAll<HTMLInputElement>(
@@ -103,7 +96,7 @@ function bulkActionsBarTemplate(comboId: number, count: number): TemplateResult 
   `;
 }
 
-// Read the comboId off any table row in the targets table.
+// Read the comboId off any row of the targets table.
 function comboIdFromTargetsTable(): number | null {
   const row = document.querySelector("tr[data-combo-id]");
   if (!row) return null;
@@ -113,7 +106,7 @@ function comboIdFromTargetsTable(): number | null {
   return Number.isNaN(id) ? null : id;
 }
 
-// ---- Single-target CRUD ----
+// ── Single-target CRUD ─────────────────────────────────────────────────────
 
 export async function deleteTarget(comboId: number, targetId: number): Promise<void> {
   if (!(await showConfirm({
@@ -167,8 +160,8 @@ export async function changePriority(comboId: number, targetId: number, delta: n
   }
 }
 
-/** `PATCH /admin/combos/:id/targets/:tid` — update a target's weight
- *  for the `weighted` priority mode (migration 000035). */
+/** `PATCH /admin/combos/:id/targets/:tid` — update a target's weight for the `weighted`
+ *  priority mode (migration 000035). */
 export async function updateTargetWeight(comboId: number, targetId: number, e: Event | null): Promise<void> {
   if (e && e.type === "input") return;
   const raw = e && e.target ? (e.target as HTMLInputElement).value.trim() : "";
@@ -181,7 +174,7 @@ export async function updateTargetWeight(comboId: number, targetId: number, e: E
   await patchTargetField(comboId, targetId, "weight", val);
 }
 
-// ---- Multi-select / bulk actions ----
+// ── Multi-select / bulk actions ────────────────────────────────────────────
 
 export function toggleTargetSelection(targetId: number, e: Event | null): void {
   const target = e && e.target ? e.target : null;

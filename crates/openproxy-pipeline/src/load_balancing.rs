@@ -4,14 +4,10 @@ use openproxy_types::ids::ComboId;
 use rand::RngExt;
 use rand::seq::SliceRandom;
 
-/// Default selection window (1 hour) when the combo's
-/// `selection_window_secs` column is `NULL`. Matches the spec's
-/// documented default.
+/// Fallback for a `NULL` `selection_window_secs`.
 pub const DEFAULT_SELECTION_WINDOW_SECS: u64 = 3600;
 
-/// Default LKGP exploration rate (10%) when the combo's
-/// `lkgp_exploration_rate` column is `NULL`. Matches the spec's
-/// documented default.
+/// Fallback for a `NULL` `lkgp_exploration_rate`.
 pub const DEFAULT_LKGP_EXPLORATION_RATE: f64 = 0.1;
 
 fn execute_round_robin(
@@ -179,12 +175,10 @@ fn target_effective_weight(t: &ComboTarget) -> u32 {
     if t.weight <= 0 { 1 } else { t.weight as u32 }
 }
 
-/// Weighted random: each target's probability is proportional to
-/// its `weight` column. We treat weights `<= 0` as `1` defensively
-/// (the admin handler rejects `<= 0` on write, but a hand-edited
-/// row could still slip through and a negative weight would
-/// divide-by-zero the sum). The single picked target is moved to
-/// the head; the rest stay in `priority_order`.
+/// Weighted random: each target's probability is proportional to its `weight`
+/// column, with `<= 0` clamped to `1` so a hand-edited row cannot divide the
+/// sum by zero. The picked target moves to the head; the rest stay in
+/// `priority_order`.
 fn resolve_weighted(mut targets: Vec<ComboTarget>) -> Vec<ComboTarget> {
     if targets.is_empty() {
         return targets;
@@ -192,9 +186,6 @@ fn resolve_weighted(mut targets: Vec<ComboTarget>) -> Vec<ComboTarget> {
     let weights: Vec<u32> = targets.iter().map(target_effective_weight).collect();
     let total: u64 = weights.iter().map(|w| u64::from(*w)).sum();
     if total == 0 {
-        // All-zero weights (shouldn't happen given the `<= 0` → `1`
-        // clamp above, but defense in depth). Fall back to strict
-        // priority order.
         return targets;
     }
     let pick = rand::rng().random_range(0..total);
@@ -203,10 +194,8 @@ fn resolve_weighted(mut targets: Vec<ComboTarget>) -> Vec<ComboTarget> {
     targets
 }
 
-/// Least-used: sort by `request_count` ASC (fewest first). Ties
-/// broken by `priority_order` ASC. A target with no recent
-/// activity reads back as `0` and is preferred over one that's
-/// been hammered — which is the point.
+/// Least-used: sort by `request_count` ASC, ties broken by `priority_order` ASC.
+/// A target with no recent activity reads back as `0` and wins.
 fn resolve_least_used(
     mut targets: Vec<ComboTarget>,
     window_secs: u64,
@@ -221,11 +210,8 @@ fn resolve_least_used(
     targets
 }
 
-/// P2C (Power of Two Choices): pick two random targets, choose
-/// the one with fewer recent requests. The winner goes to the
-/// head; the rest stay in `priority_order`. With fewer than two
-/// targets the function is a no-op (the caller already short-
-/// circuits on `len() <= 1`, but we defend here too).
+/// P2C (Power of Two Choices): pick two random targets, choose the one with
+/// fewer recent requests. The winner goes to the head; no-op with <2 targets.
 fn resolve_p2c(
     mut targets: Vec<ComboTarget>,
     window_secs: u64,
@@ -238,8 +224,6 @@ fn resolve_p2c(
     let i = rng.random_range(0..targets.len());
     let mut j = rng.random_range(0..targets.len());
     if i == j {
-        // Re-roll to guarantee two distinct picks when there are
-        // at least two targets. Wrapping is fine because `len >= 2`.
         j = (j + 1) % targets.len();
     }
     let ci = registry.request_count_within(targets[i].id, window_secs);
@@ -305,18 +289,18 @@ mod tests {
         let t3 = make_target(3, 3);
         let targets = vec![t1, t2, t3];
 
-        // 1. Initial state (no successes) -> strictly ordered by priority_order
+        // No successes yet: strictly by priority_order.
         let res = resolve_lkgp(targets.clone(), &combo, &registry);
         assert_eq!(res[0].id.0, 1);
         assert_eq!(res[1].id.0, 2);
         assert_eq!(res[2].id.0, 3);
 
-        // 2. Target 2 succeeds -> Target 2 becomes #1
+        // Target 2 succeeds and takes the head.
         registry.record_success(ComboTargetId(2));
         let res = resolve_lkgp(targets.clone(), &combo, &registry);
         assert_eq!(res[0].id.0, 2, "Target 2 should be at head after success");
 
-        // 3. Target 3 succeeds later -> Target 3 becomes #1, Target 2 is #2
+        // A later success on Target 3 outranks the earlier one on Target 2.
         std::thread::sleep(std::time::Duration::from_millis(5));
         registry.record_success(ComboTargetId(3));
         let res = resolve_lkgp(targets.clone(), &combo, &registry);
@@ -326,7 +310,7 @@ mod tests {
         );
         assert_eq!(res[1].id.0, 2);
 
-        // 4. Target 3 fails -> Target 3 drops its known-good state, Target 2 takes back #1
+        // A failure drops the known-good state, handing the head back.
         registry.record_failure(ComboTargetId(3));
         let res = resolve_lkgp(targets, &combo, &registry);
         assert_eq!(
@@ -355,7 +339,7 @@ mod tests {
         let targets = vec![t1, t2, t3];
         let res = resolve_lkgp(targets, &combo, &registry);
 
-        // Untried Target 2 (priority 20) MUST beat failing targets 1 and 3
+        // An untried target beats the failing ones regardless of priority.
         assert_eq!(
             res[0].id.0, 2,
             "Untried target 2 must be tried before failed targets 1 and 3"

@@ -212,7 +212,7 @@ fn sync_single_candidate_combo(
     )
 }
 
-/// Auto-create combos for models that are active in ≥2 providers.
+/// Combos for models active in two or more providers.
 pub fn auto_create_combos(conn: &Connection) -> Result<usize> {
     let normalized_ids = fetch_candidate_normalized_ids(conn)?;
     let targets_by_norm_id = fetch_targets_by_norm_id(conn, &normalized_ids)?;

@@ -1,5 +1,4 @@
 // components/shell.ts — renders the top-level #app shell.
-// Migrated to lit-html.
 
 import { html, render } from 'lit-html';
 import { renderSidebar } from "./sidebar.js";

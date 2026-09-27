@@ -53,7 +53,7 @@ fn auto_create_combos_appends_new_targets() {
         []
     ).unwrap();
 
-    // Insert accounts for these providers (to make them healthy/active)
+    // Cuentas para que los providers queden healthy/active
     conn.execute(
         "INSERT INTO accounts (id, provider_id, health_status) VALUES (1, 'nvidia-nim', 'healthy')",
         [],
@@ -74,7 +74,6 @@ fn auto_create_combos_appends_new_targets() {
     let count = auto_create_combos(&conn).unwrap();
     assert_eq!(count, 1, "Should create 1 auto combo");
 
-    // Verify the combo name and targets
     let combo_id: i64 = conn
         .query_row(
             "SELECT id FROM combos WHERE name = 'auto:gpt-oss-120b'",
@@ -91,7 +90,6 @@ fn auto_create_combos_appends_new_targets() {
         .unwrap();
     assert_eq!(targets_count, 3, "Should have 3 targets in the combo");
 
-    // Verify priority orders are 0, 1, 2
     let orders: Vec<i32> = {
         let mut stmt = conn
             .prepare("SELECT priority_order FROM combo_targets WHERE combo_id = ?1 ORDER BY priority_order")

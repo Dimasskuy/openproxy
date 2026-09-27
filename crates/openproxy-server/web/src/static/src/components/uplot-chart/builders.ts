@@ -1,14 +1,10 @@
-// components/uplot-chart/builders.ts
-// ==========
-// Chart builders — one per chart on the home dashboard and the
-// analytics view. Each builder returns a uPlot instance configured
-// for a specific data shape. Internal helpers (`timeFormatter`,
-// `formatRate`, `compactValue`, `dateFormatter`, ...) are shared
-// across builders but kept module-private: they are not part of the
-// public API surface.
+// components/uplot-chart/builders.ts — one builder per dashboard/analytics chart, each
+// returning a uPlot instance for a specific data shape. Axis/value formatters
+// (`timeFormatter`, `formatRate`, `compactValue`, `dateFormatter`, …) are shared across
+// builders but module-private.
 //
-// Public API: `buildThroughputChart`, `buildStatusCodesChart`,
-// `buildLatencyChart`, `buildDailyUsageChart`.
+// Public API: `buildThroughputChart`, `buildStatusCodesChart`, `buildLatencyChart`,
+// `buildDailyUsageChart`.
 
 import uPlot from "uplot";
 
@@ -18,13 +14,10 @@ import {
   smoothPath,
 } from "./lifecycle.js";
 
-// ----------
-// Axis formatters & value formatters — used by the home-view builders
-// ----------
+// ── Axis / value formatters (home-view builders) ───────────────────────────
 
-/** X-axis ticks formatter for time-series charts. uPlot's default is fine
- *  but we override to show "HH:MM:SS" (the live dashboard is about recent
- *  activity, not dates). */
+/** X-axis ticks as "HH:MM:SS" (uPlot's default is fine, but the live dashboard is about
+ *  recent activity, not dates). */
 function timeFormatter(u: uPlot, vals: number[]): string[] {
   const scale = u.scales["x"];
   const span: number = (scale?.max ?? 0) - (scale?.min ?? 0);
@@ -62,7 +55,7 @@ function compactValue(v: number): string {
   return v.toFixed(2);
 }
 
-/** Number formatter for axis ticks. Uses compact notation (1.2k, 8.2k). */
+/** Axis ticks in compact notation (1.2k, 8.2k). */
 function compactNumber(_u: uPlot, vals: number[]): string[] {
   return vals.map((v: number) => Number.isFinite(v) ? compactValue(v) : "");
 }
@@ -72,9 +65,7 @@ function positiveRange(_u: uPlot, _min: number, max: number): [number, number] {
   return [0, max * 1.05];
 }
 
-// ----------
-// Home dashboard builders
-// ----------
+// ── Home dashboard builders ────────────────────────────────────────────────
 
 /** Requests and tokens per second on independent Y axes. */
 export function buildThroughputChart(container: HTMLElement): uPlot {
@@ -135,7 +126,7 @@ export function buildThroughputChart(container: HTMLElement): uPlot {
   });
 }
 
-/** Successful, client-error, and server-error responses per bucket. */
+/** Successful, client-error and server-error responses per bucket. */
 export function buildStatusCodesChart(container: HTMLElement): uPlot {
   return createLiveChart(container, {
     series: [
@@ -190,8 +181,7 @@ export function buildStatusCodesChart(container: HTMLElement): uPlot {
   });
 }
 
-/** Latency chart: 3 line series (p50 / p95 / p99) in milliseconds, single
- *  shared Y-axis. */
+/** Latency chart: p50/p95/p99 in ms, one shared Y axis. */
 export function buildLatencyChart(container: HTMLElement): uPlot {
   return createLiveChart(container, {
     series: [
@@ -252,11 +242,9 @@ export function buildLatencyChart(container: HTMLElement): uPlot {
   });
 }
 
-// ----------
-// Analytics-view builder (B3)
-// ----------
+// ── Analytics-view builder (B3) ────────────────────────────────────────────
 
-/** Compact, unambiguous UTC dates. Includes the year for long ranges. */
+/** Compact, unambiguous UTC dates; includes the year for long ranges. */
 function dateFormatter(u: uPlot, vals: number[]): string[] {
   const scale = u.scales["x"];
   const spanDays: number = ((scale?.max ?? 0) - (scale?.min ?? 0)) / 86_400;
@@ -274,9 +262,7 @@ function dateFormatter(u: uPlot, vals: number[]): string[] {
   });
 }
 
-/** Cost formatter for the right Y-axis of the daily-usage chart. Uses
- *  3 decimal places for sub-dollar amounts (typical for daily cost) and
- *  2 decimals for ≥ $1. */
+/** Right-axis cost formatter: 3 decimals sub-dollar (typical daily cost), 2 at ≥ $1. */
 function costAxisFormatter(_u: uPlot, vals: number[]): string[] {
   return vals.map((v: number) => {
     if (!Number.isFinite(v)) return "";
@@ -286,7 +272,7 @@ function costAxisFormatter(_u: uPlot, vals: number[]): string[] {
   });
 }
 
-/** Daily requests, errors, and cost on two Y axes. */
+/** Daily requests, errors and cost on two Y axes. */
 export function buildDailyUsageChart(container: HTMLElement): uPlot {
   return createLiveChart(container, {
     series: [

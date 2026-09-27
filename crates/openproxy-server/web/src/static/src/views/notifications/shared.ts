@@ -1,5 +1,5 @@
-// views/notifications/shared.ts — types, helpers, and constants shared
-// between the notification list and the DnD overlay modules.
+// views/notifications/shared.ts — types, helpers, constants shared by the
+// notification list and the DnD overlay modules.
 
 import type {
   NotificationRow,
@@ -9,12 +9,8 @@ import type {
   ComboTargetWithModel,
 } from "../../lib/types/api.js";
 
-// ==========
-// Constants
-// ==========
 
-/** Per-kind CSS color variable for the card's left border accent and
- *  background tint. */
+/** Per-kind CSS color variable: card border accent + background tint. */
 export const KIND_COLOR_VAR: Readonly<Record<NotificationKind, string>> = {
   model_new: "var(--color-success, #22c55e)",
   model_gone: "var(--color-error, #ef4444)",
@@ -55,9 +51,7 @@ export const TARGETS_CACHE_TTL_MS: number = 30_000;
 /** Maximum number of notifications fetched per page. */
 export const PAGE_LIMIT: number = 50;
 
-// ==========
 // Types
-// ==========
 
 export interface DragPayload {
   notification_id: number;
@@ -70,9 +64,7 @@ export interface CachedTargets {
   fetchedAt: number;
 }
 
-// ==========
 // Payload helpers
-// ==========
 
 export function isUnread(r: NotificationRow): boolean {
   return r.read_at === null && r.archived_at === null;

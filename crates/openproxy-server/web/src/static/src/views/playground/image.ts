@@ -1,9 +1,6 @@
-// views/playground/image.ts — Image Studio modality workspace.
-//
-// Renders the image-specific main area: sub-mode segmented control (generation,
-// edit, variation), file dropzones for source and mask images, prompt editor
-// with diffusion directive chips, negative prompt, and the lightbox overlay.
-// The response inspector (gallery) is shared via inspector.ts.
+// views/playground/image.ts — Image Studio workspace: sub-mode control
+// (generate/edit/variation), source + mask dropzones, prompt editor with
+// diffusion chips, negative prompt, lightbox. Gallery lives in inspector.ts.
 
 import { html, type TemplateResult } from 'lit-html';
 import { requestUpdate } from '../../state/reactive.js';

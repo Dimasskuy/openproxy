@@ -173,8 +173,7 @@ impl MemoryCleanupService {
         openproxy_core::usage::INFLIGHT_REGISTRY
             .retain(|_, v| now_ms.saturating_sub(v.updated_at_ms) < 300_000);
 
-        // Shrink SQLite memory on writer and reader pools in blocking thread,
-        // and collect freed allocator pages in the worker pool
+        // SQLite pool shrink on a blocking thread; mimalloc collects here.
         let pool = Arc::clone(&self.db_pool);
         let _ = tokio::task::spawn_blocking(move || {
             pool.shrink_memory();
@@ -197,8 +196,7 @@ impl BackgroundService for MemoryCleanupService {
     }
 
     async fn run(&self, cancel: CancellationToken) {
-        // Schedule early startup trims at T+5s and T+8s to purge any startup/discovery allocations
-        // strictly before the T+10s mark.
+        // Early trims at T+5s and T+8s purge startup/discovery allocations before T+10s.
         let early_5s = tokio::time::sleep(Duration::from_secs(5));
         let early_8s = tokio::time::sleep(Duration::from_secs(8));
         tokio::pin!(early_5s);
@@ -307,16 +305,15 @@ impl BackgroundService for MaintenanceVacuumService {
     }
 }
 
-/// Runs the boot-time backfill (provider seed, model-metadata
-/// backfill, `recompute_costs`, `cost::backfill_usage_pricing`, and
-/// bootstrap key creation) on a background task so the listener socket
-/// can bind immediately. The first tick fires right after `spawn`, then
-/// the service sleeps for `interval` between passes so pricing drift is
-/// picked up over time.
+/// Runs the boot-time backfill (provider seed, model-metadata backfill,
+/// `recompute_costs`, `cost::backfill_usage_pricing`, bootstrap key creation) on a
+/// background task so the listener socket binds immediately. The first tick fires
+/// right after `spawn`, then it sleeps `interval` between passes so pricing drift
+/// is picked up over time.
 ///
-/// Status is reported through [`crate::state::BackfillStatus`] so the
-/// admin UI can show a "warming up" / "backfilling" banner while the
-/// slow `backfill_usage_pricing` full-table scan runs.
+/// Status flows through [`crate::state::BackfillStatus`] so the admin UI can show
+/// a "warming up" / "backfilling" banner during the `backfill_usage_pricing`
+/// full-table scan.
 pub struct BackfillService {
     pub db_pool: Arc<openproxy_db::DbPool>,
     pub backfill_status: Arc<parking_lot::RwLock<crate::state::BackfillStatus>>,
@@ -351,7 +348,7 @@ impl BackgroundService for BackfillService {
         }
 
         let mut tick = tokio::time::interval(self.interval);
-        // Skip the immediate tick (we already ran one pass above).
+        // Skip the immediate tick: one pass already ran above.
         tick.tick().await;
         loop {
             tokio::select! {

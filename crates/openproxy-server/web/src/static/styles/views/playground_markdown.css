@@ -1,11 +1,8 @@
-/* =============================================================================
-   Playground Reasoning (Thinking Process) & Markdown / Math Formatting
-   ============================================================================= 
-   Follow-up (FU4): the rgba(99, 102, 241, ...) values below are the
-   indigo (#6366f1 -> --chart-indigo) with fixed alpha used inside
-   @keyframes box-shadow animations. They are intentionally left as
-   literal rgba() because keyframe interpolation with color-mix()
-   is not universally supported and these run at 60fps. */
+/* Playground reasoning (thinking process) and markdown / math formatting.
+   The rgba(99, 102, 241, ...) values below are --chart-indigo with a
+   fixed alpha, used inside @keyframes box-shadow animations. They stay
+   literal rgba() because color-mix() cannot be interpolated across
+   keyframes in every browser, and these animate at 60fps. */
 
 .playground-reasoning-card {
   background: var(--color-surface-2);
@@ -137,7 +134,6 @@
   font-size: var(--fs-sm);
 }
 
-/* Formatted Markdown Content */
 .md-formatted-content {
   font-family: var(--font-sans);
   line-height: 1.65;
@@ -223,7 +219,6 @@
   color: var(--color-text);
 }
 
-/* Code Blocks with Header & Copy Button */
 .md-code-block {
   margin: var(--space-3) 0;
   border: var(--border-w) var(--border-style) var(--color-border);
@@ -293,7 +288,6 @@
   border: none;
 }
 
-/* Markdown Tables */
 .md-table-wrap {
   overflow-x: auto;
   margin: var(--space-3) 0;
@@ -337,7 +331,6 @@
   background: var(--color-surface-2);
 }
 
-/* Math LaTeX / KaTeX Formatting */
 .math-block {
   margin: var(--space-3) 0;
   padding: var(--space-3);

@@ -370,7 +370,6 @@ mod tests {
         .expect("test pool");
         let conn = pool.writer();
 
-        // Insert 165 candidate rows (>150) across varying statuses and priorities
         for i in 0..165 {
             let status = match i % 3 {
                 0 => "unknown",
@@ -399,7 +398,6 @@ mod tests {
             "Total inserted candidate rows must be 165 (>150)"
         );
 
-        // Call the production function fetch_background_test_proxies
         let candidates = fetch_background_test_proxies(&conn);
         assert_eq!(
             candidates.len(),
@@ -407,9 +405,7 @@ mod tests {
             "fetch_background_test_proxies must return exactly 100 rows when >150 exist"
         );
 
-        // Verify status ordering: 'unknown' (1) before 'alive' (2) before 'dead' (3)
-        // With 165 items: 55 unknown, 55 alive, 55 dead.
-        // First 55 must be unknown, next 45 must be alive, 0 dead.
+        // De 165 items: los 55 primeros deben quedar unknown.
         for item in &candidates[0..55] {
             let id = &item.0;
             let status: String = conn
@@ -437,7 +433,6 @@ mod tests {
                 .expect("test pool"),
         );
 
-        // Pre-populate with free proxies and a provider
         {
             let conn = pool.writer();
             for i in 0..50 {
@@ -462,7 +457,7 @@ mod tests {
 
         let mut tasks = Vec::new();
 
-        // 1. tester.rs pattern: execute_proxy_batch_update in spawn_blocking with pool.writer()
+        // Patrón de tester.rs: batch update en spawn_blocking con writer()
         for t in 0..10 {
             let pool = std::sync::Arc::clone(&pool);
             tasks.push(tokio::spawn(async move {
@@ -488,7 +483,7 @@ mod tests {
             }));
         }
 
-        // 2. sync.rs pattern: sources insertion and upsert_scraped_proxies in spawn_blocking with pool.writer()
+        // Patrón de sync.rs: inserción de sources y upsert_scraped_proxies en spawn_blocking con writer()
         for s in 0..10 {
             let pool = std::sync::Arc::clone(&pool);
             tasks.push(tokio::spawn(async move {
@@ -521,7 +516,7 @@ mod tests {
             }));
         }
 
-        // 3. runner.rs pattern: notifications and auto-activation in spawn_blocking with pool.writer()
+        // Patrón de runner.rs: notifications y auto-activación en spawn_blocking con writer()
         for r in 0..10 {
             let pool = std::sync::Arc::clone(&pool);
             tasks.push(tokio::spawn(async move {
@@ -558,7 +553,7 @@ mod tests {
             }));
         }
 
-        // 4. concurrent readers: candidate proxy fetching & counts using reader()
+        // Lectores concurrentes: fetch de candidatos y conteos con reader()
         for _ in 0..10 {
             let pool = std::sync::Arc::clone(&pool);
             tasks.push(tokio::spawn(async move {
@@ -579,7 +574,7 @@ mod tests {
             }));
         }
 
-        // Await all 40 concurrent tasks with timeout to detect deadlocks immediately
+        // Espera las 40 tareas con timeout para detectar deadlocks al instante
         let timeout_res = tokio::time::timeout(
             std::time::Duration::from_secs(15),
             futures::future::try_join_all(tasks),
@@ -596,7 +591,7 @@ mod tests {
             "Task failed in concurrent stress test: {results:?}"
         );
 
-        // Verify zero connection leaks: writer and readers must be acquirable immediately
+        // Sin fugas: writer y readers deben acquiredse al instante
         let writer_guard = pool.try_writer_for(std::time::Duration::from_millis(200));
         assert!(
             writer_guard.is_some(),
@@ -611,7 +606,7 @@ mod tests {
         );
         drop(reader_guard);
 
-        // Verify reader pool count unchanged (no pool exhaustion)
+        // El pool de readers no debe crecer (sin agotamiento)
         assert_eq!(pool.reader_count(), 2);
         let r0 = pool.reader_guard();
         let r1 = pool.reader_guard();
@@ -626,7 +621,7 @@ mod tests {
         drop(r0);
         drop(r1);
 
-        // Verify database integrity: notifications, scraped proxies, and proxy statuses exist
+        // Integridad: existen notifications, proxies scrapeados y estados
         let w = pool.writer();
         let notif_count: i64 = w
             .query_row("SELECT COUNT(*) FROM notifications", [], |r| r.get(0))

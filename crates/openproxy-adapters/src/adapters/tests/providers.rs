@@ -5,7 +5,7 @@ use crate::upstream::UpstreamClient;
 use openproxy_types::{CoreError, ModelId, TargetFormat};
 use std::sync::Arc;
 
-// ---- Cloudflare Workers AI ---------------------------------------
+// Cloudflare Workers AI
 
 #[tokio::test]
 async fn cloudflare_fetch_models_for_account_rejects_empty_label() {
@@ -52,7 +52,7 @@ fn cloudflare_build_chat_url_for_account_substitutes_label() {
     );
 }
 
-// ---- Ollama Cloud ------------------------------------------------
+// Ollama Cloud
 
 #[test]
 fn ollama_cloud_builds_correct_url() {
@@ -103,7 +103,7 @@ fn nvidia_nim_metadata_and_config() {
     assert!(!meta.requires_oauth);
 }
 
-// ---- Nous Research ------------------------------------------------
+// Nous Research
 
 #[test]
 fn nous_research_builds_correct_url() {
@@ -143,7 +143,7 @@ fn nous_research_headers() {
     );
 }
 
-// ---- NVIDIA NIM ---------------------------------------------------
+// NVIDIA NIM
 
 #[test]
 fn nvidia_nim_builds_correct_url() {
@@ -183,7 +183,7 @@ fn nvidia_nim_headers() {
     );
 }
 
-// ---- Kilocode -----------------------------------------------------
+// Kilocode
 
 #[test]
 fn kilocode_builds_correct_url() {
@@ -223,7 +223,7 @@ fn kilocode_headers() {
     );
 }
 
-// ---- Gemini -------------------------------------------------------
+// Gemini
 
 #[test]
 fn gemini_builds_correct_url() {
@@ -263,7 +263,7 @@ fn gemini_headers_include_content_type() {
     );
 }
 
-// ---- Atomesus -------------------------------------------------------
+// Atomesus
 
 #[tokio::test]
 async fn atomesus_fetch_models_returns_expected_catalog() {
@@ -285,7 +285,7 @@ async fn atomesus_fetch_models_returns_expected_catalog() {
     );
 }
 
-// ---- Antigravity ---------------------------------------------------
+// Antigravity
 
 #[test]
 fn antigravity_builds_correct_url() {
@@ -311,7 +311,7 @@ fn antigravity_has_no_models_url() {
     assert!(a.models_url().is_none());
 }
 
-// ---- Codex ---------------------------------------------------------
+// Codex
 
 #[test]
 fn codex_models_url_points_to_backend_api() {

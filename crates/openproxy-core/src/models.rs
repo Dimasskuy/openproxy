@@ -1,70 +1,46 @@
-//! Persistent model registry. Models are discovered from providers' /models endpoint.
-//!
-//! This module owns the `models` table (see mvp-spec §8) and the operations
-//! needed by the discovery loop, the `/v1/models` admin endpoint, and the
-//! request-routing pipeline.
+//! Persistent model registry, owning the `models` table (mvp-spec §8) for the
+//! discovery loop, the `/v1/models` admin endpoint and request routing.
 //!
 //! # Visibility semantic: presence-in-last-refresh
 //!
-//! A row is considered live iff it was in the most recent successful
-//! refresh of its provider. Concretely, the only filter [`list_active`]
-//! (and the cross-provider [`list_active_all`]) applies on the hot path
-//! is `active = 1`. The `expires_at` column stays in the schema for
-//! diagnostic / debug purposes, but it is no longer a visibility gate:
-//! the background [`crate::discovery_scheduler`] (Gate A) calls
-//! [`upsert_many`] on every tick, and an upsert whose `discovered` list
-//! does not contain a model deletes that model's non-custom row from
-//! the table. So "expired" no longer means "old enough to be stale";
-//! it means "the upstream no longer lists it".
+//! A row is live iff the last successful refresh of its provider listed it. The
+//! only hot-path filter is `active = 1` in [`list_active`] / [`list_active_all`].
+//! `expires_at` stays in the schema for diagnostics but is no longer a gate: the
+//! [`crate::discovery_scheduler`] calls [`upsert_many`] every tick, and an upsert
+//! whose `discovered` list omits a model hard-deletes its non-custom row. "Expired"
+//! therefore means the upstream stopped listing the model.
 //!
-//! The hard-delete is preferred over an `expires_at` filter because:
-//!   - it makes the registry reflect upstream truth with no
-//!     `datetime('now')` math at query time;
-//!   - a hand-curated `custom = 1` row is preserved automatically
-//!     (the delete branch is gated on `custom = 0`);
-//!   - `combo_targets` rows that point at a vanished model are
-//!     orphaned harmlessly — routing code already filters on
-//!     `model_row_id IN (live models)` at request time.
+//! Hard delete over an `expires_at` filter:
+//!   - the registry mirrors upstream truth with no `datetime('now')` math at query
+//!     time;
+//!   - hand-curated `custom = 1` rows survive, since the delete is gated on
+//!     `custom = 0`;
+//!   - `combo_targets` rows pointing at a vanished model are orphaned harmlessly,
+//!     since routing already filters on `model_row_id IN (live models)`.
 //!
 //! # Manual cleanup: `mark_expired`
 //!
-//! [`mark_expired`] is a *manual* cleanup utility for orphan rows
-//! (e.g. the provider was deleted while models still pointed at it, or
-//! a process crashed mid-upsert and left inconsistent state). It is
-//! NOT part of the normal hot path: that role belongs to
-//! [`upsert_many`]'s hard-delete of vanished models. The threshold is
-//! intentionally long (>7 days) so it never races the background
-//! scheduler. Rows with `expires_at IS NULL` are never deleted by
-//! `mark_expired` — a NULL there is a legitimate "no expiry set" state
-//! (e.g. `create_custom` with `ttl_seconds = 0`) and is not, by itself,
-//! evidence of an orphan.
+//! [`mark_expired`] is a manual orphan-row cleanup (provider deleted while models
+//! still pointed at it, or a crash mid-upsert), not part of the hot path: that role
+//! belongs to [`upsert_many`]'s hard delete. Its threshold is intentionally long
+//! (>7 days) so it never races the scheduler. A NULL `expires_at` is a legitimate
+//! "no expiry set" state (e.g. `create_custom` with `ttl_seconds = 0`) and is
+//! never deleted.
 //!
-//! Note: this is *not* where OpenAI/Anthropic serde structs live — those are
-//! in `crate::translation`. The two namespaces are kept separate on purpose.
-//!
-//! # Module layout
-//!
-//! - **`crud`** — free functions for every SQL operation on the `models`
-//!   table. These are the building blocks consumed by `SqliteModelRepository`.
-//! - **`sync`** — diff computation, transactional upsert, and notification
-//!   broadcasting used by [`upsert_many`].
-//! - **`repository`** — [`ModelRepository`] trait and its SQLite
-//!   implementation [`SqliteModelRepository`].
-//! - **`discovery`** — [`DiscoveryService`] that orchestrates
-//!   fetch → upsert → auto-activate.
+//! Submodules: `crud` holds the SQL operations behind [`SqliteModelRepository`],
+//! `sync` the diff/upsert/notification path, `repository` the trait, and
+//! `discovery` the [`DiscoveryService`].
 pub use openproxy_types::{
     DiscoveredModel, Model, ModelsRefreshedEvent, TargetFormat, UpsertResult,
     publish_models_refreshed,
 };
 
-// ── Submodules ──────────────────────────────────────────────────────
 pub mod discovery;
 pub mod sync;
 
 #[cfg(test)]
 mod tests;
 
-// ── Re-exports from openproxy-db ────────────────────────────────────
 pub use openproxy_db::models::{
     ModelRepository, SqliteModelRepository, apply_auto_activation,
     apply_auto_activation_with_retry, create_custom, delete, find_active_by_name,

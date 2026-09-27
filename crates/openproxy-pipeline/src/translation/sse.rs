@@ -8,9 +8,6 @@ use serde_json::json;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-// Anthropic SSE event types
-// =====================
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AnthropicSseEvent {
@@ -23,14 +20,12 @@ pub enum AnthropicSseEvent {
     },
     ContentBlockDelta {
         index: u32,
-        /// {type: "text_delta", text: "..."}
         delta: serde_json::Value,
     },
     ContentBlockStop {
         index: u32,
     },
     MessageDelta {
-        /// Contains stop_reason.
         delta: serde_json::Value,
         usage: Option<AnthropicUsage>,
     },
@@ -179,14 +174,6 @@ pub fn anthropic_sse_event_to_openai_chunks(
     }
 }
 
-/// Parse a raw SSE `data:` line (with or without the `data: ` prefix) into an
-/// [`AnthropicSseEvent`]. Returns:
-///
-/// - `Ok(Some(event))` for valid event payloads.
-/// - `Ok(None)` for lines that should be ignored (ping, comments, empty payload,
-///   non-`data:` lines, `[DONE]` sentinel).
-/// - `Err(CoreError::Parse(_))` for malformed JSON or event payload that should
-///   be a valid event.
 fn is_ping_payload(payload: &str) -> Result<bool> {
     #[derive(serde::Deserialize)]
     struct TypeProbe<'a> {
@@ -198,14 +185,13 @@ fn is_ping_payload(payload: &str) -> Result<bool> {
     Ok(probe.r#type.as_deref() == Some("ping"))
 }
 
-/// Parse a raw SSE `data:` line (with or without the `data: ` prefix) into an
-/// [`AnthropicSseEvent`]. Returns:
+/// Parse a raw SSE `data:` line, with or without the `data: ` prefix, into an
+/// [`AnthropicSseEvent`].
 ///
-/// - `Ok(Some(event))` for valid event payloads.
-/// - `Ok(None)` for lines that should be ignored (ping, comments, empty payload,
-///   non-`data:` lines, `[DONE]` sentinel).
-/// - `Err(CoreError::Parse(_))` for malformed JSON or event payload that should
-///   be a valid event.
+/// `Ok(None)` for lines with nothing to translate (ping, comments, empty
+/// payload, non-`data:` lines, the `[DONE]` sentinel).
+/// `Err(CoreError::Parse(_))` for malformed JSON that should have been a
+/// valid event.
 pub fn parse_anthropic_sse_line(line: &str) -> Result<Option<AnthropicSseEvent>> {
     let Some(payload) = crate::sse::parse_sse_data_line(line) else {
         return Ok(None);

@@ -2,28 +2,20 @@
 //!
 //! ## Design
 //!
-//! - **Persistence**: `notifications` table (migration 000036). Each row is
-//!   one notification. Rows are never updated except for `read_at`/`archived_at`.
-//! - **Push**: a process-global `tokio::sync::broadcast::Sender<NotificationEvent>`
-//!   (capacity 256). The WS handler (F2) subscribes and pushes to clients.
-//! - **Generation**: notification rows are inserted inside the `upsert_many`
-//!   transaction (for model_new/model_gone) and inside `apply_auto_activation`
-//!   (for model_auto_activated), so they commit atomically with the model
-//!   changes. System notifications are inserted at the call site of the error.
+//! - **Persistence**: `notifications` table (migration 000036). Rows are never
+//!   updated except for `read_at`/`archived_at`.
+//! - **Push**: process-global `broadcast::Sender<NotificationEvent>` (capacity
+//!   [`BROADCAST_CAPACITY`]). The WS handler subscribes and pushes to clients.
+//! - **Generation**: rows commit atomically with the model changes they
+//!   describe (inside `upsert_many` / `apply_auto_activation`), so the
+//!   broadcast happens after the transaction commits.
 //! - **De-duplication**: the `idx_notifications_dedup` unique index on
-//!   `(kind, dedup_key, date(created_at))` collapses duplicates within 24h.
-//!   The INSERT uses `INSERT OR IGNORE` so duplicates are silently dropped.
+//!   `(kind, dedup_key, date(created_at))` collapses duplicates within 24h via
+//!   `INSERT OR IGNORE`.
 //!
-//! ## Adding a new notification kind
-//!
-//! 1. Add the kind string to the CHECK constraint in migration 000037 (a new
-//!    migration — schema migrations are append-only).
-//! 2. Add a constant `pub const KIND_FOO: &str = "foo";` below.
-//! 3. Add a payload struct `pub struct FooPayload { ... }` and implement
-//!    `serde::Serialize` for it.
-//! 4. Add a helper `pub fn record_foo(conn, payload) -> Result<()>`.
-//! 5. Call the helper from the relevant code path.
-//! 6. The frontend handles the new kind in the notifications view.
+//! Adding a kind: append a migration extending the CHECK constraint, add the
+//! `KIND_*` const and its `Serialize` payload, add a `record_*` helper, and
+//! handle the kind in the notifications view.
 
 use anyhow::Result;
 use rusqlite::Connection;
@@ -40,24 +32,12 @@ pub const KIND_SYSTEM: &str = "system";
 
 pub const BROADCAST_CAPACITY: usize = 256;
 
-// =====================================================================
-// System notification codes
-// =====================================================================
-//
-// The `code` field in [`SystemPayload`] is a stable machine-readable
-// identifier for the system event. The frontend uses it to pick an
-// icon/color/body template for the notification card. The dedup
-// semantics depend on which insert path the caller uses:
-//
-// - [`record_system`] deduplicates by `code` alone (one row per code
-//   per 24h). Use this for provider-wide or global events where
-//   per-entity spam isn't a concern (e.g. `discovery_failed`).
-// - For per-entity events (`circuit_open`, `oauth_expired`,
-//   `account_invalid`, `quota_low`), call [`insert_and_broadcast`]
-//   directly with a custom `dedup_key` like
-//   `"circuit_open:{account_id}"` so different entities each get
-//   their own row, while the same entity flapping within 24h
-//   collapses to one row.
+// System notification codes. `code` is the stable machine-readable identifier
+// the frontend maps to an icon/color/body template, and it also selects the
+// dedup semantics: `record_system` dedupes by `code` alone (one row per code
+// per 24h, for provider-wide events), while per-entity events pass a
+// `dedup_key` like `circuit_open:{account_id}` to `insert_and_broadcast` so
+// each entity gets its own row and one entity flapping within 24h collapses.
 
 /// Discovery tick failed for a provider (network down, upstream 5xx,
 /// bad key). Emitted by `discovery_scheduler`. Dedup: per-code (one
@@ -103,13 +83,9 @@ pub const CODE_PROXY_FAILED: &str = "proxy_failed";
 /// Subscribed by `stream_usage_rows` in handlers/admin.rs (see F2).
 pub static NOTIF_TX: OnceLock<broadcast::Sender<NotificationEvent>> = OnceLock::new();
 
-/// Process-global master switch for notifications (W1). When `false`,
-/// every insert path early-returns without touching the DB and without
-/// broadcasting, so no row is created and no WS client is poked.
-///
-/// Default `true` (notifications on). Hydrated at boot from the
-/// `notifications_enabled` key in `app_config` by
-/// `openproxy-server/src/state.rs`, and flipped at runtime by
+/// Process-global master switch. When `false` every insert path early-returns
+/// without touching the DB or the broadcast channel. Hydrated at boot from the
+/// `notifications_enabled` key in `app_config` and flipped at runtime by
 /// `PUT /admin/api/config/notifications-enabled`.
 static NOTIFICATIONS_ENABLED: AtomicBool =
     AtomicBool::new(openproxy_db::app_config::NOTIFICATIONS_ENABLED_DEFAULT);
@@ -149,7 +125,7 @@ pub fn try_get_tx() -> Option<&'static broadcast::Sender<NotificationEvent>> {
 pub use openproxy_types::NotificationEvent;
 
 // Per-kind payload structs. These are the contract between Rust and the
-// frontend — changes here MUST be reflected in the TypeScript types.
+// frontend: changes here belong in the TypeScript types too.
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModelNewPayload {
@@ -164,8 +140,8 @@ pub struct ModelNewPayload {
 pub struct ModelGonePayload {
     pub provider_id: String,
     pub model_id: String,
-    /// The display_name the model had when it was deleted. May be `None` if
-    /// we couldn't read it before the DELETE.
+    /// The display_name the model had when it was deleted. `None` when it
+    /// could not be read before the DELETE.
     pub display_name: Option<String>,
 }
 
@@ -193,7 +169,7 @@ pub struct SystemPayload {
     pub details: Option<serde_json::Value>,
 }
 
-// ---------- DB operations (re-exported from openproxy-db) ----------
+// DB operations, re-exported from openproxy-db.
 
 pub use openproxy_db::notifications::{
     NotificationRow, RETENTION_DAYS, RETENTION_OFFSET, archive, archive_all, delete, insert,
@@ -211,8 +187,8 @@ pub fn insert_and_broadcast(
     dedup_key: Option<&str>,
     provider_id: Option<&str>,
 ) -> Result<Option<i64>> {
-    // W1 global gate: when notifications are disabled, do NOT insert and
-    // do NOT broadcast. Callers treat `Ok(None)` as "nothing emitted".
+    // Disabled: skip insert and broadcast. Callers treat `Ok(None)` as
+    // "nothing emitted".
     if !is_enabled() {
         return Ok(None);
     }
@@ -228,8 +204,8 @@ pub fn insert_and_broadcast(
 /// broadcast from within the tx (the row isn't visible to other connections
 /// until commit). Called AFTER the transaction commits.
 ///
-/// Failures here are logged at most once and never bubble — broadcast send
-/// errors (no subscribers) are expected during cold start and unit tests.
+/// Never bubbles: `send` errors from an empty receiver set are expected during
+/// cold start and unit tests.
 pub fn broadcast_one(
     conn: &Connection,
     id: i64,
@@ -243,8 +219,7 @@ pub fn broadcast_one(
     let created_at = openproxy_db::notifications::get_created_at(conn, id)?
         .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
     if let Some(tx) = try_get_tx() {
-        // `broadcast::send` returns Err when there are no active
-        // receivers; that's not a real error, so we swallow it.
+        // `send` errors when no receivers are attached, which is expected.
         let _ = tx.send(NotificationEvent {
             id,
             kind: kind.to_string(),
@@ -255,11 +230,8 @@ pub fn broadcast_one(
     Ok(())
 }
 
-/// Convenience: insert + broadcast for system notifications. This is the
-/// primary entry point for "scheduler failed", "oauth expired", etc.
-///
-/// The dedup key is the `code` itself, so repeat identical codes within
-/// 24h collapse into a single row.
+/// Insert + broadcast for system notifications. The dedup key is the `code`,
+/// so repeats within 24h collapse into a single row.
 pub fn record_system(
     conn: &Connection,
     code: &str,
@@ -267,7 +239,7 @@ pub fn record_system(
     provider_id: Option<&str>,
     details: Option<&serde_json::Value>,
 ) -> Result<Option<i64>> {
-    // W1 global gate: skip payload construction + insert + broadcast.
+    // Disabled: skip payload construction too.
     if !is_enabled() {
         return Ok(None);
     }
@@ -280,20 +252,15 @@ pub fn record_system(
     insert_and_broadcast(conn, KIND_SYSTEM, &payload, Some(code), provider_id)
 }
 
-/// W1 gate helper for the batch insert path (`models::sync::upsert_many`).
-///
-/// Returns `true` when notifications are enabled and the caller should
-/// proceed with `insert_many`; `false` when the global switch is off and
-/// the caller must skip the INSERT entirely (no rows, no broadcast).
+/// Gate for the batch insert path (`models::sync::upsert_many`). `false` means
+/// the caller skips the INSERT entirely: no rows, no broadcast.
 pub fn insert_many_enabled() -> bool {
     is_enabled()
 }
 
-/// Same contract as [`insert_many`] but honors the global W1 gate: when
-/// notifications are disabled it returns an empty result instead of
-/// inserting rows. Use this from transactional callers (e.g.
-/// `models::sync::upsert_many`) so the gate is enforced without breaking
-/// the DAO-level `insert_many` used by in-memory DAO tests.
+/// [`insert_many`] plus the global gate: returns an empty result when
+/// notifications are disabled. Transactional callers use this so the gate does
+/// not have to live in the DAO-level `insert_many`.
 pub fn insert_many_gated(
     conn: &Connection,
     kind: &str,
@@ -325,7 +292,7 @@ mod tests {
         let id1 = insert(&conn, KIND_MODEL_NEW, &payload, Some("p1:m1"), Some("p1")).unwrap();
         let id2 = insert(&conn, KIND_MODEL_NEW, &payload, Some("p1:m1"), Some("p1")).unwrap();
         assert!(id1.is_some());
-        // Second insert within same day is deduped — returns the existing id.
+        // Segundo insert del mismo día se deduplica y devuelve el id existente.
         assert_eq!(id1, id2);
     }
 
@@ -399,11 +366,10 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        // System can be deleted immediately.
+        // system rows are immediately deletable, model_new rows are kept
+        // for RETENTION_DAYS
         assert!(delete(&conn, sys_id).unwrap());
-        // Model_new cannot (within 30 days).
         assert!(!delete(&conn, model_id).unwrap());
-        // Verify
         assert!(
             list(&conn, false, 10, None)
                 .unwrap()
@@ -476,7 +442,6 @@ mod tests {
         }
         let all = list(&conn, false, 100, None).unwrap();
         assert_eq!(all.len(), 5);
-        // ids are descending
         let mid_id = all[2].id;
         let before = list(&conn, false, 100, Some(mid_id)).unwrap();
         assert!(
@@ -496,13 +461,9 @@ mod tests {
         assert_eq!(unread_count(&conn).unwrap(), 1);
     }
 
-    // NOTIF-FIX (bug D): regression test for archived notifications
-    // still counting as unread. The `unread_count` query MUST filter
-    // `archived_at IS NULL` in addition to `read_at IS NULL` — an
-    // archived-but-unread row has `read_at = NULL` (the archive path
-    // doesn't touch `read_at`), so without the `archived_at IS NULL`
-    // filter the row would still be counted and the badge would never
-    // decrease after a dismiss.
+    // `unread_count` MUST filter `archived_at IS NULL` alongside `read_at IS
+    // NULL`: archive does not touch `read_at`, so an archived-but-unread row
+    // would keep the badge from dropping after a dismiss.
     #[test]
     fn archived_rows_excluded_from_unread_count() {
         let conn = fresh_db();
@@ -516,27 +477,15 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(unread_count(&conn).unwrap(), 1);
-        // Archive the (still-unread) row. `read_at` stays NULL — the
-        // archive path doesn't touch it.
         archive(&conn, id).unwrap();
-        // The unread count must drop to 0 because `archived_at IS NULL`
-        // is now false for this row.
         assert_eq!(unread_count(&conn).unwrap(), 0);
-        // Sanity: `read_at` is still NULL (archive didn't touch it).
         let row = list(&conn, false, 10, None).unwrap();
         assert!(row.is_empty(), "archived row should be hidden from list");
     }
 
-    // NOTIF-FIX (bug D): regression test for `mark_all_read` not
-    // filtering `archived_at IS NULL`. If the WHERE clause only
-    // checked `read_at IS NULL`, an archived-but-unread row would
-    // get its `read_at` set by `mark_all_read` — harmless for the
-    // count (archived_at IS NOT NULL already excludes it) but a
-    // wasteful write and a contract violation (archived rows are
-    // supposed to be immutable except for `archived_at`). More
-    // importantly, the count returned by `mark_all_read` would
-    // include archived rows, which would mislead the client into
-    // thinking more rows were updated than actually were.
+    // `mark_all_read` MUST filter `archived_at IS NULL`: archived rows are
+    // immutable apart from `archived_at`, and the returned count feeds the
+    // client's "N rows updated" readout.
     #[test]
     fn mark_all_read_skips_archived_rows() {
         let conn = fresh_db();
@@ -558,15 +507,11 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        // Archive one of the two unread rows.
         archive(&conn, id_archived).unwrap();
-        // `mark_all_read` should only touch the active row.
         let changed = mark_all_read(&conn).unwrap();
         assert_eq!(changed, 1, "mark_all_read should skip archived rows");
-        // The active row is now read; the archived row's `read_at`
-        // is still NULL (mark_all_read didn't touch it).
         assert_eq!(unread_count(&conn).unwrap(), 0);
-        // Verify by reading raw columns (list() hides archived rows).
+        // raw columns: list() hides archived rows
         let active_read_at: Option<String> = conn
             .query_row(
                 "SELECT read_at FROM notifications WHERE id = ?1",
@@ -604,7 +549,7 @@ mod tests {
         let inserted = insert_many(&conn, KIND_MODEL_NEW, &rows).unwrap();
         assert_eq!(inserted.len(), count);
 
-        // Re-inserting the same rows should dedup and return the same IDs
+        // the dedup index returns the same ids on re-insert
         let reinserted = insert_many(&conn, KIND_MODEL_NEW, &rows).unwrap();
         assert_eq!(reinserted.len(), count);
         assert_eq!(inserted, reinserted);

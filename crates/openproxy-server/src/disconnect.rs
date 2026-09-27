@@ -1,72 +1,26 @@
 //! TCP-level client-disconnect detection for axum 0.7.
 //!
-//! Background
-//! ----------
-//! The chat handler used to drive the [`crate::pipeline`]'s
-//! `client_disconnected` watch from a *time-based* watchdog: a
-//! background task slept for `timeouts.total_ms` (or the
-//! `x-request-deadline-ms` override) and then flipped the watch to
-//! `true`. That captured the case where a client opened a request,
-//! sent the body, and then *forgot* about it long enough that the
-//! upstream `total` budget would have done the same thing — but it
-//! did NOT capture the real cancel: a client that closed the TCP
-//! connection (RST, half-close, or `Connection: close`) 200ms after
-//! sending the body still kept the pipeline running for the full
-//! `total_ms` budget.
+//! The chat handler used to drive `PipelineRequest::client_disconnected` from a
+//! time-based watchdog (sleep `total_ms`, then flip). That only duplicated what
+//! the upstream `total` budget already did: a client that RSTs 200ms after
+//! sending the body still burned the full budget.
 //!
-//! What this module does
-//! ---------------------
-//! A small axum middleware that wires a real per-request cancel
-//! watch into the *body* layer:
+//! [`client_disconnect_middleware`] wires a real per-request cancel watch: it
+//! mints a `watch::channel(false)`, stashes the receiver in the request
+//! extensions under [`CANCEL_WATCH_KEY`], and wraps the *response* body in
+//! [`DisconnectBody`]. When hyper's write into a half-closed socket fails,
+//! `poll_frame` errors and the wrapper fires the watch (idempotently), so the
+//! pipeline aborts upstream work on its next checkpoint.
 //!
-//! 1. The middleware allocates a fresh
-//!    `tokio::sync::watch::channel(false)` for every request and
-//!    stuffs the receiver into the request's extension bag under
-//!    the [`CANCEL_WATCH_KEY`] constant.
-//! 2. The response body is wrapped in [`DisconnectBody`], a newtype
-//!    over any `http_body::Body`. When hyper tries to write a
-//!    chunk of the streaming response into a half-closed socket,
-//!    `poll_frame` returns an error and the wrapper fires the watch
-//!    (idempotently) and propagates the error. This covers the
-//!    "client cancelled mid-stream" case. We intentionally do NOT
-//!    wrap the request body: once the request body has been fully
-//!    read by axum extractors, any subsequent TCP read half-closes or
-//!    RSTs are not real client disconnects and wrapping it caused
-//!    false-positive cancellations.
-//! 3. The handler runs. The chat handler pulls the watch receiver
-//!    out of extensions and threads it into the pipeline as
-//!    `PipelineRequest::client_disconnected`. When the watch flips,
-//!    the pipeline aborts upstream work on the next checkpoint.
-//! 4. The response body is ALSO wrapped in [`DisconnectBody`],
-//!    pointing at the same watch. When hyper tries to write a
-//!    chunk of the streaming response into a half-closed socket,
-//!    `poll_frame` returns an error and the watch fires. This
-//!    covers the "client cancelled mid-stream" case: the chat
-//!    handler has returned an SSE response, the client is reading
-//!    chunks, and then disconnects — the pipeline is still
-//!    producing chunks on its `stream_sink` mpsc; the
-//!    `ReceiverStream` returned to axum blocks on the next read,
-//!    the connection write fails, and we flip the watch so the
-//!    pipeline stops upstream work on the next checkpoint.
+//! Trade-offs:
+//! - The *request* body is not wrapped: axum extractors fully consume it before
+//!   the handler runs, so a mid-upload disconnect aborts the request naturally
+//!   with no upstream work to waste. Wrapping it caused false-positive cancels.
+//! - Route-scoped to `/v1/chat/completions`; the admin surface and the
+//!   `/v1/health` probe need no TCP-cancel tracking.
 //!
-//! Trade-offs
-//! ----------
-//! - The middleware does not wrap the request body, which means it
-//!   cannot detect disconnects during the initial body upload.
-//!   However, since axum extractors fully consume the request body
-//!   before executing the handler, a disconnect during upload will
-//!   abort the request naturally before any upstream calls are made,
-//!   wasting no resources.
-//! - The middleware is route-scoped (mounted on
-//!   `/v1/chat/completions` only). The admin surface and the
-//!   `/v1/health` liveness probe don't need TCP-cancel tracking.
-//!
-//! Public surface
-//! --------------
-//! - [`CANCEL_WATCH_KEY`]: the extension key for the per-request
-//!   watch receiver.
-//! - [`client_disconnect_middleware`]: the middleware factory.
-//! - [`DisconnectBody`]: the body newtype; re-exported for tests.
+//! Public surface: [`CANCEL_WATCH_KEY`], [`client_disconnect_middleware`],
+//! [`DisconnectBody`] (re-exported for tests).
 
 use axum::{body::Body, extract::Request, middleware::Next, response::Response};
 use http_body::{Body as HttpBody, Frame, SizeHint};
@@ -80,24 +34,19 @@ use std::{
 };
 use tokio::sync::watch;
 
-/// Extension key under which the per-request cancel watch is
-/// stashed. The chat handler reads the receiver out of the
-/// extensions bag and passes it to the pipeline.
+/// Extension key for the per-request cancel watch. The chat handler reads the
+/// receiver out of extensions and passes it to the pipeline.
 #[derive(Clone, Copy, Debug)]
 pub struct CancelWatchKey;
 
 impl CancelWatchKey {
-    /// Stable name used by the chat handler when it does a manual
-    /// extension lookup. Kept as a method (not a `const`) so the
-    /// type stays usable as an extension key without a separate
-    /// type alias.
+    /// Stable name for the handler's manual extension lookup. A method rather
+    /// than a `const` so the type stays usable as an extension key.
     pub const NAME: &'static str = "openproxy.cancel_watch";
 }
 
-/// Build the (sender, receiver) pair the middleware uses.
-///
-/// Exposed so tests (and the chat handler) can mint a
-/// pre-constructed pair without going through the middleware.
+/// Build the (sender, receiver) pair the middleware uses, exposed so tests and
+/// the chat handler can mint a pre-constructed pair.
 pub fn new_cancel_pair() -> (
     watch::Sender<Option<openproxy_types::CancelReason>>,
     watch::Receiver<Option<openproxy_types::CancelReason>>,
@@ -105,44 +54,27 @@ pub fn new_cancel_pair() -> (
     watch::channel(None)
 }
 
-/// Axum middleware: see module docs.
-///
-/// On every request:
-/// 1. Mint a fresh `watch::channel(false)`.
-/// 2. Insert the *receiver* into the request extensions under
-///    [`CancelWatchKey`].
-/// 3. Wrap the *request body* in a [`DisconnectBody`] keyed at the
-///    sender. Now any read-error on the body fires the watch and
-///    propagates.
-/// 4. Run the handler with the wrapped body.
-/// 5. After the handler returns, wrap the *response body* in a
-///    [`DisconnectBody`] keyed at the SAME sender. Now any
-///    write-error while hyper flushes the response to a closed
-///    socket also fires the watch.
-///
-/// Both the request-body wrapper and the response-body wrapper
-/// share an `Arc<AtomicBool>` "already fired" latch so a
-/// disconnect that surfaces from both sides only flips the watch
-/// once (idempotent).
+/// Axum middleware: see module docs. Mints a fresh `watch::channel(false)`, puts
+/// the receiver in the request extensions under [`CancelWatchKey`], runs the
+/// handler, then wraps the *response* body in a [`DisconnectBody`] keyed at the
+/// same sender so a hyper write-error into a closed socket also fires the watch.
+/// Both wrappers share an `Arc<AtomicBool>` "already fired" latch, so a
+/// disconnect surfacing from both sides flips the watch only once.
 pub async fn client_disconnect_middleware(mut req: Request, next: Next) -> Response {
     let (tx, rx) = new_cancel_pair();
     let fired = Arc::new(AtomicBool::new(false));
 
-    // 1. Stash the (tx, rx) pair in extensions for the handler.
-    //    The handler clones `tx` for any *additional* cancel sources
-    //    it wants to merge (deadline watchdog) and threads `rx`
-    //    into the pipeline.
+    // The handler clones `tx` for any extra cancel source (deadline watchdog)
+    // and threads `rx` into the pipeline.
     req.extensions_mut().insert(CancelWatch {
         tx: tokio::sync::watch::Sender::clone(&tx),
         rx,
     });
 
-    // 2. Run the handler.
     let mut response = next.run(req).await;
 
-    // 3. Wrap the response body so a stream-time disconnect is
-    //    observable. We do this regardless of HTTP status — a 4xx
-    //    response on a closed connection is still a disconnect.
+    // Wrapped regardless of HTTP status: a 4xx on a closed socket is still a
+    // disconnect.
     let resp_body = std::mem::replace(response.body_mut(), Body::empty());
     let wrapped = DisconnectBody::new(resp_body, tx, Arc::clone(&fired));
     *response.body_mut() = Body::new(wrapped);
@@ -150,35 +82,16 @@ pub async fn client_disconnect_middleware(mut req: Request, next: Next) -> Respo
     response
 }
 
-// ---------------------------------------------------------------------------
-// DisconnectBody: `http_body::Body` newtype with disconnect signaling.
-//
-// We implement the `http_body::Body` trait directly (rather than
-// the `Stream` trait that the `Body::into_data_stream` wrapper
-// exposes) because:
-//   - `Json`'s `FromRequest` reads via `axum::body::to_bytes`, which
-//     is built on the `http_body` trait.
-//   - SSE responses (`axum::response::Sse`) and `axum::body::Body`
-//     in general are `http_body::Body`, not raw streams.
-//   - The `http_body` trait is the only one hyper surfaces errors
-//     on, so it's the right place to observe a closed socket.
-// ---------------------------------------------------------------------------
+// http_body::Body is implemented directly because it is the only trait that
+// surfaces hyper write-errors, which is how a closed socket gets observed.
 
-/// `http_body::Body` wrapper that fires a watch sender on any
-/// `poll_frame` error and on the body reaching its end while the
-/// connection is still being written to.
+/// `http_body::Body` wrapper that fires a watch sender on any `poll_frame`
+/// error and on a drop before the body reached its natural end.
 ///
-/// # Idempotency
-/// The first error flips the watch to `true`; all subsequent calls
-/// are no-ops.
-///
-/// # Why we do not fire on `None`
-/// The `http_body` contract says that `poll_frame` returning
-/// `Poll::Ready(None)` means the body is *done* — for the response
-/// body that's the natural end of the stream, NOT a disconnect.
-///
-/// Disconnect is signalled by the explicit `Err` arm, or if the body
-/// is dropped before naturally reaching the end of the stream.
+/// Idempotent: the first signal flips the watch, later ones are no-ops.
+/// `Poll::Ready(None)` does NOT fire — per the `http_body` contract that means
+/// the body is *done*, which for a response is the natural end of the stream.
+/// A disconnect surfaces as the explicit `Err` arm or as an early drop.
 #[derive(Debug)]
 pub struct DisconnectBody<B: HttpBody> {
     inner: B,
@@ -188,8 +101,7 @@ pub struct DisconnectBody<B: HttpBody> {
 }
 
 impl<B: HttpBody> DisconnectBody<B> {
-    /// Wrap `inner`. `tx` is fired (idempotently) the first time
-    /// `poll_frame` returns `Err` on this body.
+    /// Wrap `inner`; `tx` is fired idempotently the first time `poll_frame` errors.
     pub fn new(
         inner: B,
         tx: watch::Sender<Option<openproxy_types::CancelReason>>,
@@ -233,12 +145,10 @@ impl<B: HttpBody + Unpin> HttpBody for DisconnectBody<B> {
         if let Poll::Ready(None) = &result {
             self.complete = true;
         } else if let Poll::Ready(Some(Err(_))) = &result {
-            // First-error wins. `send` is a no-op if the receiver
-            // was dropped (pipeline already finished), so we don't
-            // care about the result. We also flip the local
-            // `fired` latch so the response-body wrapper (which
-            // shares the same `Arc<AtomicBool>`) doesn't
-            // double-fire if it later sees an error too.
+            // First-error wins. `send` is a no-op if the receiver was dropped
+            // (pipeline already finished), so the result is irrelevant; the
+            // shared `fired` latch stops the response-body wrapper from
+            // double-firing.
             if self
                 .fired
                 .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -261,23 +171,12 @@ impl<B: HttpBody + Unpin> HttpBody for DisconnectBody<B> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helper for the chat handler: pull the watch receiver out of the
-// request extensions. We do it via a typed extension rather than a
-// header lookup so the wire-up is type-safe and impossible to typo.
-// ---------------------------------------------------------------------------
-
-/// Extension type used to carry the cancel watch. We use a
-/// dedicated newtype (rather than `watch::...` directly) so the
-/// extension key is unambiguous if anyone else ever stuffs a
-/// `watch::Sender`/`Receiver` into extensions.
-///
-/// The handler is expected to clone `tx` for any *fallback*
-/// signals it wants to merge in (e.g. a deadline watchdog) and
-/// pass `rx` to the pipeline. The middleware's `DisconnectBody`
-/// wrappers hold their own clones of `tx` and fire it on any
-/// body-level error, so all sources of cancellation share the
-/// same watch.
+/// Extension newtype carrying the cancel watch: a typed extension rather than a
+/// header lookup, so the wire-up is typo-proof and the key stays unambiguous if
+/// other `watch` values ever land in extensions. The handler clones `tx` for any
+/// extra signal (e.g. a deadline watchdog) and passes `rx` to the pipeline; the
+/// middleware's [`DisconnectBody`] wrappers hold their own `tx` clones, so all
+/// cancellation sources share one watch.
 #[derive(Clone, Debug)]
 pub struct CancelWatch {
     pub tx: watch::Sender<Option<openproxy_types::CancelReason>>,
@@ -299,31 +198,20 @@ impl Default for CancelWatch {
 
 #[cfg(test)]
 mod tests {
-    //! Unit tests for the disconnect detection wrapper.
-    //!
-    //! These exercise the `DisconnectBody` newtype directly, which
-    //! is the only piece of the wire-up that has nontrivial logic
-    //! (the rest of the middleware is mechanical glue around
-    //! `req.extensions_mut().insert(...)`).
-    //!
-    //! The full end-to-end behaviour — middleware → handler → watch
-    //! → pipeline abort — is covered by the regression tests in
-    //! `crates/openproxy-core/src/pipeline.rs` (which set the watch
-    //! manually and assert the pipeline aborts with HTTP 499). What
-    //! the unit tests here add is the "did the wrapper actually
-    //! observe the body error and flip the watch?" question, which
-    //! cannot be answered from the pipeline side alone.
+    //! Exercises `DisconnectBody` directly — the only nontrivial part of the
+    //! wire-up; the rest is glue around `req.extensions_mut().insert(...)`.
+    //! End-to-end abort (middleware → handler → watch → pipeline) is covered by
+    //! the regression tests in `crates/openproxy-core/src/pipeline.rs`; what
+    //! only these can answer is "did the wrapper observe the body error and
+    //! flip the watch?".
     use super::*;
     use bytes::Bytes;
     use http_body_util::Full;
     use std::pin::Pin;
     use std::task::{Context, Poll};
 
-    /// A `http_body::Body` that always errors on `poll_frame`. The
-    /// only way `DisconnectBody` should fire the watch is on an
-    /// `Err` arm of `poll_frame`, so a body that always errors is
-    /// the cleanest way to assert "the wrapper observed the error
-    /// and fired the watch".
+    /// A body that always errors, so firing can only come from the `Err` arm
+    /// of `poll_frame`.
     struct AlwaysErrorBody;
     impl HttpBody for AlwaysErrorBody {
         type Data = Bytes;
@@ -358,10 +246,8 @@ mod tests {
         }
     }
 
-    /// A `http_body::Body` that produces one frame of data and
-    /// then yields `None` on the next poll. This represents a
-    /// *normal* completion, not a disconnect — the watch must
-    /// NOT fire in this case.
+    /// A body that yields one data frame then `None`: a *normal* completion, on
+    /// which the watch must NOT fire.
     struct OneFrameBody {
         delivered: bool,
     }
@@ -390,15 +276,13 @@ mod tests {
     type PollFrameResult<B> =
         Poll<Option<Result<Frame<<B as HttpBody>::Data>, <B as HttpBody>::Error>>>;
 
-    /// Pump a `DisconnectBody` once and return the result. Pulled
-    /// out into a helper because both tests do exactly this.
+    /// Pump a `DisconnectBody` once (both tests need exactly this).
     fn poll_once<B: HttpBody + Unpin>(body: &mut DisconnectBody<B>) -> PollFrameResult<B> {
         let mut cx = Context::from_waker(futures::task::noop_waker_ref());
         Pin::new(body).poll_frame(&mut cx)
     }
 
-    /// The core contract: when the inner body yields an `Err`, the
-    /// wrapper must flip the watch to `true`.
+    /// Core contract: an `Err` from the inner body must flip the watch.
     #[tokio::test]
     async fn error_on_poll_frame_fires_watch() {
         let (tx, rx) = new_cancel_pair();
@@ -413,9 +297,7 @@ mod tests {
             }
         }
 
-        // The receiver should see `true` *without* a `.changed()`-then-borrow
-        // dance because `watch::Sender::send` overwrites the current value
-        // and `borrow` reads it.
+        // `send` overwrites the current value, so a plain `borrow` sees it.
         assert!(
             rx.borrow().is_some(),
             "watch was not fired after a body error — the disconnect \
@@ -423,26 +305,22 @@ mod tests {
         );
     }
 
-    /// The complementary contract: a body that completes normally
-    /// must NOT fire the watch. Otherwise every successful request
-    /// would be reported as a cancellation.
+    /// Complement: a normally completing body must NOT fire the watch, or every
+    /// successful request would be reported as a cancellation.
     #[tokio::test]
     async fn normal_completion_does_not_fire_watch() {
         let (tx, rx) = new_cancel_pair();
         let fired = Arc::new(AtomicBool::new(false));
         let mut body = DisconnectBody::new(OneFrameBody { delivered: false }, tx, fired);
 
-        // First poll: returns a frame.
         let first = poll_once(&mut body);
         assert!(matches!(first, Poll::Ready(Some(Ok(_)))));
-        // Watch should still be false.
         assert!(
             !rx.borrow().is_some(),
             "watch fired after a successful frame — the wrapper is firing \
              on success, not just on error"
         );
 
-        // Second poll: returns None.
         let second = poll_once(&mut body);
         assert!(matches!(second, Poll::Ready(None)));
         assert!(
@@ -463,26 +341,20 @@ mod tests {
         assert!(rx.borrow().is_some());
     }
 
-    /// Idempotency: if a body emits multiple `Err` frames in a row
-    /// (hyper can do this when the connection is in a weird state),
-    /// the watch fires once, not N times. The `fired` latch is the
-    /// only thing keeping the receiver from being spammed; verify
-    /// it does its job.
+    /// Idempotency: a body emitting several `Err` frames in a row (hyper can do
+    /// this on a weird connection state) must flip the watch once, not N times.
     #[tokio::test]
     async fn repeated_errors_only_flip_watch_once() {
         let (tx, rx) = new_cancel_pair();
         let fired = Arc::new(AtomicBool::new(false));
         let mut body = DisconnectBody::new(AlwaysErrorBody, tx, Arc::clone(&fired));
 
-        // 5 error polls in a row.
         for _ in 0..5 {
             let _ = poll_once(&mut body);
         }
 
-        // The watch is true. We can't directly count "number of
-        // flips" from the receiver side, but we CAN check that
-        // `fired` is now true (which means the first error was the
-        // one that fired the watch, and the rest were no-ops).
+        // Flips are uncountable from the receiver; the `fired` latch proves the
+        // first error fired and every later one was a no-op.
         assert!(rx.borrow().is_some(), "watch never fired");
         assert!(
             fired.load(Ordering::SeqCst),
@@ -491,9 +363,8 @@ mod tests {
         );
     }
 
-    /// `CancelWatch::new` mints a fresh `(tx, rx)` pair and
-    /// `Clone` works on the newtype (the handler clones both
-    /// halves in the request hot path).
+    /// `CancelWatch::new` mints a fresh pair and `Clone` works on the newtype
+    /// (the handler clones both halves in the request hot path).
     #[tokio::test]
     async fn cancel_watch_clone_is_independent() {
         let cw = CancelWatch::new();
@@ -507,10 +378,8 @@ mod tests {
         assert!(rx2.borrow().is_some(), "cloned rx should see the same send");
     }
 
-    /// A real end-to-end round trip: a `Pin<Box<dyn Body>>` that
-    /// yields one error frame, wrapped in `DisconnectBody`, drives
-    /// the watch. This is the shape hyper would actually surface
-    /// when the client closes the connection mid-upload.
+    /// End-to-end through `Pin<Box<dyn Body>>`, the shape hyper surfaces when the
+    /// client closes the connection mid-upload.
     #[tokio::test]
     async fn boxed_dyn_body_error_fires_watch() {
         let inner: Pin<Box<dyn HttpBody<Data = Bytes, Error = std::io::Error> + Send + Unpin>> =
@@ -527,9 +396,8 @@ mod tests {
         );
     }
 
-    /// Sanity check that the newtype compiles and runs with a
-    /// non-`Unpin` inner body. The `B: HttpBody + Unpin` bound on
-    /// the `impl` makes the type itself `Unpin` regardless.
+    /// The `B: HttpBody + Unpin` bound on the `impl` makes `DisconnectBody`
+    /// `Unpin` whatever the inner body, and a data frame must not fire the watch.
     #[tokio::test]
     async fn full_body_does_not_fire_watch() {
         let (tx, rx) = new_cancel_pair();

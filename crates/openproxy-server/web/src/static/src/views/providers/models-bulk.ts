@@ -1,9 +1,5 @@
-// views/providers/models-bulk.ts — bulk-model action handlers.
-//
-// Split out of the former detail.ts monolith (FU1). Every function
-// in this file is a handler that operates on `state.selectedModels`
-// (the current checkbox selection set) and the full `state.models`
-// array, toggling, testing, deleting, or tagging models in bulk.
+// views/providers/models-bulk.ts — bulk handlers over `state.selectedModels`
+// and the full `state.models` array: toggle, test, delete, tag.
 
 import { state } from '../../state/index.js';
 import { api } from '../../state/api.js';
@@ -13,7 +9,6 @@ import { showApiError } from '../../lib/ui-utils.js';
 import { showConfirm } from '../../lib/show-confirm.js';
 import type { Model } from '../../lib/types/api.js';
 
-// ---- Bulk toggle all (enable/disable all non-custom) ----
 
 export async function onBulkToggleModels(
   providerId: string,
@@ -55,7 +50,6 @@ export async function onBulkToggleModels(
   }
 }
 
-// ---- Bulk toggle/select/clear ----
 
 async function onBulkSetSelected(
   providerId: string,
@@ -99,7 +93,6 @@ export function onBulkDisableSelected(providerId: string): Promise<void> {
   return onBulkSetSelected(providerId, false);
 }
 
-// ---- Bulk test selected ----
 
 export async function onBulkTestSelected(providerId: string): Promise<void> {
   void providerId;
@@ -166,7 +159,6 @@ export async function onBulkTestSelected(providerId: string): Promise<void> {
   }
 }
 
-// ---- Bulk delete selected ----
 
 export async function onBulkDeleteSelected(providerId: string): Promise<void> {
   const ids = Array.from(state.selectedModels).map((n) => Number(n));
@@ -199,7 +191,6 @@ export async function onBulkDeleteSelected(providerId: string): Promise<void> {
   }
 }
 
-// ---- Bulk set modality / tag selected ----
 
 export async function onBulkSetModalitySelected(newType: string): Promise<void> {
   const ids = Array.from(state.selectedModels).map((n) => Number(n));

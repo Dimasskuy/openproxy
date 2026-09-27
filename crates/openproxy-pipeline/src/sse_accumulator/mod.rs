@@ -1,16 +1,13 @@
 //! Streaming response body accumulator.
 //!
-//! Gathers chunks received during a streaming upstream turn and assembles
-//! a single OpenAI-style `chat.completion` JSON value at the end, so the
-//! persisted `usage.response_body_json` column is non-NULL for streaming
-//! rows (matching the non-streaming behavior).
+//! Assembles a single OpenAI-style `chat.completion` JSON value from a
+//! streaming upstream turn, so `usage.response_body_json` is non-NULL for
+//! streaming rows as it is for unary ones.
 //!
 //! Spec: docs/specs/gate-G1-streaming-response-body-persistence.md
 //!
-//! Cap: `MAX_ACCUMULATED_BYTES = 256 KiB` (262,144 bytes). When the accumulated text would
-//! exceed this, `truncated` is set to `true` and the JSON's `extra` map
-//! carries `{"truncated": true}`. This bounds heap usage under high
-//! concurrency (50 concurrent streams × 256 KiB = 12.8 MiB worst case).
+//! Past `MAX_ACCUMULATED_BYTES` the accumulator sets `truncated` and the
+//! JSON's `extra` map carries `{"truncated": true}`.
 
 pub mod accumulator;
 pub mod parser;

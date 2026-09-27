@@ -1,6 +1,3 @@
-/* ============================================
-   PLAYGROUND / STUDIO VIEW (AI Studio Inspired)
-   ============================================ */
 .playground-studio-wrapper {
   display: flex;
   flex-direction: column;
@@ -192,7 +189,6 @@
   gap: var(--space-3);
 }
 
-/* System Instructions Collapsible Card */
 .playground-system-card {
   background: var(--color-surface);
   border: var(--border-w) var(--border-style) var(--color-border);
@@ -243,7 +239,6 @@
   line-height: 1.5;
 }
 
-/* Interactive Messages Thread */
 .playground-messages-thread {
   display: flex;
   flex-direction: column;
@@ -336,7 +331,6 @@
   padding: var(--space-1) 0;
 }
 
-/* Directives & Quick Chips */
 .playground-directives-bar {
   display: flex;
   gap: 6px;
@@ -380,7 +374,6 @@
   background: var(--color-surface-2);
 }
 
-/* Modern Bottom Composer */
 .playground-composer-card {
   background: var(--color-surface);
   border: var(--border-w) var(--border-style) var(--color-border);

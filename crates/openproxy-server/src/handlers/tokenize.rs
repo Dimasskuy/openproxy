@@ -1,14 +1,12 @@
 //! `POST /v1/tokenize` — proxy the `v1internal:countTokens` upstream call.
 //!
-//! For now only the `antigravity` provider is wired. Every other
-//! provider returns `501 Not Implemented` with a structured error
-//! envelope so the client can distinguish "not supported" from a real
-//! server failure.
+//! Only the `antigravity` provider is wired; every other provider returns
+//! `501 Not Implemented` with a structured error envelope so the client can tell
+//! "not supported" from a real server failure.
 //!
-//! The handler is mounted under `/v1` and applies `auth_middleware`
-//! locally so unauthenticated clients cannot consume upstream
-//! antigravity quota via `v1internal:countTokens`. Routing/rate-limit
-//! stay at the chat pipeline's middleware stack.
+//! Mounted under `/v1` and applies `auth_middleware` locally so unauthenticated
+//! clients cannot consume upstream antigravity quota via `v1internal:countTokens`.
+//! Routing/rate-limit stay at the chat pipeline's middleware stack.
 
 use axum::{
     Json,
@@ -28,11 +26,10 @@ use crate::{error::ApiError, middleware::auth::ParsedChatRequest, state::AppStat
 
 /// Build the `/v1` sub-router containing only `POST /tokenize`.
 ///
-/// Applies `auth_middleware` via `route_layer` so any client without
-/// a valid `Authorization` header is rejected with 401 before reaching
-/// the handler — otherwise unauthenticated requests could consume
-/// antigravity upstream quota via `v1internal:countTokens` and observe
-/// per-account latency.
+/// `auth_middleware` is applied via `route_layer`, so a client without a valid
+/// `Authorization` header gets 401 before reaching the handler — otherwise
+/// unauthenticated requests would consume antigravity upstream quota via
+/// `v1internal:countTokens` and expose per-account latency.
 pub fn router(state: &crate::state::AppState) -> axum::Router<crate::state::AppState> {
     use axum::middleware;
     axum::Router::new().route(
@@ -62,17 +59,11 @@ struct ErrorBody<'a> {
     message: String,
 }
 
-/// Handle `POST /v1/tokenize`.
-///
-/// Flow (mirrors `crates/openproxy-server/src/middleware/routing.rs:67-90`):
-/// 1. Validate the inbound body.
-/// 2. Resolve the model via `routing::resolve` + expand the account
-///    rotation via `routing::expand_account_rotation`. Both run inside
-///    a single `spawn_blocking` together with the access-token decrypt
-///    (I/O SQLite + AES-GCM are synchronous; AGENTS §4.3 forbids
-///    holding locks across `.await`).
-/// 3. If the resolved provider is not `antigravity`, return 501.
-/// 4. Otherwise call `antigravity::count_tokens` and return the count.
+/// Handle `POST /v1/tokenize`: validate the body, resolve the model via
+/// `routing::resolve` + `routing::expand_account_rotation`, then call
+/// `antigravity::count_tokens` (501 for any other provider). Resolution, rotation
+/// expansion and access-token decryption share one `spawn_blocking` — I/O SQLite
+/// and AES-GCM are synchronous (AGENTS §4.3 forbids holding locks across `.await`).
 pub async fn tokenize(
     State(s): State<AppState>,
     axum::Extension(parsed_req): axum::Extension<ParsedChatRequest>,
@@ -82,10 +73,8 @@ pub async fn tokenize(
         return Err(ApiError(CoreError::Validation("model is required".into())));
     }
 
-    // 1. Resolve routing + expand rotation + decrypt access_token, all
-    //    inside a single spawn_blocking. The DB reader guard is
-    //    released before the future resolves (no `.await` while the
-    //    guard is live).
+    // Resolve routing + rotation + access_token decrypt in one spawn_blocking; the
+    // reader guard is dropped before the future resolves (no `.await` under guard).
     let (provider_id, _account_id, model_id, access_token) = {
         let db_pool = Arc::clone(s.db_pool());
         let master_key = Arc::clone(s.master_key());
@@ -115,7 +104,6 @@ pub async fn tokenize(
         .map_err(|e| ApiError(CoreError::Internal(format!("join error: {e}"))))?
     }?;
 
-    // 2. Provider branch: only antigravity is wired for now.
     if provider_id.as_str() != "antigravity" {
         let body = ErrorEnvelope {
             error: ErrorBody {
@@ -129,10 +117,8 @@ pub async fn tokenize(
         return Ok((StatusCode::NOT_IMPLEMENTED, Json(body)).into_response());
     }
 
-    // 3. Build the inner `request` body for `:countTokens`. The
-    //    upstream only accepts `{"contents": [...]}` — tools and
-    //    tool_choice are intentionally NOT forwarded (the upstream
-    //    rejects them today; see spec GAP-3 §3.5).
+    // Inner `:countTokens` body: the upstream accepts only `{"contents": [...]}`
+    // and rejects `tools`/`tool_choice` today (spec GAP-3 §3.5).
     let inner_body = serde_json::json!({
         "contents": req
             .messages
@@ -144,7 +130,6 @@ pub async fn tokenize(
             .collect::<Vec<_>>(),
     });
 
-    // 4. Call upstream.
     let total = openproxy_adapters::adapters::antigravity::count_tokens(
         s.upstream_client(),
         &access_token,

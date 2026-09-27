@@ -24,17 +24,15 @@ impl RetryPolicy {
         }
     }
 
-    /// Returns Some(duration) if we should retry after attempt N, or None if max reached.
-    /// Attempt is 1-indexed: attempt 1 is the first try (no delay before).
-    /// After attempt N fails, returns delay before attempt N+1.
+    /// Delay before attempt N+1, or `None` once `max_attempts` is reached.
+    /// `attempt` is 1-indexed (attempt 1 is the first try, no delay before).
     pub fn delay_after_attempt(&self, attempt: u8) -> Option<Duration> {
         if attempt >= self.max_attempts {
             return None;
         }
-        // exp backoff: base * factor^(attempt-1) (for attempt=1 first retry, base * factor^0 = base)
+        // base * factor^(attempt-1): attempt 1 waits `base`, attempt 2 `base * factor`.
         let exp = u64::from(self.backoff_factor).saturating_pow(u32::from(attempt - 1));
         let base = (self.backoff_base.as_millis() as u64).saturating_mul(exp);
-        // jitter ±N%
         let jitter_amp = base.saturating_mul(u64::from(self.backoff_jitter_pct)) / 100;
         let mut rng = rand::rng();
         let jitter: i64 =
@@ -93,17 +91,15 @@ mod tests {
         };
         let policy = RetryPolicy::from_config(&config);
 
-        // Attempt 1 fails -> wait for 2nd attempt = base (100ms)
+        // 0% jitter configured, so the schedule is exact: 100ms, 200ms, then stop.
         assert_eq!(
             policy.delay_after_attempt(1),
             Some(Duration::from_millis(100))
         );
-        // Attempt 2 fails -> wait for 3rd attempt = base * factor (200ms)
         assert_eq!(
             policy.delay_after_attempt(2),
             Some(Duration::from_millis(200))
         );
-        // Attempt 3 fails -> max attempts reached
         assert_eq!(policy.delay_after_attempt(3), None);
     }
 }

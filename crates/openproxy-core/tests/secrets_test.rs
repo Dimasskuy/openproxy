@@ -37,8 +37,7 @@ fn decrypt_with_wrong_key_fails() {
     let blob = a.encrypt("sk-abc-123").unwrap();
     let res = b.decrypt(&blob);
     assert!(res.is_err(), "wrong key must fail to decrypt");
-    // The error should be a CoreError; we don't pin to a specific variant to
-    // keep this resilient to internal error mapping changes.
+    // only the CoreError variant is pinned, to survive error mapping changes
     assert!(matches!(
         res,
         Err(CoreError::Internal(_) | CoreError::Auth(_))
@@ -61,7 +60,7 @@ fn from_env_missing_returns_config_error() {
 
 #[test]
 fn from_env_wrong_length_returns_config_error() {
-    // 16-byte key (must be 32) — wrong length.
+    // 16-byte key, but the master key must be 32 bytes
     let bad = BASE64.encode([0u8; 16]);
     let prev = std::env::var("OPENPROXY_MASTER_KEY").ok();
     unsafe { std::env::set_var("OPENPROXY_MASTER_KEY", &bad) };
@@ -78,7 +77,6 @@ fn from_env_wrong_length_returns_config_error() {
 
 #[test]
 fn from_env_invalid_base64_returns_config_error() {
-    // Bonus: not base64 at all.
     let prev = std::env::var("OPENPROXY_MASTER_KEY").ok();
     unsafe { std::env::set_var("OPENPROXY_MASTER_KEY", "not-valid-base64!!!") };
     let res = MasterKey::from_env();
@@ -92,14 +90,13 @@ fn from_env_invalid_base64_returns_config_error() {
 #[test]
 fn decrypt_truncated_blob_fails() {
     let key = MasterKey::generate().unwrap();
-    // 5 bytes is shorter than the 12-byte nonce prefix.
+    // 5 bytes cannot even hold the 12-byte nonce prefix
     let res = key.decrypt(&[0u8; 5]);
     assert!(res.is_err(), "truncated blob must fail to decrypt");
 }
 
 #[test]
 fn encrypt_then_decrypt_long_key() {
-    // A realistic-looking OpenAI-style key.
     let key = MasterKey::generate().unwrap();
     let api_key = "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
     let blob = key.encrypt(api_key).unwrap();
@@ -111,8 +108,7 @@ fn encrypt_then_decrypt_long_key() {
 fn blob_layout_is_nonce_then_ciphertext() {
     let key = MasterKey::generate().unwrap();
     let blob = key.encrypt("hi").unwrap();
-    // Nonce is 12 bytes; aes-gcm adds a 16-byte auth tag.
-    // So minimal blob is 12 + 2 + 16 = 30 bytes.
+    // 12-byte nonce + 2 bytes of plaintext + 16-byte aes-gcm auth tag = 30 bytes minimum
     assert!(
         blob.len() >= 12 + 2 + 16,
         "blob too short: {} bytes",

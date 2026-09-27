@@ -8,18 +8,12 @@
 //! [`crate::compression::diff_compressor`] for git diffs,
 //! [`crate::compression::log_compressor`] for build/test output, etc.).
 //!
-//! ## Detection vs. routing
-//!
-//! [`detect`] classifies a content string into a [`ContentType`]. It is a pure
-//! shape check (regex / first-N-lines scan) and never invokes a compressor,
-//! so it is cheap to call and has no side effects.
-//!
-//! [`route_content`] calls [`detect`] and then hands the string to the
-//! matching compressor's public string-level entry point (e.g.
-//! [`smart_crusher::crush_json_string`]). It returns
-//! `Some((compressed, technique))` only when a compressor both applied *and*
-//! produced strictly smaller output; otherwise `None`. The caller is expected
-//! to keep the original content when `None` is returned.
+//! [`detect`] is a pure shape check (regex / first-N-lines scan) and never
+//! invokes a compressor. [`route_content`] detects, then hands the string to
+//! the matching compressor's string-level entry point. It returns
+//! `Some((compressed, technique))` only when a compressor applied and produced
+//! strictly smaller output; otherwise `None`, and the caller keeps the
+//! original content.
 //!
 //! ## Detection order
 //!
@@ -70,11 +64,9 @@ pub enum ContentType {
     PlainText,
 }
 
-// ─── Detection regexes ─────────────────────────────────────────────────────
-//
-// All regexes are compiled once via `std::sync::LazyLock` and reused across
-// calls. `^`-anchored patterns are applied per-line (the line is the whole
-// search string), so they don't need the `(?m)` flag.
+// Detection regexes, compiled once via `std::sync::LazyLock` and reused across
+// calls. `^`-anchored patterns get the line as the whole search string, so they
+// need no `(?m)` flag.
 
 /// `^path:line:` pattern from grep / ripgrep output.
 static SEARCH_RESULT_RE: LazyLock<Regex> =
@@ -107,21 +99,18 @@ static MAKE_RE: LazyLock<Regex> =
 static CARGO_RUNNING_RE: LazyLock<Regex> =
     LazyLock::new(|| openproxy_types::static_regex!(r"^running \d+ tests"));
 
-/// Maximum number of lines to scan for detection. The spec says "first 100
-/// lines" for the overall scan; sub-scans (git diff, build output, tabular)
-/// apply their own smaller windows via `.take(N)` on the head iterator.
-/// 200 lines covers typical test output (header + body + errors + summary).
+/// Maximum lines scanned for detection. Sub-scans (git diff, build output,
+/// tabular) apply their own smaller windows via `.take(N)`. 200 lines covers
+/// typical test output (header, body, errors, summary).
 const DETECT_SCAN_LINES: usize = 200;
 
 /// Minimum array length for `ContentType::JsonArray` (matches
 /// `smart_crusher::MIN_ITEMS`).
 const JSON_ARRAY_MIN_ITEMS: usize = 5;
 
-/// Detect the content type of a text string.
-///
-/// Order matters — see the [module docs](self) for the full precedence list.
-/// The scan is bounded to the first [`DETECT_SCAN_LINES`] lines so detection
-/// is O(N) in the (truncated) input length, never in the full content size.
+/// Detect the content type of a text string. Precedence follows the
+/// [module docs](self). The scan is bounded to [`DETECT_SCAN_LINES`], so cost
+/// scales with the truncated input, not the full content size.
 pub fn detect(content: &str) -> ContentType {
     if is_json_array(content) {
         return ContentType::JsonArray;
@@ -144,22 +133,12 @@ pub fn detect(content: &str) -> ContentType {
     ContentType::PlainText
 }
 
-/// Route a single message's content to the appropriate compressor.
+/// Route a message's content to its compressor, returning
+/// `Some((compressed, technique))` only when the output is strictly smaller.
 ///
-/// Returns `Some((compressed_content, technique_name))` when a compressor
-/// both applied and produced strictly smaller output; otherwise `None`.
-///
-/// This is the main entry point for content-shape-based routing. The caller
-/// is expected to keep the original content when `None` is returned.
-///
-/// # v1 coverage
-///
-/// - [`ContentType::JsonArray`] → [`smart_crusher::crush_json_string`].
-/// - [`ContentType::GitDiff`] → [`diff_compressor::compress_diff_string`].
-/// - [`ContentType::BuildOutput`] → [`log_compressor::compress_log_string`].
-/// - [`ContentType::SearchResults`] / [`ContentType::Tabular`] /
-///   [`ContentType::SourceCode`] / [`ContentType::PlainText`] → `None` (no
-///   shape-specific compressor exists yet in v1).
+/// [`ContentType::SearchResults`], [`ContentType::Tabular`],
+/// [`ContentType::SourceCode`] and [`ContentType::PlainText`] have no
+/// shape-specific compressor and return `None`.
 pub fn route_content(content: &str) -> Option<(String, &'static str)> {
     match detect(content) {
         ContentType::JsonArray => smart_crusher::crush_json_string(content),
@@ -202,7 +181,7 @@ pub fn apply_content_routing(messages: &mut [OpenAIMessage]) -> Vec<String> {
         .collect()
 }
 
-// ─── Per-type detectors ────────────────────────────────────────────────────
+// Per-type detectors
 
 /// `JsonArray`: first non-whitespace char is `[` *and* the string parses as
 /// a `Value::Array` with ≥ [`JSON_ARRAY_MIN_ITEMS`] items.
@@ -354,7 +333,7 @@ fn is_source_code(content: &str) -> bool {
 mod tests {
     use super::*;
 
-    // ─── detect() tests ────────────────────────────────────────────────────
+    // detect() tests
 
     #[test]
     fn test_detect_json_array() {
@@ -469,7 +448,7 @@ src/utils.rs:25:    let x = 5;\n";
         assert_eq!(detect(markdown_content), ContentType::Tabular);
     }
 
-    // ─── route_content() tests ─────────────────────────────────────────────
+    // route_content() tests
 
     #[test]
     fn test_route_json_array() {
@@ -534,8 +513,8 @@ src/utils.rs:25:    let x = 5;\n";
 
     #[test]
     fn test_route_build_output() {
-        // 32-line pytest output: 1 banner + 25 PASSED + 5 FAILED + 1 summary.
-        // ≥ MIN_LOG_LINES=30 and compressible by log_compressor.
+        // 32-line pytest output: 1 banner + 25 PASSED + 5 FAILED + 1 summary,
+        // over the MIN_LOG_LINES=30 floor.
         let mut lines: Vec<String> = Vec::new();
         lines.push(
             "========================= test session starts =========================".to_string(),
@@ -574,7 +553,7 @@ src/utils.rs:25:    let x = 5;\n";
 
     #[test]
     fn test_route_source_code_returns_none() {
-        // Source-code shape, but v1 has no source compressor → None.
+        // Source-code shape with no source compressor.
         let content = "use std::io;\n\
 fn main() {\n\
     println!(\"hello\");\n\
@@ -586,7 +565,7 @@ fn helper() {}\n";
 
     #[test]
     fn test_route_search_results_returns_none() {
-        // Search-results shape, but v1 has no search compressor → None.
+        // Search-results shape with no search compressor.
         let content = "src/main.rs:42:fn main() {\n\
 src/main.rs:43:    println!(\"hello\");\n\
 src/utils.rs:10:pub fn helper() {\n";

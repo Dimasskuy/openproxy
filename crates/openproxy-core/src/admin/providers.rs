@@ -7,11 +7,8 @@ use crate::validation::{Validatable, validate_base_url};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
-/// Inputs for [`create_provider`].
-///
-/// `auth_type` and `format` arrive as already-validated wire strings
-/// (e.g. `"bearer"`, `"openai"`) — typically deserialized from a JSON body
-/// — and are parsed into the typed enums at the boundary.
+/// Inputs for [`create_provider`]. `auth_type` and `format` arrive as wire strings
+/// (e.g. `"bearer"`, `"openai"`) and are parsed into typed enums at the boundary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateProviderInput {
     pub id: String,
@@ -32,11 +29,8 @@ impl Validatable for CreateProviderInput {
     }
 }
 
-/// Insert a new provider. Returns the [`ProviderId`] used.
-///
-/// Errors:
-/// - [`CoreError::Validation`] on unknown `auth_type` / `format` or duplicate
-///   id (delegated to [`providers::create`]).
+/// Insert a new provider, returning the [`ProviderId`] used. Unknown
+/// `auth_type` / `format` or a duplicate id surface as [`CoreError::Validation`].
 pub fn create_provider(conn: &Connection, input: CreateProviderInput) -> Result<ProviderId> {
     input.validate()?;
     validate_base_url(&input.base_url)?;
@@ -61,25 +55,17 @@ pub fn create_provider(conn: &Connection, input: CreateProviderInput) -> Result<
     Ok(id)
 }
 
-/// List all providers.
+/// Every provider.
 pub fn list_providers(conn: &Connection) -> Result<Vec<providers::Provider>> {
     providers::list(conn)
 }
 
-/// Delete a provider by id.
+/// Delete a custom provider by id. Idempotent: a missing id is a no-op.
 ///
-/// Built-in providers (the ones seeded on first run — see
-/// [`crate::seed::builtin_provider_ids`]) are **not deletable**:
-/// removing the row would leave dangling references in
-/// [`openproxy_adapters::adapters::builtin_adapters`], and the operator can
-/// always get the "this provider is no longer routed" effect
-/// cheaply via [`set_provider_active`] (a soft, reversible flag).
-/// This function therefore rejects built-in ids with
-/// [`CoreError::Validation`], which the server maps to HTTP 400.
-///
-/// For non-built-in (custom) providers the call is forwarded to
-/// [`providers::delete`] and is idempotent (a missing id is a
-/// no-op).
+/// Built-in providers (see [`crate::seed::builtin_provider_ids`]) are rejected
+/// with [`CoreError::Validation`], since removing the row would leave dangling
+/// references in [`openproxy_adapters::adapters::builtin_adapters`]. Deactivating
+/// via [`set_provider_active`] is the soft, reversible alternative.
 pub fn delete_provider(conn: &Connection, id: &ProviderId) -> Result<()> {
     if crate::seed::is_builtin(id.as_str()) {
         return Err(CoreError::Validation(format!(
@@ -91,31 +77,21 @@ pub fn delete_provider(conn: &Connection, id: &ProviderId) -> Result<()> {
     providers::delete(conn, id)
 }
 
-/// Flip the soft-disable flag on a provider. A deactivated provider
-/// stays in the DB (so its accounts and models are preserved) but is
-/// excluded from combo-target resolution; reactivating it brings the
-/// targets back automatically. Missing id is a silent no-op.
+/// Flip a provider's soft-disable flag. A deactivated provider keeps its row,
+/// accounts and models but drops out of combo-target resolution; reactivating
+/// restores the targets. A missing id is a silent no-op.
 pub fn set_provider_active(conn: &Connection, id: &ProviderId, active: bool) -> Result<()> {
     providers::set_active(conn, id, active)
 }
 
-/// Inputs for [`update_provider`]. All fields are optional, mirroring
-/// the partial-update semantics of [`providers::update`]. `name` and
-/// `base_url` are straightforward; `extra_headers_json` is the raw
-/// JSON string the user wants stored (validated only at apply time).
+/// Inputs for [`update_provider`]. Every field is optional. `extra_headers_json` is
+/// the raw JSON string to store, validated only at apply time.
 ///
-/// `auto_activate_keyword` uses a three-state encoding so the caller
-/// can distinguish "don't touch" from "set to NULL":
-/// * `None`     — the column is not part of this update (no-op).
-/// * `Some(None)` — clear the column back to `NULL`.
-/// * `Some(Some(s))` — set the column to the literal string `s`.
-///
-/// The custom deserializer on this field is what makes the three
-/// states work over JSON: a missing key deserializes to `None`, an
-/// explicit `null` deserializes to `Some(None)`, and any string
-/// deserializes to `Some(Some(s))`. Without the custom deserialize
-/// the default `Option<Option<T>>` impl would fold `null` and
-/// "absent" into the same `None` and lose the "clear" semantic.
+/// `auto_activate_keyword` and `notif_keyword_only` use a three-state encoding:
+/// `None` leaves the column alone, `Some(None)` sets it to `NULL`, `Some(Some(s))`
+/// sets the literal. The custom deserializer is what makes this work over JSON,
+/// where the default `Option<Option<T>>` impl would fold `null` and absent into
+/// the same `None` and lose the "clear" semantic.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct UpdateProviderInput {
     pub name: Option<String>,
@@ -126,12 +102,9 @@ pub struct UpdateProviderInput {
     pub proxy_rotation_errors: Option<String>,
     pub proxy_rotation_mode: Option<String>,
     pub rate_limit_scope: Option<crate::providers::RateLimitScope>,
-    /// Toggle for `providers.notif_keyword_only` (migration 000074).
-    /// Three-state, mirroring `auto_activate_keyword`:
-    /// * missing key -> `None` (no-op),
-    /// * `true` / `false` -> `Some(Some(_))` (set the flag),
-    /// * explicit `null` -> `Some(None)` (normalised to 0 on write: the column
-    ///   is `NOT NULL DEFAULT 0`).
+    /// Toggle for `providers.notif_keyword_only` (migration 000074). A missing key
+    /// is a no-op, `true` / `false` sets the flag, explicit `null` normalises to 0
+    /// since the column is `NOT NULL DEFAULT 0`.
     pub notif_keyword_only: Option<Option<bool>>,
 }
 
@@ -236,9 +209,7 @@ impl<'de> Deserialize<'de> for UpdateProviderInput {
     }
 }
 
-/// Apply a partial update to an existing provider. The three-state
-/// `auto_activate_keyword` and `extra_headers_json` let the caller clear the column
-/// without sending an empty string.
+/// Apply a partial update to an existing provider.
 pub fn update_provider(
     conn: &Connection,
     id: &ProviderId,

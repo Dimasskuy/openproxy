@@ -1,7 +1,6 @@
-//! Codex / ChatGPT OAuth provider.
-//!
-//! Uses OpenAI's custom device authorization flow.
-//! The ChatGPT account id from `id_token` claims is stored as `{"workspaceId": "..."}` when available.
+//! Codex / ChatGPT OAuth provider, using OpenAI's custom device authorization
+//! flow. The ChatGPT account id from the `id_token` claims is stored as
+//! `{"workspaceId": "..."}` when present.
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -511,7 +510,7 @@ mod tests {
                 .is_err()
         );
 
-        // Invalid composite device code (missing pipe)
+        // malformed composite device code, missing the pipe
         let invalid_poll = provider
             .poll_device_token("invalid_code_no_pipe", &client)
             .await;

@@ -1,52 +1,41 @@
-// lib/constants.ts — app-wide constants. Kept here so the views
-// and handlers do not litter the codebase with magic strings/numbers.
+// lib/constants.ts — app-wide constants, kept here so the views and handlers do not litter
+// the codebase with magic strings/numbers.
 
 import { t } from "../i18n/index.js";
 import type { PriorityMode, CooldownMode } from "./types/api.js";
 
-// Human-readable label for each server-side stage. The server keys
-// are kept in the data-stage attribute (and CSS) so styling can
-// target them directly; the cell body shows the friendlier label.
+// Human-readable label for each server-side stage. Server keys are kept in the data-stage
+// attribute (and CSS) so styling can target them; the cell body shows the friendlier label.
 //
-// Resolved via i18n at call time so the labels are translatable.
-// The keys follow the `stage.<key>` namespace in i18n/en.json
-// (e.g. `stage.started`, `stage.connecting`). When the key is
-// missing, the raw stage key is returned as a visible fallback.
+// Resolved via i18n at call time. Keys follow the `stage.<key>` namespace in i18n/en.json (e.g.
+// `stage.started`, `stage.connecting`); a missing key falls back to the raw stage key.
 export function getStageLabel(stage: string): string {
   return t(`stage.${stage}`) || stage;
 }
 
 // Live logs WS reconnect backoff in ms.
 //
-// TRIPLE-FIX (Bug 1): the first reconnect delay was 1000ms, which
-// made the live dashboard show "⚠ Disconnected from real-time
-// stream" for ~1s after every transient failure (e.g. the first
-// attempt hitting a 401 because the token wasn't yet attached to
-// the WS upgrade URL, or a network blip). Reduced the first delay
-// to 250ms so the dashboard recovers within a quarter-second on
-// transient failures, then back off progressively: 250 → 500 →
-// 1s → 2s → 5s → 10s → 30s. The 30s cap is preserved so a
-// permanently-down server doesn't trigger a tight retry loop.
+// TRIPLE-FIX (Bug 1): the first delay was 1000ms, so the live dashboard showed "⚠ Disconnected
+// from real-time stream" for ~1s after every transient failure (e.g. the first attempt 401ing
+// because the token wasn't yet on the WS upgrade URL, or a network blip). Now 250ms, then
+// 250 → 500 → 1s → 2s → 5s → 10s → 30s; the 30s cap is kept so a permanently-down server can't
+// spin a tight retry loop.
 //
-// `connectLogsWebSocket()` is itself invoked synchronously from
-// `initNotificationsStore()` (which is called by the sidebar's
-// `maybeBootstrapNotifications()` gate on the first render after
-// login), so the very first connection attempt happens immediately
-// on login — these delays only govern retries AFTER a failure.
+// `connectLogsWebSocket()` is invoked synchronously from `initNotificationsStore()` (itself gated
+// by the sidebar's `maybeBootstrapNotifications()` on the first render after login), so the very
+// first attempt happens immediately on login — these delays only govern retries AFTER a failure.
 export const LOGS_WS_RECONNECT_DELAYS: readonly number[] = [250, 500, 1000, 2000, 5000, 10000, 30000];
 
 // Local-storage key for the user theme choice.
 export const THEME_STORAGE_KEY = "openproxy-theme";
 
-// Local-storage key for the visible-columns choice on the /logs
-// view. Value is a JSON array of column keys (e.g. ["time","phase"]).
+// Local-storage key for the visible-column choice on the /logs view. Value is a JSON array of
+// column keys (e.g. ["time","phase"]).
 export const LOGS_VISIBLE_COLUMNS_STORAGE_KEY = "openproxy:logs:visibleColumns";
 
-// Definition of every log-row column, in the order they appear in
-// the table. The `key` matches the existing CSS class `.log-{key}`
-// on the span (e.g. "time" → `.log-time`), and the `label` is the
-// header text. Adding a new column = add an entry here and the
-// matching span in components/log-row.js.
+// Every log-row column in table order. `key` matches the CSS class `.log-{key}` on the span
+// (e.g. "time" → `.log-time`) and `label` is the header text. A new column = an entry here plus
+// the matching span in components/log-row.js.
 export interface LogColumn {
   readonly key: string;
   readonly label: string;
@@ -97,5 +86,5 @@ export function statusPillClass(code: number | null): string {
   return "lost";
 }
 
-// Built-in provider ids and quota-capable lists have been removed.
-// The UI now uses `provider.metadata` to determine built-in, deletable, and quota support.
+// Built-in provider ids and quota-capable lists were removed: the UI now reads
+// `provider.metadata` for built-in, deletable and quota support.

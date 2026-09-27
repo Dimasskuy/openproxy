@@ -54,13 +54,11 @@ pub async fn dispatch_image_multipart_request(
     let boundary = format!("----WebKitFormBoundary{}", uuid::Uuid::new_v4().simple());
     let mut payload = Vec::new();
 
-    // model field
     payload.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
     payload.extend_from_slice(b"Content-Disposition: form-data; name=\"model\"\r\n\r\n");
     payload.extend_from_slice(upstream_model_id.as_bytes());
     payload.extend_from_slice(b"\r\n");
 
-    // form fields
     for (k, v) in &body.form_fields {
         if k == "model" {
             continue;
@@ -73,7 +71,6 @@ pub async fn dispatch_image_multipart_request(
         payload.extend_from_slice(b"\r\n");
     }
 
-    // files
     for file in &body.files {
         payload.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
         payload.extend_from_slice(
@@ -89,7 +86,6 @@ pub async fn dispatch_image_multipart_request(
         payload.extend_from_slice(b"\r\n");
     }
 
-    // end boundary
     payload.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
 
     let content_type = format!("multipart/form-data; boundary={boundary}");

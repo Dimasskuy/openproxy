@@ -149,17 +149,14 @@ pub async fn execute_embeddings(
 ) -> Result<EmbeddingResponse> {
     let started = Instant::now();
 
-    // 1. Resolve routing plan.
     let routing_plan = routing::resolve_routing(db_pool, &req.model).await?;
 
-    // 2. Resolve embedding targets.
     let targets =
         resolve_embedding_targets(db_pool, routing_plan, &req.model, api_key_id, started)?;
 
     let mut last_error = None;
     let mut attempt = 0;
 
-    // 3. Multi-target dispatch loop.
     for target in targets {
         attempt += 1;
 

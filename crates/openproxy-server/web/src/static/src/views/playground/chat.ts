@@ -1,14 +1,7 @@
-// views/playground/chat.ts — Chat modality workspace.
-//
-// Renders the chat-specific main area: system instructions card, interactive
-// message thread, directive chips, bottom composer with Ctrl+Enter, and
-// delegates the inline response inspector to the inspector module.
-//
-// Owns `executeChatRequest` which performs the actual /v1/chat/completions
-// call, including SSE streaming and reasoning-content extraction.
-//
-// All persistent state lives in the PlaygroundState object (shared.ts);
-// this module reads and mutates it via the single mutable reference.
+// views/playground/chat.ts — chat workspace: instructions card, message thread,
+// directive chips, Ctrl+Enter composer. Owns `executeChatRequest` (the
+// /v1/chat/completions call, SSE streaming, reasoning extraction). Persistent
+// state lives in the shared PlaygroundState object.
 
 import { html, type TemplateResult } from 'lit-html';
 import { requestUpdate } from '../../state/reactive.js';
@@ -22,7 +15,6 @@ import {
 } from './shared.js';
 import { renderResponseInspector } from './inspector.js';
 
-// For Ctrl+Enter in composer — dispatch a custom event that index.ts listens to.
 const FIRE_RUN_EVENT = (): void => {
   window.dispatchEvent(new CustomEvent('playground:run'));
 };
@@ -213,9 +205,6 @@ function insertChatDirective(st: PlaygroundState, directive: string): void {
   requestUpdate();
 }
 
-// =====================================================================
-// executeChatRequest — chat completion call with optional SSE streaming.
-// =====================================================================
 
 export async function executeChatRequest(
   st: PlaygroundState,

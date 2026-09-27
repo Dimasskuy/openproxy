@@ -1,8 +1,5 @@
-// handlers/provider-handlers/list.ts — provider CRUD + list operations.
-//
-// Contains: refresh, create, delete, rename, toggle active,
-// edit endpoint, and bulk model toggle — the operations that
-// belong to the provider list/grid level.
+// handlers/provider-handlers/list.ts — provider CRUD + list operations: refresh, create,
+// delete, rename, toggle active, the edit endpoint and bulk model toggle (the list/grid level).
 
 import { navigate } from "../../state/router.js";
 import { state } from "../../state/index.js";
@@ -20,8 +17,7 @@ interface RefreshResult {
   new_model_ids?: string[];
 }
 
-// POST /admin/providers/:id/refresh — re-discover the model
-// list for one provider.
+// POST /admin/providers/:id/refresh — re-discover the model list for one provider.
 export async function refreshProvider(providerId: string, e: Event | null): Promise<void> {
   const target = e && e.target && e.target instanceof HTMLButtonElement ? e.target : null;
   const btn: HTMLButtonElement | null = target;
@@ -84,7 +80,7 @@ export async function refreshAllProviders(): Promise<void> {
   }
 }
 
-// ===== Create provider =====
+// ── Create provider ────────────────────────────────────────────────────────
 
 function createProviderTemplate(wrapper: HTMLElement): TemplateResult {
   return html`
@@ -178,7 +174,7 @@ export async function createProvider(e: Event, wrapper?: HTMLElement): Promise<v
   }
 }
 
-// ===== Delete provider =====
+// ── Delete provider ────────────────────────────────────────────────────────
 
 export async function deleteProvider(id: string): Promise<void> {
   if (!(await showConfirm({
@@ -224,7 +220,7 @@ export async function confirmDeleteProvider(providerId: string): Promise<void> {
   }
 }
 
-// ===== Toggle active / rename =====
+// ── Toggle active / rename ─────────────────────────────────────────────────
 
 export async function toggleProviderActive(providerId: string, newActive: boolean): Promise<void> {
   if (!newActive) {
@@ -314,7 +310,7 @@ export async function editProviderEndpointPrompt(providerId: string, currentBase
   }
 }
 
-// ===== Bulk toggle (enable/disable all non-custom models) =====
+// ── Bulk toggle (enable/disable all non-custom models) ─────────────────────
 
 export async function bulkToggleModels(providerId: string, active: boolean): Promise<void> {
   const models = (state.models || []).filter((m) => m.provider_id === providerId);

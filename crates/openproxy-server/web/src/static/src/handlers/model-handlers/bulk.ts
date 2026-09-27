@@ -1,5 +1,5 @@
-// handlers/model-handlers/bulk.ts — bulk enable / disable / test /
-// delete handlers operating on `state.selectedModels`.
+// handlers/model-handlers/bulk.ts — bulk enable / disable / test / delete over
+// `state.selectedModels`.
 
 import { state } from "../../state/index.js";
 import { api } from "../../state/api.js";
@@ -11,7 +11,7 @@ import { requestUpdate } from "../../state/reactive.js";
 import { showConfirm } from "../../lib/show-confirm.js";
 import { TestResult, updateBulkBar } from "./row.js";
 
-// ===== Bulk enable / disable / test / delete =====
+// ── Bulk enable / disable / test / delete ──────────────────────────────────
 
 async function bulkSetSelected(_providerId: string, active: boolean): Promise<void> {
   const ids = Array.from(state.selectedModels);
@@ -21,11 +21,9 @@ async function bulkSetSelected(_providerId: string, active: boolean): Promise<vo
     message: `${active ? "Enable" : "Disable"} ${ids.length} models?`,
     confirmLabel: active ? "Enable" : "Disable",
   }))) return;
-  // Per-row toggle in parallel: each toggle is its own atomic
-  // UPDATE on the server. The previous bulk-toggle endpoint
-  // applied to *all* non-custom rows of the provider, which is
-  // exactly the over-broad behavior the per-row selection is
-  // meant to escape.
+  // Per-row toggles run in parallel; each is its own atomic server UPDATE. The old bulk
+  // endpoint applied to *all* non-custom rows of the provider — exactly the over-broad behavior
+  // per-row selection exists to avoid.
   await Promise.all(ids.map((rowId) =>
     api("/models/" + rowId + "/toggle", {
       method: "POST",
@@ -33,12 +31,9 @@ async function bulkSetSelected(_providerId: string, active: boolean): Promise<vo
     }).catch((err: unknown) => console.error("Failed toggle", rowId, err))
   ));
   state.models = await api("/models") as Model[];
-  // Targeted DOM patch — for each toggled row, sync the
-  // active-state UI in place. Clear the selection (uncheck all,
-  // remove `selected` classes, hide the bulk bar, reset master
-  // checkbox). We do NOT call requestUpdate() — a full
-  // rebuild would close any open `<select>` and steal focus from
-  // the search input. Mirrors patchComboField in combo-handlers.ts.
+  // Targeted DOM patch: sync each toggled row's active-state UI, then clear the selection
+  // (uncheck all, drop `selected` classes, hide the bulk bar, reset the master checkbox). No
+  // requestUpdate() — a full rebuild closes an open <select> and steals search focus.
   for (const rowId of ids) {
     const rid = Number(rowId);
     if (!Number.isFinite(rid)) continue;
@@ -54,8 +49,7 @@ async function bulkSetSelected(_providerId: string, active: boolean): Promise<vo
   });
   updateBulkBar();
   syncSelectAllCheckbox([]);
-  // Refresh the (All / Active / Inactive) counts on the filter
-  // tabs so the totals reflect the new state.
+  // Refresh the (All / Active / Inactive) counts on the filter tabs.
   const ctx = state.currentView && state.currentView.context;
   if (ctx) {
     const allProviderModels = (state.models || []).filter((mm) => mm.provider_id === ctx);
@@ -107,8 +101,8 @@ export async function bulkTestSelected(_providerId: string): Promise<void> {
       console.error("Test failed", rowId, err);
     }
   }
-  // Refresh the models cache so the background poll is a no-op
-  // and the next render shows the up-to-date last_test_* columns.
+    // Refresh the models cache so the background poll is a no-op and the next render shows the
+    // up-to-date last_test_* columns.
   state.models = await api("/models") as Model[];
 }
 

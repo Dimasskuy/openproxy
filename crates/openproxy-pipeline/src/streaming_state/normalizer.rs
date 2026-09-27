@@ -25,11 +25,9 @@ impl ToolCallAccumulator {
         Self::default()
     }
 
-    /// Process a tool_call delta. Returns the `arguments` value that
-    /// should be sent to the client (just the new fragment, not the
-    /// running total). If the upstream already sends fragments (the
-    /// correct behavior), this is a no-op — the fragment is returned
-    /// as-is and the running total is updated.
+    /// Returns the `arguments` value to forward: the new fragment, never
+    /// the running total. An upstream that already streams fragments is
+    /// forwarded as-is with the running total updated alongside.
     pub fn process<'a>(&mut self, index: u64, arguments: &'a str) -> &'a str {
         if !self.args_by_index.contains_key(&index)
             && self.args_by_index.len() >= MAX_TOOL_CALL_INDICES
@@ -140,12 +138,11 @@ pub(crate) fn apply_reasoning_normalizations(
     think_extractor: &mut crate::think_extractor::ThinkStreamExtractor,
     tool_call_acc: &mut ToolCallAccumulator,
 ) -> Option<String> {
-    // Step 1: normalize non-standard reasoning fields.
     let normalized = crate::sse_accumulator::normalize_nonstandard_reasoning_fields(payload);
     let p: &str = normalized.as_deref().unwrap_or(payload);
 
-    // Fast check: if there's no "content" AND no "tool_calls", skip
-    // the JSON parse entirely — the chunk is role-only, finish, etc.
+    // Role-only and finish chunks carry neither key, so the JSON parse
+    // is skipped entirely.
     let has_content = p.contains("\"content\"");
     let has_tool_calls = p.contains("\"tool_calls\"");
     if !has_content && !has_tool_calls {
@@ -172,9 +169,9 @@ pub(crate) fn apply_reasoning_normalizations(
     normalized
 }
 
-/// Modular streaming stage that normalizes non-standard reasoning fields,
-/// extracts `<think>` blocks into `reasoning_content`, extracts inline tool calls,
-/// and normalizes tool call arguments.
+/// Normalizes non-standard reasoning fields, lifts `<think>` blocks into
+/// `reasoning_content`, extracts inline tool calls and normalizes tool call
+/// arguments.
 #[derive(Default)]
 pub struct ReasoningNormalizer {
     pub think_extractor: ThinkStreamExtractor,

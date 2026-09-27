@@ -5,14 +5,10 @@ use crate::translation::OpenAIUsage;
 use openproxy_types::error::Result;
 use serde_json::{Value, json};
 
-/// Lightweight probe struct for extracting ONLY the fields the proxy
-/// needs from a Gemini SSE chunk, without allocating the full
-/// `serde_json::Value` AST. serde skips unknown fields (e.g. `role`,
-/// `index`, `safetyRatings`) without allocating them, making this
-/// ~3-5x faster than `from_str::<Value>` on typical Gemini chunks.
-///
-/// Field naming uses `#[serde(rename = ...)]` to map Gemini's
-/// camelCase wire format to Rust's snake_case conventions.
+/// Reads only the fields the proxy needs. Skipping unknown fields (`role`,
+/// `index`, `safetyRatings`) avoids the allocation a per-chunk
+/// `from_str::<Value>` would cost. `#[serde(rename = ...)]` maps Gemini's
+/// camelCase wire format onto Rust snake_case.
 #[derive(serde::Deserialize, Default)]
 struct GeminiSseProbe {
     #[serde(default)]
@@ -85,15 +81,7 @@ fn map_gemini_finish_reason(reason: &str) -> String {
     }
 }
 
-/// Parse a single SSE line from a Gemini upstream and translate to OpenAI format.
-///
-/// Gemini SSE lines are `data: {...}` with `candidates[].content.parts[].text`.
-/// Translates to OpenAI `chat.completion.chunk` format.
-///
-/// PERF: uses a targeted `GeminiSseProbe` deserializer instead of
-/// `serde_json::Value` to avoid allocating the full JSON AST per chunk.
-/// serde skips unknown fields without allocating them, which reduces
-/// per-chunk CPU on the Gemini path significantly.
+/// Candidates from the top-level array or the `response` wrapper.
 fn extract_gemini_candidates(probe: &GeminiSseProbe) -> &[GeminiCandidateProbe] {
     if !probe.candidates.is_empty() {
         &probe.candidates
@@ -141,9 +129,8 @@ fn extract_gemini_parts(
 
 fn extract_gemini_usage(usage_metadata: Option<&GeminiUsageProbe>) -> Option<OpenAIUsage> {
     let u = usage_metadata?;
-    // All three token counts must be present (matches legacy semantics:
-    // partial usage metadata is dropped to avoid emitting an
-    // `OpenAIUsage` with `0`s, which would corrupt downstream billing).
+    // Partial usage metadata is dropped rather than emitting an `OpenAIUsage`
+    // of `0`s, which would corrupt downstream billing.
     Some(super::build_openai_usage(
         Some(u.prompt_tokens?),
         Some(u.completion_tokens?),
@@ -328,11 +315,9 @@ mod tests {
 
     #[test]
     fn gemini_no_candidates_in_payload() {
-        // Payload with no candidates array — text should be empty string, no error.
         let line = r#"data: {"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":0,"totalTokenCount":1}}"#;
         let chunk = parse_gemini_sse_line(line, "id", 0, "m").unwrap().unwrap();
         assert!(!chunk.done);
-        // No text, no finish_reason → delta.content should be empty/null.
         let delta = &chunk.payload["choices"][0]["delta"];
         assert!(
             delta.get("content").is_none() || delta["content"].as_str().unwrap_or("").is_empty()
@@ -428,7 +413,6 @@ mod tests {
 
     #[test]
     fn gemini_usage_without_finish_reason() {
-        // Usage present but no finishReason — should still parse usage.
         let line = r#"data: {"candidates":[{"content":{"parts":[{"text":"a"}]}}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":7,"totalTokenCount":10}}"#;
         let chunk = parse_gemini_sse_line(line, "id", 0, "m").unwrap().unwrap();
         assert!(chunk.usage.is_some());
@@ -436,7 +420,6 @@ mod tests {
         assert_eq!(u.prompt_tokens, 3);
         assert_eq!(u.completion_tokens, 7);
         assert_eq!(u.total_tokens, 10);
-        // finish_reason should be null (not present).
         assert!(chunk.payload["choices"][0]["finish_reason"].is_null());
     }
 
@@ -463,10 +446,8 @@ mod tests {
 
     #[test]
     fn gemini_only_ellipsis_tokens() {
-        // Empty parts array — no text extracted.
         let line = r#"data: {"candidates":[{"content":{"parts":[]}}]}"#;
         let chunk = parse_gemini_sse_line(line, "id", 0, "m").unwrap().unwrap();
-        // text is empty → delta.content should be empty string or null.
         let content = chunk.payload["choices"][0]["delta"]["content"]
             .as_str()
             .unwrap_or("");
@@ -475,7 +456,6 @@ mod tests {
 
     #[test]
     fn gemini_parts_with_non_text_fields_ignored() {
-        // Some parts may have "thought: true" or other keys — only "text" parts matter.
         let line = r#"data: {"candidates":[{"content":{"parts":[{"thought":true},{"text":"real answer"}]}}]}"#;
         let chunk = parse_gemini_sse_line(line, "id", 0, "m").unwrap().unwrap();
         assert_eq!(
@@ -486,32 +466,17 @@ mod tests {
         );
     }
 
-    /// G1 §5.4 (test 9): Gemini input `[{"text":"r","thought":true},{"text":"a"}]`
-    /// must route the thought:true part into `delta_reasoning`
-    /// and leave the non-thought text as the only content in the
-    /// translated payload's `delta.content`, so the downstream
-    /// accumulator can persist the user's `content` and the
-    /// model's reasoning into separate fields. Without the split,
-    /// the thought text leaks into the persisted `content` and
-    /// the response is corrupted.
+    /// `finish()` rebuilds the persisted message from `delta.content`, so
+    /// thought text landing there would corrupt the user's `content`.
     #[test]
     fn gemini_streaming_response_body_separates_thought_from_text() {
         let line = r#"data: {"candidates":[{"content":{"parts":[{"text":"r","thought":true},{"text":"a"}]}}]}"#;
         let chunk = parse_gemini_sse_line(line, "id", 0, "m").unwrap().unwrap();
-        // Thought text is routed to reasoning so the accumulator
-        // can persist it as `choices[0].message.reasoning_content`.
         assert_eq!(
             chunk.delta_reasoning.as_deref(),
             Some("r"),
             "delta_reasoning must contain the thought:true text"
         );
-        // The OpenAI-translated payload's `delta.content` carries
-        // ONLY the non-thought text. This matches OpenAI streaming
-        // convention where reasoning is a separate field; the
-        // pipeline's `append_openai_raw` -> `finish()` flow extracts
-        // `delta.content` to rebuild the persisted message's
-        // `content`, so any thought text here would leak into the
-        // user's `content` and corrupt the response.
         assert_eq!(
             chunk.payload["choices"][0]["delta"]["content"]
                 .as_str()
@@ -549,7 +514,6 @@ mod tests {
 
     #[test]
     fn gemini_streaming_function_call_empty_and_null_arguments() {
-        // Case 1: args is empty object {}
         let line_empty_obj = r#"data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"f_empty","args":{}}}]},"finishReason":"STOP"}]}"#;
         let chunk1 = parse_gemini_sse_line(line_empty_obj, "c1", 1000, "gemini-1.5-flash")
             .unwrap()
@@ -558,7 +522,6 @@ mod tests {
         assert_eq!(tc1["function"]["name"], "f_empty");
         assert_eq!(tc1["function"]["arguments"], "{}");
 
-        // Case 2: args omitted entirely
         let line_omitted = r#"data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"f_no_args"}}]}}]}"#;
         let chunk2 = parse_gemini_sse_line(line_omitted, "c2", 1000, "gemini-1.5-flash")
             .unwrap()
@@ -567,14 +530,12 @@ mod tests {
         assert_eq!(tc2["function"]["name"], "f_no_args");
         assert_eq!(tc2["function"]["arguments"], "{}");
 
-        // Case 3: args is null
         let line_null = r#"data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"f_null","args":null}}]}}]}"#;
         let chunk3 = parse_gemini_sse_line(line_null, "c3", 1000, "gemini-1.5-flash")
             .unwrap()
             .unwrap();
         let tc3 = &chunk3.payload["choices"][0]["delta"]["tool_calls"][0];
         assert_eq!(tc3["function"]["name"], "f_null");
-        // Check what args_str produces when args is null
         println!(
             "chunk3 arguments for null args: {:?}",
             tc3["function"]["arguments"]

@@ -1,12 +1,7 @@
-// components/log-detail/json-prune.ts — JSON pruning / truncation for the
-// log-detail viewer. Every function here transforms a JSON value into a
-// display-friendly, bounded representation (truncated strings, capped
-// `messages` arrays, depth-limited recursion).
-//
-// `formatJson` is the single entry point consumed by the other modules;
-// the rest are module-internal helpers.
-//
-// Split out of the former components/log-detail.ts monolith (Q19).
+// components/log-detail/json-prune.ts — JSON pruning/truncation for the log-detail viewer.
+// Every function turns a JSON value into a bounded, display-friendly representation
+// (truncated strings, capped `messages`, depth-limited recursion). `formatJson` is the
+// only entry point consumed elsewhere; the rest are module-internal helpers.
 
 function truncateText(text: string, maxLen = 150): string {
   if (text.length <= maxLen) return text;
@@ -114,11 +109,8 @@ function pruneValueForDisplay(val: unknown, depth = 0): unknown {
   return val;
 }
 
-/** Pretty-print a JSON value for display inside a `<pre>` tag.
- *  lit-html auto-escapes the returned string when interpolated
- *  via `${...}`, so we no longer escape here. Returns "(empty)"
- *  for null/undefined so the viewer always has something to
- *  render. */
+/** Pretty-print for a `<pre>`. lit-html escapes the string when interpolated, so no manual
+ *  escaping; null/undefined render as "(empty)". */
 export function formatJson(value: unknown): string {
   if (value == null) return "(empty)";
   try {

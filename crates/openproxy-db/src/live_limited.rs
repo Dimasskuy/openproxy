@@ -9,13 +9,10 @@ use openproxy_types::error::Result;
 use openproxy_types::ids::{AccountId, ModelId};
 use rusqlite::{Connection, OptionalExtension, params};
 
-/// Centralised SQLite table name.
-///
-/// AGENTS.md §6 prohibits hardcoded table names in queries. Every
-/// statement below references this constant so the migration, the
-/// `MIGRATIONS` array, and any future `pragma_table_info` /
-/// `DELETE FROM sqlite_sequence` calls all reference a single source
-/// of truth.
+/// Centralised SQLite table name. AGENTS.md §6 prohibits hardcoded table
+/// names in queries, so the migration, the `MIGRATIONS` array and any
+/// `pragma_table_info` / `DELETE FROM sqlite_sequence` call share this one
+/// source of truth.
 pub const TABLE_LIVE_LIMITED: &str = "live_limited_models";
 
 /// Insert (or refresh) a live-limit row.
@@ -175,8 +172,8 @@ mod tests {
 
     #[test]
     fn clear_for_account_preserves_active_rows() {
-        // mark_limited after a refresh: the new row has a future until_ts.
-        // clear_for_account must NOT delete it (race-correctness, N2 fix).
+        // A mark_limited after a quota refresh writes a future until_ts, and
+        // clear_for_account must not wipe it.
         let conn = fresh_db();
         let aid = AccountId(1);
         let mid = ModelId::new("gemini-2.5");
@@ -189,8 +186,7 @@ mod tests {
 
     #[test]
     fn cascade_delete_removes_rows() {
-        // ON DELETE CASCADE on the FK → removing the account drops the
-        // live-limit rows.
+        // ON DELETE CASCADE on the FK.
         let conn = fresh_db();
         let aid = AccountId(1);
         let mid = ModelId::new("gemini-2.5");
@@ -203,24 +199,15 @@ mod tests {
         assert!(!has_row(&conn, aid, &mid).expect("has_row after"));
     }
 
-    // Compile-time witness: every SQL site in this module references the
-    // constant instead of a literal "live_limited_models". This is a
-    // documentation-level guarantee, but if someone re-introduces a
-    // literal the test below won't catch it (Rust has no string-literal
-    // lint for SQL); the constant is still the single source of truth.
     #[test]
     fn constant_matches_migration_filename() {
         assert_eq!(TABLE_LIVE_LIMITED, "live_limited_models");
-        // The result type is `CoreError`; just confirm we can name it
-        // so a future rename of CoreError doesn't silently break us.
         use openproxy_types::error::CoreError;
         let _ = CoreError::Validation("witness".into());
     }
 }
 
-// ============================================================
-// GAP-6: Adversarial tests for live_limited_models
-// ============================================================
+// Adversarial tests for live_limited_models
 #[cfg(test)]
 mod adversarial_tests {
     use super::*;
@@ -245,19 +232,14 @@ mod adversarial_tests {
         conn
     }
 
-    // --- mark_limited with various until_ts formats ---
-
     #[test]
     fn adv_mark_limited_rfc3339_with_offset() {
-        // Timestamp with timezone offset (not UTC) — the comparison
-        // logic should still work or gracefully fail to false.
         let conn = fresh_db();
         let aid = AccountId(1);
         let mid = ModelId::new("gemini-2.5");
-        // In the future (Pacific +12)
+        // Non-UTC offset, in the future: parse_timestamp must convert to UTC.
         let until = "2099-12-31T23:59:59+12:00";
         mark_limited(&conn, aid, &mid, until, "RESOURCE_EXHAUSTED").expect("mark");
-        // is_limited should still work — parse_timestamp converts +12:00 → UTC
         assert!(
             is_limited(&conn, aid, &mid).expect("is_limited"),
             "future timestamp with +12:00 offset should be active"
@@ -266,8 +248,8 @@ mod adversarial_tests {
 
     #[test]
     fn adv_mark_limited_with_garbage_until_ts() {
-        // Garbage string as until_ts — the DB accepts any string,
-        // but is_limited() treats unparseable as inactive (defensive).
+        // The DB accepts any string as until_ts; is_limited() treats an
+        // unparseable one as inactive.
         let conn = fresh_db();
         let aid = AccountId(1);
         let mid = ModelId::new("gemini-2.5");
@@ -295,12 +277,9 @@ mod adversarial_tests {
         );
     }
 
-    // --- clear_for_account edge cases ---
-
     #[test]
     fn adv_clear_for_account_unknown_account_returns_zero() {
         let conn = fresh_db();
-        // AccountId(999) does not exist — no FK violation (just no rows).
         assert_eq!(clear_for_account(&conn, AccountId(999)).expect("clear"), 0);
     }
 
@@ -339,8 +318,6 @@ mod adversarial_tests {
         );
     }
 
-    // --- mark_limited upserts on conflict ---
-
     #[test]
     fn adv_mark_limited_upsert_overwrites() {
         let conn = fresh_db();
@@ -353,7 +330,6 @@ mod adversarial_tests {
         mark_limited(&conn, aid, &mid, &t1, "REASON_A").expect("mark t1");
         mark_limited(&conn, aid, &mid, &t2, "REASON_B").expect("mark t2 (upsert)");
 
-        // Should be t2's row now.
         let row: String = conn
             .query_row(
                 "SELECT until_ts FROM live_limited_models WHERE account_id = ?1 AND model_id = ?2",
@@ -363,8 +339,6 @@ mod adversarial_tests {
             .expect("read back");
         assert_eq!(row, t2, "upsert must overwrite until_ts");
     }
-
-    // --- ON DELETE CASCADE works for multiple rows ---
 
     #[test]
     fn adv_cascade_delete_clears_multiple_rows() {
@@ -391,8 +365,6 @@ mod adversarial_tests {
         assert!(!has_row(&conn, aid, &m3).expect("cascade m3"));
     }
 
-    // --- is_limited on non-existent (account, model) ---
-
     #[test]
     fn adv_is_limited_nonexistent_returns_false() {
         let conn = fresh_db();
@@ -401,8 +373,6 @@ mod adversarial_tests {
             "non-existent pair must be false"
         );
     }
-
-    // --- Multiple models on same account ---
 
     #[test]
     fn adv_different_models_independent_limited_state() {
@@ -423,8 +393,6 @@ mod adversarial_tests {
             "m2 should NOT be limited"
         );
     }
-
-    // --- clear_for_account only affects one account ---
 
     #[test]
     fn adv_clear_for_account_does_not_cross_accounts() {
@@ -447,15 +415,12 @@ mod adversarial_tests {
         let n = clear_for_account(&conn, a1).expect("clear a1");
         assert_eq!(n, 1, "only a1's expired row should be deleted, got {n}");
 
-        // a1 is gone, a2 is still there (even though expired too)
         assert!(!has_row(&conn, a1, &mid).expect("a1 gone"));
         assert!(
             has_row(&conn, a2, &mid).expect("a2 still present"),
             "clear_for_account must not cross account boundaries"
         );
     }
-
-    // --- mark_limited on non-existent account (FK violation) ---
 
     #[test]
     fn adv_mark_limited_nonexistent_account_fails() {
@@ -470,23 +435,17 @@ mod adversarial_tests {
         );
     }
 
-    // --- until_ts boundary: exactly now ---
-
     #[test]
     fn adv_until_ts_exactly_now_is_expired() {
-        // "until_ts <= now" → if until_ts equals now, the row is expired.
-        // We can't guarantee exact timing, but we use a timestamp in the past
-        // to test the boundary condition.
+        // "until_ts <= now" makes an exactly-now row expired; exact timing is
+        // untestable, so the case uses a timestamp 1s in the past.
         let conn = fresh_db();
         let aid = AccountId(1);
         let mid = ModelId::new("gemini-2.5");
         let until = (chrono::Utc::now() - chrono::Duration::seconds(1)).to_rfc3339();
         mark_limited(&conn, aid, &mid, &until, "X").expect("mark");
-        // 1 second in the past → should be expired
         assert!(!is_limited(&conn, aid, &mid).expect("1s-past is expired"));
     }
-
-    // --- Stress: mark_limited same (account, model) many times ---
 
     #[test]
     fn adv_mark_limited_same_pair_stress() {
@@ -498,7 +457,6 @@ mod adversarial_tests {
             let until = (chrono::Utc::now() + chrono::Duration::minutes(i)).to_rfc3339();
             mark_limited(&conn, aid, &mid, &until, "X").expect("mark");
         }
-        // UPSERT means only 1 row exists, with the latest until_ts.
         let count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM live_limited_models WHERE account_id = ?1 AND model_id = ?2",

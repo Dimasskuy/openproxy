@@ -1,9 +1,9 @@
 //! LogCompressor: format-aware build/test log compressor.
 //!
 //! Inspired by headroom's LogCompressor. Detects common build/test log
-//! formats (pytest, npm/jest, cargo, make, generic) and compresses them
-//! by keeping errors, warnings, stack traces, summary lines, and section
-//! headers, while dropping the bulk of passed-test noise.
+//! formats (pytest, npm/jest, cargo, make, generic) and keeps errors,
+//! warnings, stack traces, summary lines and section headers, dropping the bulk
+//! of passed-test noise.
 //!
 //! ## Safety
 //! - Only operates on `role == "tool"` and `role == "assistant"` messages.
@@ -74,23 +74,17 @@ fn compress_single_msg(msg: &mut OpenAIMessage) -> Option<&'static str> {
     }
 }
 
-/// Compresses build/test log output in tool results and assistant messages.
-///
-/// Operates on content that looks like build/test output (≥30 lines with
-/// test-related patterns). Returns the technique name (`"lite::log_compressor"`)
-/// once per message that was actually compressed.
+/// Compresses build/test log output (≥ `MIN_LOG_LINES` lines with
+/// test-related patterns) in tool results and assistant messages, returning
+/// [`TECHNIQUE`] once per message that was actually compressed.
 pub fn compress_logs(msgs: &mut Messages) -> Vec<&'static str> {
     msgs.iter_mut().filter_map(compress_single_msg).collect()
 }
 
-/// Compress a single log content string. Returns `Some((compressed, technique))`
-/// if compression applied, or `None` otherwise.
-///
-/// This is the per-string entry point that powers the content router. It
-/// delegates to the private `compress_log_content` (which enforces the
-/// `MIN_LOG_LINES` floor, the log-format detection, and the scoreable-lines
-/// check) and applies the same "strictly smaller than input" guard that
-/// [`compress_logs`] uses on the messages-vec path.
+/// Per-string entry point powering the content router: delegates to
+/// `compress_log_content` (which enforces the `MIN_LOG_LINES` floor, the
+/// log-format detection and the scoreable-lines check) under the same
+/// "strictly smaller than input" guard [`compress_logs`] applies.
 pub fn compress_log_string(text: &str) -> Option<(String, &'static str)> {
     compress_log_content(text)
         .filter(|c| c.len() < text.len())
@@ -294,7 +288,7 @@ fn contains_case_insensitive_ascii(haystack: &str, needle: &str) -> bool {
         .any(|w| w.eq_ignore_ascii_case(needle.as_bytes()))
 }
 
-/// Check if a line contains an error token (case-insensitive substring match).
+/// Whether a line contains an error token (case-insensitive substring match).
 fn contains_error_token(line: &str) -> bool {
     const ERROR_TOKENS: &[&str] = &["error", "fatal", "panic", "exception", "traceback", "fail"];
     ERROR_TOKENS
@@ -392,17 +386,11 @@ fn select_lines(lines: &[&str], kinds: &[LineKind]) -> Vec<usize> {
     selected
 }
 
-/// Compute the dedup key for a warning line.
-///
-/// Splits on the first `:` or `=`, then normalizes the trailing region
-/// (everything after the separator) by replacing digit runs, hex literals
-/// (`0x...`), and filesystem paths (`/...`) with `*`. The prefix (up to and
-/// including the separator) is kept verbatim. If there's no separator, the
-/// entire line is normalized.
-///
-/// This collapses warnings that differ only in numeric/path/hex details
-/// (e.g. `warning: unused variable at line 12` and
-/// `warning: unused variable at line 99`) into a single dedup bucket.
+/// Dedup key for a warning line: splits on the first `:` or `=`, then replaces
+/// digit runs, hex literals (`0x...`) and paths (`/...`) in the trailing region
+/// with `*`, keeping the prefix verbatim. Without a separator the whole line
+/// is normalized. That collapses `warning: unused variable at line 12` and
+/// `warning: unused variable at line 99` into one bucket.
 fn dedup_key(line: &str) -> String {
     if let Some((byte_idx, ch)) = line.char_indices().find(|&(_, c)| c == ':' || c == '=') {
         let sep_end = byte_idx + ch.len_utf8();

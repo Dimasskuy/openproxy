@@ -15,7 +15,7 @@ impl Default for OAuthProviderRegistry {
 }
 
 impl OAuthProviderRegistry {
-    /// Create an empty registry.
+    /// Registry with no providers.
     pub fn new() -> Self {
         Self {
             inner: std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new())),
@@ -37,33 +37,29 @@ impl OAuthProviderRegistry {
         reg
     }
 
-    /// Register a new OAuth provider by `Arc`, keyed on the
-    /// provider's own `name()`. If a provider with the same name
-    /// already exists, it is replaced. This allows custom providers
-    /// to override built-in ones at runtime.
+    /// Register a provider by `Arc`, keyed on its own `name()`. An existing entry
+    /// with the same name is replaced, so a custom provider can override a
+    /// built-in at runtime.
     pub fn register_arc(&self, provider: OAuthProviderEnum) {
         let name = provider.name().to_string();
         let mut guard = self.inner.lock();
         guard.insert(name, provider);
     }
 
-    /// Register an OAuth provider `Arc` under an explicit key
-    /// (useful for aliases like `antigravity-cli` → same impl as
-    /// `antigravity`). If a provider with the same key already
-    /// exists, it is replaced.
+    /// Register a provider `Arc` under an explicit key, for aliases such as
+    /// `antigravity-cli` pointing at the `antigravity` impl. An existing entry
+    /// with the same key is replaced.
     pub fn register_arc_with_name(&self, name: &str, provider: OAuthProviderEnum) {
         let mut guard = self.inner.lock();
         guard.insert(name.to_string(), provider);
     }
 
-    /// Register a new OAuth provider by `Box`. Convenience wrapper
-    /// around `register_arc`.
+    /// [`Self::register_arc`] for a boxed provider.
     pub fn register(&self, provider: OAuthProviderEnum) {
         self.register_arc(provider);
     }
 
-    /// Look up an OAuth provider by name. Returns `None` if no provider
-    /// is registered with that name.
+    /// Provider registered under `name`, if any.
     pub fn get(&self, name: &str) -> Option<OAuthProviderEnum> {
         let guard = self.inner.lock();
         guard.get(name).cloned()

@@ -1,9 +1,5 @@
-// state/models-sync.ts — real-time synchronization for provider models.
-//
-// Listens to WebSocket "models_refreshed" events dispatched by ws-bus,
-// and automatically updates state.models and state.providers without
-// requiring a full page reload. Also exports an active poll watcher
-// for when accounts/keys are created or updated.
+// Applies `models_refreshed` WS events to state.models and state.providers
+// without a page reload.
 
 import { subscribeWs } from "./ws-bus.js";
 import { state } from "./index.js";
@@ -33,7 +29,7 @@ export function initModelsSync(): void {
     try {
       state.providers = (await api("/providers")) as typeof state.providers;
     } catch {
-      // Best-effort
+      // Best effort: the next event or poll refreshes.
     }
 
     if (detailProviderId === data.provider_id) {
@@ -58,7 +54,7 @@ export function initModelsSync(): void {
         state.modelsComplete = true;
         requestUpdate();
       } catch {
-        // Best-effort
+        // Best effort: the next event or poll refreshes.
       }
     } else {
       requestUpdate();
@@ -66,8 +62,8 @@ export function initModelsSync(): void {
   });
 }
 
-/** Active watcher when accounts or keys are mutated to guarantee UI updates
- *  even if the WebSocket is momentarily reconnecting or lagged. */
+/** Poll for newly discovered models after an account or key mutation, for the
+ *  case where the WS is reconnecting or lagged. */
 export function pollForDiscoveredModels(providerId: string): void {
   let attempts = 0;
   const maxAttempts = 6;

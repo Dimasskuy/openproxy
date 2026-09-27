@@ -1,9 +1,6 @@
-// views/playground/curl.ts — cURL command generator + API key resolution.
-//
-// `generateCurlCommand(st)` materializes a copyable shell snippet for the
-// current request modality so users can reproduce the call from their
-// terminal. `getEffectiveApiKeyFromState(st)` resolves the active key
-// based on `keySource` (session token, saved API key prefix, or custom).
+// views/playground/curl.ts — copyable cURL snippet for the current request
+// modality, plus active-key resolution from `keySource` (session token,
+// saved API key prefix, or custom).
 
 import { state } from '../../state/index.js';
 import { getToken } from '../../state/auth.js';

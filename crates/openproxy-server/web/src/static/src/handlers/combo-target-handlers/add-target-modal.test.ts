@@ -1,18 +1,12 @@
-// handlers/combo-target-handlers/add-target-modal.test.ts — unit tests
-// for buildSubComboTargetBodyFromForm().
+// handlers/combo-target-handlers/add-target-modal.test.ts — unit tests for
+// buildSubComboTargetBodyFromForm(), the pure form→JSON builder extracted from the
+// "sub-combo" branch of `addTarget`. The "model multi-select" branch is intentionally not
+// extracted: it depends on DOM scanning (row-level selects/inputs) and `state.models`, too
+// entangled with side effects for a pure unit test; the integration/e2e path covers it.
 //
-// Scope: pure form→JSON builder extracted from the "sub-combo" branch
-// of `addTarget`. The "model multi-select" branch is intentionally
-// NOT extracted because it depends on DOM scanning (queried row-level
-// per-model selects/inputs) and `state.models` — too entangled with
-// side-effects for a pure unit test; the integration / e2e path
-// covers it.
-//
-// Covering here:
-//   - `provider_id` is always the literal "combo" marker
-//   - `account_id` and `model_row_id` are `null` (XOR with sub_combo_id)
-//   - sub_combo_id / priority_order parseInt faithfully, including
-//     NaN pass-through (the caller validates NaN before POST).
+// Covering: `provider_id` is always the literal "combo" marker; `account_id` and `model_row_id`
+// are `null` (XOR with sub_combo_id); sub_combo_id / priority_order parseInt faithfully,
+// including NaN pass-through (the caller validates NaN before POST).
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { render } from "lit-html";
@@ -78,9 +72,8 @@ describe("buildSubComboTargetBodyFromForm", () => {
 
   it("returns NaN when the sub_combo_id input is blank (caller validates)", () => {
     const form = makeSubComboForm({ subComboId: "" });
-    // parseInt("") === NaN — the surrounding handler checks
-    // `if (!body.sub_combo_id)` to bail with a toast. Pin the
-    // behaviour so future "smart" coercions don't silently break it.
+    // parseInt("") === NaN — the surrounding handler checks `if (!body.sub_combo_id)` and
+    // bails with a toast. Pin the behaviour so future "smart" coercions don't break it.
     expect(Number.isNaN(buildSubComboTargetBodyFromForm(form).sub_combo_id)).toBe(true);
   });
 });

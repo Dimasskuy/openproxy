@@ -11,8 +11,6 @@ use std::fmt::Write;
 
 use crate::error::with_busy_retry;
 
-/// One embedded migration. `version` is the integer PK stored in
-/// `schema_migrations`. `sql` is the raw file contents.
 struct Migration {
     version: i64,
     name: &'static str,
@@ -99,17 +97,16 @@ fn run_migrations_with_fk_guard(
     res.and(fk_res)
 }
 
-/// Like [`apply_migration_batch`] but wraps the whole `BEGIN IMMEDIATE` →
-/// `COMMIT` window in `with_busy_retry`.
+/// [`apply_migration_batch`] with the whole `BEGIN IMMEDIATE` → `COMMIT`
+/// window inside `with_busy_retry`.
 ///
-/// `TransactionBehavior::Immediate` acquires a RESERVED lock at `BEGIN`,
-/// which can race with another process holding the writer (e.g. a
-/// crash-restart loop where a previous openproxy instance is still
-/// flushing its WAL on shutdown). The per-connection `busy_timeout` of
-/// 5s usually absorbs this, but if it expires the BEGIN fails with
-/// `SQLITE_BUSY`. We retry the whole transaction (rollback is implicit
-/// because the failed BEGIN never produced a committed transaction)
-/// with 50ms+100ms backoff, matching `BUSY_RETRY_DELAYS`.
+/// `TransactionBehavior::Immediate` takes a RESERVED lock at `BEGIN`, which
+/// races with another process holding the writer, e.g. a crash-restart loop
+/// where a previous instance is still flushing its WAL. The per-connection
+/// `busy_timeout` of 5s absorbs it most of the time; once it expires, `BEGIN`
+/// fails with `SQLITE_BUSY` and the whole transaction is retried on the
+/// `BUSY_RETRY_DELAYS` backoff. No explicit rollback is needed, since a failed
+/// `BEGIN` leaves no transaction open.
 fn apply_migration_batch_with_retry(conn: &mut Connection, pending: &[&Migration]) -> Result<()> {
     with_busy_retry("migrations::apply_batch", || {
         apply_migration_batch(conn, pending)
@@ -136,18 +133,13 @@ pub fn run(conn: &mut Connection) -> Result<()> {
         .any(|m| m.sql.contains("PRAGMA foreign_keys = OFF"));
     run_migrations_with_fk_guard(conn, &pending, needs_fk_off)?;
 
-    // Note: historical versions of this function ran an inline
-    // `cost::backfill_usage_pricing` here, but that full-table scan
-    // can take tens of seconds on large DBs and was blocking the
-    // server's listener socket at boot. The server now runs it
-    // through the background `BackfillService` instead. Tests
-    // exercising the migration runner should call
-    // `cost::backfill_usage_pricing` explicitly if they need it.
+    // `cost::backfill_usage_pricing` used to run inline here. That full-table
+    // scan took tens of seconds on large DBs and blocked the listener socket at
+    // boot, so the server runs it through the background `BackfillService`.
 
     Ok(())
 }
 
-/// Create the `schema_migrations` tracking table if missing.
 fn ensure_tracking_table(conn: &Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations (\
@@ -160,7 +152,6 @@ fn ensure_tracking_table(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Return the set of versions already applied.
 fn load_applied_versions(conn: &Connection) -> Result<std::collections::HashSet<i64>> {
     let mut stmt = conn
         .prepare("SELECT version FROM schema_migrations")
@@ -260,9 +251,7 @@ mod tests {
         assert_eq!(rows, expected, "applied versions match the embedded list");
     }
 
-    /// W4: the 000074_notif_keyword_only migration must be part of the
-    /// embedded list and must have added the `providers.notif_keyword_only`
-    /// column with a default of 0 (three-state: 0=off, 1=on, NULL=cleared).
+    /// `providers.notif_keyword_only` is three-state: 0=off, 1=on, NULL=cleared.
     #[test]
     fn test_migrations_count_includes_000074() {
         let versions: Vec<i64> = MIGRATIONS.iter().map(|m| m.version).collect();
@@ -276,7 +265,6 @@ mod tests {
         let mut conn = Connection::open(&path).expect("open");
         run(&mut conn).expect("run");
 
-        // The column exists on `providers` after the migration chain runs.
         let has_column: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('providers') WHERE name = 'notif_keyword_only'",
@@ -286,7 +274,6 @@ mod tests {
             .expect("pragma_table_info");
         assert_eq!(has_column, 1, "providers.notif_keyword_only missing");
 
-        // Its declared default is 0.
         let default_value: Option<String> = conn
             .query_row(
                 "SELECT dflt_value FROM pragma_table_info('providers') WHERE name = 'notif_keyword_only'",

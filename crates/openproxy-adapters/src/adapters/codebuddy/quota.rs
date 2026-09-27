@@ -4,31 +4,24 @@ use crate::adapters::{
 };
 use openproxy_types::quota::{AccountQuota, ModelQuotaDetail, now_unix_secs_str};
 
-/// Base URL for CodeBuddy accounts endpoint (legacy).
 pub const CODEBUDDY_ACCOUNTS_URL: &str = "https://www.codebuddy.ai/v2/accounts";
 
-/// Base URL for CodeBuddy resource and credits metering.
 pub const CODEBUDDY_GET_USER_RESOURCE_URL: &str =
     "https://www.codebuddy.ai/billing/meter/get-user-resource";
 
-/// Secondary URL for CodeBuddy resource summary.
 pub const CODEBUDDY_GET_USER_RESOURCE_SUMMARY_URL: &str =
     "https://www.codebuddy.ai/billing/meter/get-user-resource-summary";
 
-/// Default CodeBuddy base URL (Worldwide / International edition with Google login).
 pub const DEFAULT_CODEBUDDY_BASE_URL: &str = "https://www.codebuddy.ai/v2";
 
-/// Domestic Mainland China CodeBuddy base URL.
 pub const CN_CODEBUDDY_BASE_URL: &str = "https://www.codebuddy.cn/v2";
 
-/// Mirror CodeBuddy base URL (Internal Tencent Copilot endpoint).
 pub const MIRROR_CODEBUDDY_BASE_URL: &str = "https://copilot.tencent.com/v2";
 
-/// Legacy CodeBuddy base URL (.ai domain alias).
 pub const LEGACY_CODEBUDDY_BASE_URL: &str = "https://www.codebuddy.ai/v2";
 
-/// Resolve canonical base URL for CodeBuddy API calls.
-/// Respects `OPENPROXY_CODEBUDDY_BASE_URL` or `OPENPROXY_CODEBUDDY_AUTH_BASE_URL` env vars if set.
+/// `OPENPROXY_CODEBUDDY_BASE_URL`, then `OPENPROXY_CODEBUDDY_AUTH_BASE_URL`,
+/// then [`DEFAULT_CODEBUDDY_BASE_URL`].
 #[must_use]
 pub fn codebuddy_base_url() -> String {
     std::env::var("OPENPROXY_CODEBUDDY_BASE_URL")
@@ -38,7 +31,8 @@ pub fn codebuddy_base_url() -> String {
         .unwrap_or_else(|| DEFAULT_CODEBUDDY_BASE_URL.to_string())
 }
 
-/// Normalizes base URL into origin host (e.g. `https://www.codebuddy.ai/v2` -> `https://www.codebuddy.ai`).
+/// Strips the `/v2` suffix, e.g. `https://www.codebuddy.ai/v2` ->
+/// `https://www.codebuddy.ai`.
 #[must_use]
 pub fn codebuddy_origin_from_base_url(base: &str) -> String {
     let trimmed = base.trim_end_matches('/');
@@ -49,8 +43,8 @@ pub fn codebuddy_origin_from_base_url(base: &str) -> String {
     }
 }
 
-/// Returns prioritized list of candidate origins for CodeBuddy API communication,
-/// supporting automated fallback between `.ai`, `.cn`, and `copilot.tencent.com` gateways.
+/// Candidate origins in fallback order: configured, then `.ai`, `.cn` and
+/// `copilot.tencent.com`. A localhost base URL suppresses the fallbacks.
 #[must_use]
 pub fn codebuddy_candidate_origins() -> Vec<String> {
     let configured_origin = codebuddy_origin_from_base_url(&codebuddy_base_url());
@@ -73,7 +67,6 @@ pub fn codebuddy_candidate_origins() -> Vec<String> {
     origins
 }
 
-/// Extracts `(credit_balance, total_credits)` from `oauth_provider_specific` JSON string if present.
 #[must_use]
 pub fn parse_codebuddy_provider_specific(
     provider_specific: Option<&str>,
@@ -93,7 +86,6 @@ pub fn parse_codebuddy_provider_specific(
     (balance, total)
 }
 
-/// Checks if an upstream response envelope signals an authentication or token expiration error.
 #[must_use]
 pub fn is_codebuddy_auth_error(json: &serde_json::Value) -> bool {
     let code = json
@@ -131,14 +123,12 @@ pub fn is_codebuddy_auth_error(json: &serde_json::Value) -> bool {
 
 pub use super::{CODEBUDDY_MODELS, CodeBuddyModelDef};
 
-/// Type alias for backward compatibility with existing tests.
 pub type CodeBuddyModelCreditCost = CodeBuddyModelDef;
 
-/// Known model credit multipliers extracted directly from product.json.
 pub const CODEBUDDY_MODEL_CREDIT_COSTS: &[CodeBuddyModelDef] = CODEBUDDY_MODELS;
 
-/// Calculates the exact unix timestamp in seconds for the next 12:00 AM CST (China Standard Time, UTC+8),
-/// matching Tencent CodeBuddy's daily quota reset policy.
+/// Unix seconds of the next 00:00 in UTC+8, Tencent CodeBuddy's daily quota
+/// reset boundary.
 #[must_use]
 pub fn calculate_next_midnight_cst_unix_secs() -> u64 {
     let now_utc = chrono::Utc::now();
@@ -158,7 +148,6 @@ pub fn calculate_next_midnight_cst_unix_secs() -> u64 {
     }
 }
 
-/// Builds breakdown of model capacities and remaining fractions based on CodeBuddy credit balance.
 #[must_use]
 pub fn build_codebuddy_quota_model_details(
     session_limit: i64,
@@ -178,7 +167,7 @@ pub fn build_codebuddy_quota_model_details(
             };
             (m_limit, m_used, frac)
         } else {
-            // Free / 0.00 credit cost (e.g. hy3)
+            // 0.00 credit cost, e.g. hy3.
             (9_999, 0, 1.0)
         };
 
@@ -210,7 +199,6 @@ fn extract_numeric_field(val: &serde_json::Value, keys: &[&str]) -> Option<f64> 
     None
 }
 
-/// Parses a CST (UTC+8) datetime string formatted as `YYYY-MM-DD HH:mm:ss` into unix seconds.
 #[must_use]
 pub fn parse_cst_datetime_to_unix_secs(s: &str) -> Option<u64> {
     let naive = chrono::NaiveDateTime::parse_from_str(s.trim(), "%Y-%m-%d %H:%M:%S").ok()?;
@@ -220,8 +208,8 @@ pub fn parse_cst_datetime_to_unix_secs(s: &str) -> Option<u64> {
     if ts > 0 { Some(ts as u64) } else { None }
 }
 
-/// Parses the `/billing/meter/get-user-resource` or `/billing/meter/get-user-resource-summary`
-/// response payload into an [`AccountQuota`] snapshot.
+/// [`AccountQuota`] from a `get-user-resource` or `get-user-resource-summary`
+/// payload.
 #[must_use]
 pub fn parse_codebuddy_resource_quota(val: &serde_json::Value) -> Option<AccountQuota> {
     let now_utc = chrono::Utc::now().timestamp().max(0) as u64;
@@ -392,7 +380,6 @@ pub fn parse_codebuddy_resource_quota(val: &serde_json::Value) -> Option<Account
     })
 }
 
-/// Parses the `/v2/accounts` response payload into an [`AccountQuota`] snapshot.
 #[must_use]
 pub fn parse_codebuddy_accounts_quota(val: &serde_json::Value) -> AccountQuota {
     if let Some(quota) = parse_codebuddy_resource_quota(val) {
@@ -439,7 +426,6 @@ pub fn parse_codebuddy_accounts_quota(val: &serde_json::Value) -> AccountQuota {
             }
         }
 
-        // Check for explicit credit balances
         let parsed_limit = extract_numeric_field(
             acc,
             &[
@@ -489,7 +475,6 @@ pub fn parse_codebuddy_accounts_quota(val: &serde_json::Value) -> AccountQuota {
     }
 }
 
-/// Builds an authenticated UpstreamRequest for querying CodeBuddy resource meters.
 #[must_use]
 pub fn build_codebuddy_resource_request(
     url: &str,
@@ -524,7 +509,6 @@ pub fn build_codebuddy_resource_request(
     req
 }
 
-/// Builds an authenticated UpstreamRequest for querying CodeBuddy accounts using a custom URL.
 #[must_use]
 pub fn build_codebuddy_accounts_request_with_url(
     url: &str,
@@ -571,7 +555,6 @@ pub fn build_codebuddy_accounts_request_with_url(
     req
 }
 
-/// Builds an authenticated UpstreamRequest for querying CodeBuddy accounts and credit information.
 #[must_use]
 pub fn build_codebuddy_accounts_request(token: &str, proxy_url: Option<&str>) -> UpstreamRequest {
     build_codebuddy_accounts_request_with_url(CODEBUDDY_ACCOUNTS_URL, token, proxy_url)
@@ -584,8 +567,6 @@ fn append_quota_error(dst: &mut String, err: &str) {
     dst.push_str(err);
 }
 
-/// Fetches CodeBuddy quota using billing resource meters with automatic domain fallback
-/// (.ai <-> .cn mirrors), accounts endpoint fallback, and cached credit recovery.
 pub async fn fetch_codebuddy_quota_unified(
     upstream: &Arc<UpstreamClient>,
     token: &str,
@@ -607,7 +588,6 @@ pub async fn fetch_codebuddy_quota_unified(
         let summary_url = format!("{origin}/billing/meter/get-user-resource-summary");
         let accounts_url = format!("{origin}/v2/accounts");
 
-        // 1 & 2. Meter endpoints: get-user-resource and get-user-resource-summary
         for meter_url in [&resource_url, &summary_url] {
             let req = build_codebuddy_resource_request(meter_url, trimmed, proxy_url);
             let cancel = CancellationToken::new();
@@ -643,7 +623,6 @@ pub async fn fetch_codebuddy_quota_unified(
             }
         }
 
-        // 3. Tertiary fallback: GET /v2/accounts
         let req_accounts =
             build_codebuddy_accounts_request_with_url(&accounts_url, trimmed, proxy_url);
         let cancel = CancellationToken::new();
@@ -700,7 +679,7 @@ pub async fn fetch_codebuddy_quota_unified(
         }
     }
 
-    // 4. Quaternary fallback: Recover from cached credit balances in `provider_specific`
+    // Last resort: cached credit balances from `provider_specific`.
     let (cached_bal, cached_tot) = parse_codebuddy_provider_specific(provider_specific);
     if let Some(tot) = cached_tot
         && tot > 0

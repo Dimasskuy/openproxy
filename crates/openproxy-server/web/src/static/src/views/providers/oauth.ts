@@ -1,14 +1,5 @@
-// views/providers/oauth.ts — OAuth PKCE / Device-Code flow handlers,
-// connections (accounts) section handlers and their render templates.
-//
-// Split out of the former detail.ts monolith (FU1).
-//
-// Functions moved:
-//   onOAuthStartPKCE, onOAuthStartDeviceCode, onOAuthSubmitManualCallback,
-//   onCopyAuthUrl, onShowCreateAccount, onShowUpdateAccountKey,
-//   onSetHealth, onRefreshAccountQuota, onRefreshAllQuotas,
-//   onDeleteAccount, onApplyLocalCli,
-//   renderOAuthSection, renderConnectionsSection.
+// views/providers/oauth.ts — OAuth PKCE / device-code flow handlers, the
+// connections (accounts) section, and their render templates.
 
 import { html, type TemplateResult } from 'lit-html';
 import { state } from '../../state/index.js';
@@ -28,9 +19,6 @@ import {
 import { renderQuotaCell } from '../quota-cell.js';
 import type { Account, HealthStatus, Provider } from '../../lib/types/api.js';
 
-// ==========================================
-//  Connection / account handlers
-// ==========================================
 
 async function onSetHealth(id: number, e: Event | null): Promise<void> {
   const target =
@@ -164,17 +152,11 @@ async function onApplyLocalCli(accountId: number): Promise<void> {
   }
 }
 
-// ================================
-//  Render: OAuth section
-// ================================
 
 export function renderOAuthSection(_provider: Provider): TemplateResult {
   return html``;
 }
 
-// ================================
-//  Render: Connections section
-// ================================
 
 export function renderConnectionsSection(
   provider: Provider,

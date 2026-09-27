@@ -1,8 +1,8 @@
 //! Decision Routing Stage for combos using System One (Jev / Laya) models.
 //!
-//! Evaluates incoming prompt complexity and semantic requirements against
-//! candidate targets' user-defined descriptions to re-order the targets,
-//! placing the optimal model at index 0.
+//! Evaluates prompt complexity and semantic requirements against the
+//! candidate targets' user-defined descriptions and re-orders them, placing
+//! the optimal model at index 0.
 
 use crate::context::{PipelineContext, ResolvedTarget};
 use openproxy_adapters::upstream::UpstreamRequest;
@@ -19,8 +19,6 @@ pub const MAX_PROMPT_CHARS: usize = 2000;
 pub const ELASTIC_HYSTERESIS_MARGIN: f64 = 0.05;
 pub const ELASTIC_CONFIDENCE_THRESHOLD: f64 = 0.05;
 
-/// Safely extract prompt text for System One decision evaluation,
-/// respecting character boundaries.
 pub fn extract_prompt_state(req: &openproxy_types::OpenAIRequest, max_chars: usize) -> String {
     let mut state = String::new();
     for msg in req.messages.iter().rev() {
@@ -50,10 +48,10 @@ pub fn extract_prompt_state(req: &openproxy_types::OpenAIRequest, max_chars: usi
     state
 }
 
-/// Filters candidate targets for Laya decision routing, skipping:
-/// - Inactive targets or models
-/// - Targets in active cooldown (unless cooldown is disabled on the target/combo)
-/// - Targets saturated by predictive rate limit (when predictive skip is active and healthy alternatives exist)
+/// Skips inactive targets or models, targets in active cooldown (unless
+/// cooldown is disabled on the target or combo), and targets saturated by
+/// the predictive rate limit (when predictive skip is on and a healthy
+/// alternative exists).
 pub fn filter_decision_candidates(
     resolved_targets: &[ResolvedTarget],
     combo: &Combo,
@@ -84,7 +82,6 @@ pub fn filter_decision_candidates(
     resolved_targets
         .iter()
         .filter_map(|rt| {
-            // Exclude disabled targets or models
             if !rt.target.active || !rt.model.active {
                 tracing::debug!(
                     combo_id = combo.id.0,
@@ -94,7 +91,6 @@ pub fn filter_decision_candidates(
                 return None;
             }
 
-            // Exclude targets in active cooldown (unless cooldown is disabled for this target/combo)
             if !rt.target.is_cooldown_disabled(combo) && active_cooldowns.contains(&rt.target.id) {
                 tracing::debug!(
                     combo_id = combo.id.0,
@@ -104,7 +100,6 @@ pub fn filter_decision_candidates(
                 return None;
             }
 
-            // Predictive rate limit skip: exclude saturated target if at least one healthy alternative exists
             if combo.preventive_rate_limit
                 && !rt.target.is_cooldown_disabled(combo)
                 && has_any_predictive_healthy
@@ -135,8 +130,9 @@ pub fn filter_decision_candidates(
         .collect()
 }
 
-/// Apply decision routing to candidate targets if this combo uses `PriorityMode::Decision`.
-/// Supports elastic session scaling (upscale/downscale with damping towards `current_pinned`).
+/// Reorders the candidates when the combo uses `PriorityMode::Decision`.
+/// Elastic session scaling upscales or downscales with damping towards
+/// `current_pinned`.
 pub async fn apply_decision_routing(
     ctx: &mut PipelineContext,
     combo: &Combo,
@@ -147,7 +143,6 @@ pub async fn apply_decision_routing(
         return;
     }
 
-    // Query active cooldown targets from DB if cooldowns are enabled
     let active_cooldowns = if combo.is_cooldown_disabled() {
         std::collections::HashSet::new()
     } else {
@@ -167,8 +162,8 @@ pub async fn apply_decision_routing(
 
     let now_ms = crate::predictive_rate_limit::PredictiveRateLimiter::now_ms();
 
-    // Baseline: if an active, healthy target is pinned, pre-promote it to position 0
-    // so that failures/timeouts in JEV preserve the pinned model.
+    // A pinned, healthy target is pre-promoted to position 0 so a JEV
+    // failure or timeout does not lose it.
     let pinned_is_available = current_pinned.is_some_and(|pid| {
         resolved_targets.iter().any(|rt| {
             rt.target.id == pid
@@ -206,7 +201,7 @@ pub async fn apply_decision_routing(
         now_ms,
     );
 
-    // Need at least 2 described, eligible targets to formulate a categorical choice
+    // A categorical choice needs at least 2 described, eligible targets.
     if candidates.len() < 2 {
         tracing::debug!(
             combo_id = combo.id.0,
@@ -279,8 +274,8 @@ pub async fn apply_decision_routing(
                 .selection_window_secs
                 .unwrap_or(crate::load_balancing::DEFAULT_SELECTION_WINDOW_SECS);
 
-            // Operational Reputation weighting:
-            // Combine semantic model affinity with real-time operational health (success rate, timeouts, latency).
+            // Semantic affinity weighted by real-time operational health
+            // (success rate, timeouts, latency).
             let effective_choice_str: String = if let Some(ref probs) = answer.probabilities {
                 let mut best_target_id = chosen_target_id_str.to_string();
                 let mut best_score = -1.0;
@@ -368,7 +363,6 @@ pub async fn apply_decision_routing(
                     ctx.combo_walk_log
                         .push(format!("decision_router:keep={effective_choice_str}"));
                 } else {
-                    // Elastic Hysteresis: if session is already pinned, require significant margin or confidence
                     if let Some(pinned_id) = current_pinned {
                         let should_switch = if let Some(ref probs) = answer.probabilities {
                             let prob_chosen =
@@ -416,7 +410,8 @@ pub async fn apply_decision_routing(
                         }
                     }
 
-                    // Safety check 1: Context length validation for downscale/switch
+                    // The candidate must fit the prompt, or the pinned
+                    // target stands.
                     let total_chars: usize = ctx
                         .req
                         .openai_request
@@ -523,7 +518,6 @@ async fn execute_system_one_decision(
         }
     }
 
-    // Look for an adapter that matches the resolved provider or model
     let adapter = ctx
         .pipeline
         .config
@@ -568,7 +562,6 @@ async fn execute_system_one_decision(
         let formatted = a.format_system_one_request(req, &upstream_model)?;
         (base_url, auth, formatted)
     } else {
-        // Fallback to local Laya server
         let raw = serde_json::to_vec(req)
             .map(bytes::Bytes::from)
             .map_err(|e| openproxy_types::error::CoreError::Validation(e.to_string()))?;

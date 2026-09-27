@@ -5,16 +5,13 @@ use openproxy_types::config::PiiEntity;
 use openproxy_types::message::OpenAIResponse;
 use std::collections::HashMap;
 
-/// Request-scoped session holding bidirectional PII mappings.
 #[derive(Debug, Clone, Default)]
 pub struct PiiSession {
     /// original -> placeholder (e.g. "alice@example.com" -> "<EMAIL_1>")
     pub forward: HashMap<String, String>,
     /// placeholder -> original (e.g. "<EMAIL_1>" -> "alice@example.com")
     pub reverse: HashMap<String, String>,
-    /// Counters per entity type to generate sequential IDs (1, 2, ...)
     pub counts: HashMap<PiiEntity, usize>,
-    /// Whether reversibility is enabled (restore placeholders on responses)
     pub reversible: bool,
 }
 
@@ -50,8 +47,6 @@ impl PiiSession {
         self.reverse.is_empty()
     }
 
-    /// Return a human-readable summary of redacted entities (e.g. "email: 1, secret: 2")
-    /// or None if no entities were redacted.
     pub fn summary(&self) -> Option<String> {
         if self.counts.is_empty() {
             return None;
@@ -69,14 +64,16 @@ impl PiiSession {
         }
     }
 
-    /// Seed sequential counters above any pre-existing synthetic placeholders
-    /// (e.g. `<EMAIL_1>`, `<KEY_3>`, `Alex Vance`, `10.240.0.1`) present in the input text to prevent collision bugs.
+    /// Raises the sequential counters above any synthetic placeholder already
+    /// in the input text (`<EMAIL_1>`, `<KEY_3>`, `Alex Vance`,
+    /// `10.240.0.1`). Resuming at 1 would map two different originals onto the
+    /// same placeholder and corrupt the reverse map.
     pub fn seed_existing_placeholders(&mut self, text: &str) {
         if text.is_empty() {
             return;
         }
 
-        // 1. Bracketed format: <ENTITY_N>
+        // Bracketed format: <ENTITY_N>
         if text.contains('<') && text.contains('>') {
             for entity in PiiEntity::ALL {
                 let prefix = format!("<{}_", entity.placeholder_prefix());
@@ -97,7 +94,7 @@ impl PiiSession {
             }
         }
 
-        // 2. Realistic Person placeholders: (P\d+) or [P\d+]
+        // Person placeholders: (P\d+) or [P\d+]
         for (open, close) in [(" (P", ')'), (" [P", ']')] {
             let mut curr = 0;
             while let Some(rel) = text[curr..].find(open) {
@@ -115,7 +112,7 @@ impl PiiSession {
             }
         }
 
-        // 3. Realistic Email placeholders: @(outlook|fastmail).com
+        // Email placeholders: @(outlook|fastmail).com
         for domain in ["@outlook.com", "@fastmail.com"] {
             let mut curr = 0;
             while let Some(rel) = text[curr..].find(domain) {
@@ -135,7 +132,7 @@ impl PiiSession {
             }
         }
 
-        // 4. Realistic IP placeholders: 10.240.x.y
+        // IP placeholders: 10.240.x.y
         let mut curr = 0;
         const IP_PREFIX: &str = "10.240.";
         while let Some(rel) = text[curr..].find(IP_PREFIX) {
@@ -154,7 +151,7 @@ impl PiiSession {
             curr = next_char_boundary(text, start);
         }
 
-        // 5. Realistic Secret placeholders: sec_...{c} or sk-...{c}
+        // Secret placeholders: sec_...{c} or sk-...{c}
         for sec_prefix in ["sec_", "sk-proj-", "sk-", "op_live_", "op_test_"] {
             let mut curr = 0;
             while let Some(rel) = text[curr..].find(sec_prefix) {
@@ -174,7 +171,7 @@ impl PiiSession {
             }
         }
 
-        // 6. Numeric Secret placeholders: 89410294...
+        // Numeric secret placeholders: 89410294...
         let mut curr = 0;
         const NUM_SECRET_PREFIX: &str = "89410294";
         while let Some(rel) = text[curr..].find(NUM_SECRET_PREFIX) {
@@ -234,7 +231,6 @@ fn generate_fake_credit_card(count: usize, spaced: bool) -> String {
 }
 
 impl PiiSession {
-    /// Retrieve existing placeholder or generate a realistic, natural synthetic placeholder for this request.
     pub fn get_or_create_placeholder(&mut self, entity: PiiEntity, original: &str) -> String {
         if let Some(existing) = self.forward.get(original) {
             return existing.clone();
@@ -437,9 +433,9 @@ impl PiiSession {
         placeholder
     }
 
-    /// Restore all placeholders in text back to original values if reversible is true.
-    /// Uses Aho-Corasick automaton with LeftmostLongest match kind to guarantee
-    /// strict O(N) multi-pattern linear replacement without Tokio thread lockups.
+    /// Restores placeholders when `reversible`. LeftmostLongest Aho-Corasick
+    /// matching keeps multi-pattern replacement linear in the text length,
+    /// which a naive nested scan would not.
     pub fn restore_text(&self, text: &str) -> String {
         if !self.reversible || self.reverse.is_empty() || text.is_empty() {
             return text.to_string();
@@ -482,7 +478,6 @@ impl PiiSession {
         }
     }
 
-    /// Recursively restore strings inside a serde_json::Value.
     pub fn restore_json_value(&self, val: &mut serde_json::Value) {
         if !self.reversible || self.reverse.is_empty() {
             return;

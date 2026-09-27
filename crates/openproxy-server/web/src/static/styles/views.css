@@ -1,7 +1,3 @@
-/* ============================================
-   VIEWS — modular imports per view
-   ============================================ */
-
 @import url("./views/dashboard.css");
 @import url("./views/providers.css");
 @import url("./views/providers_mobile.css");
@@ -21,9 +17,6 @@
 @import url("./views/keys.css");
 @import url("./views/responsive_tables.css");
 
-/* ============================================
-   KEYFRAMES
-   ============================================ */
 @keyframes logs-recording-pulse {
   0%   { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.6); }
   70%  { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0);   }
@@ -47,13 +40,7 @@
   50%      { transform: scale(1.04); }
 }
 
-/* log-detail modal: collapsible sections for Request and Response tabs */
 
-/* ============================================
-   PREMIUM REFINEMENTS — softer, more minimal
-   ============================================ */
-
-/* Inputs and selects: subtle radius + focus ring */
 input[type="text"], input[type="number"], input[type="password"],
 input[type="email"], input[type="url"], input[type="search"], select, textarea {
   font-size: var(--fs-sm);
@@ -67,7 +54,6 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 2px var(--color-primary-soft);
 }
 
-/* Buttons: radius + smooth hover */
 button, .btn {
   border-radius: var(--radius-sm);
   transition: background var(--t-fast), color var(--t-fast),
@@ -76,7 +62,6 @@ button, .btn {
 button:hover, .btn:hover { opacity: 0.95; border-color: var(--color-border-strong); }
 button:active, .btn:active { transform: scale(0.97); transition-timing-function: var(--t-spring); }
 
-/* Tables: softer borders + rounded corners */
 table {
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -88,7 +73,6 @@ table th {
 }
 table td { border-color: var(--color-border-soft); }
 
-/* Sticky table headers */
 table.sticky-header thead th {
   position: sticky;
   top: 0;
@@ -96,7 +80,6 @@ table.sticky-header thead th {
   background: var(--color-surface-2);
 }
 
-/* Cards: radius + subtle shadow */
 .card, .combo-card {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-subtle);
@@ -108,7 +91,6 @@ table.sticky-header thead th {
   border-color: var(--color-border-strong);
 }
 
-/* Chart card variant */
 .card.chart-card {
   padding: 0;
 }
@@ -124,17 +106,14 @@ table.sticky-header thead th {
   padding: var(--space-3);
 }
 
-/* Chips/badges: pill radius */
 .chip, .badge, .status-pill { border-radius: var(--radius-pill); }
 
-/* Section headers */
 .section-header {
   display: flex; justify-content: space-between; align-items: center;
   margin: var(--space-4) 0 var(--space-2);
 }
 .section-header h3 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
 
-/* Back link */
 .back-link {
   display: inline-block; margin-bottom: var(--space-2);
   font-size: var(--fs-sm); color: var(--color-text-muted);
@@ -142,7 +121,6 @@ table.sticky-header thead th {
 }
 .back-link:hover { color: var(--color-text); }
 
-/* Page header */
 .page-header {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: var(--space-3); flex-wrap: wrap; gap: var(--space-2);
@@ -166,7 +144,6 @@ table.sticky-header thead th {
 }
 .page-header .actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 
-/* Sidebar improvements */
 .sidebar-nav-group {
   padding: var(--space-1) 0;
 }
@@ -204,13 +181,11 @@ table.sticky-header thead th {
 .health-dot.warn { background: var(--color-warn); }
 .health-dot.err { background: var(--color-error); }
 
-/* Drag handle */
 .drag-handle { cursor: grab; color: var(--color-text-muted); user-select: none; }
 .drag-handle:active { cursor: grabbing; }
 tr.dragging { opacity: 0.4; }
 tr.drag-over { border-top: 2px solid var(--color-primary); }
 
-/* abbr tooltips */
 abbr {
   text-decoration: none;
   border-bottom: 1px dotted var(--color-text-muted);

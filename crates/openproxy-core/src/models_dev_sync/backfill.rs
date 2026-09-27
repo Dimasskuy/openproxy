@@ -62,8 +62,7 @@ fn backfill_table_normalized(
     Ok(total)
 }
 
-/// Backfill `model_id_normalized` for existing rows in both `models` and
-/// `model_capabilities_sync` that have NULL.
+/// Backfill NULL `model_id_normalized` in `models` and `model_capabilities_sync`.
 pub fn backfill_model_id_normalized(conn: &Connection) -> Result<usize> {
     let model_rows = fetch_unnormalized_rows(conn, "models")?;
     let sync_rows = fetch_unnormalized_rows(conn, "model_capabilities_sync")?;
@@ -114,7 +113,7 @@ fn compute_usage_row_cost(
     if cost > 0.0 { Some(cost) } else { None }
 }
 
-/// Recompute `cost_usd` for usage rows that have `cost_usd = 0` AND `prompt_tokens > 0`.
+/// Recompute `cost_usd` where it is 0 but `prompt_tokens > 0`.
 pub fn recompute_costs(conn: &Connection) -> Result<usize> {
     let rows: Vec<UsageRow> = {
         let mut stmt = conn

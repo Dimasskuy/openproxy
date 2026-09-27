@@ -106,7 +106,7 @@ pub fn detect(text: &str) -> Detection {
     }
 }
 
-// ─── Individual detectors ───────────────────────────────────────────────────
+// Individual detectors
 
 macro_rules! define_detector {
     ($name:ident, $id:literal, cmds: [$($cmd:literal),+ $(,)?], conf: $conf:literal) => {

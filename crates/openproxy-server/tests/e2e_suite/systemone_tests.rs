@@ -12,7 +12,6 @@ use std::time::Duration;
 async fn test_systemone_direct_call_success_and_records_usage() {
     let harness = TestHarness::new().await;
 
-    // Register a systemone custom model
     {
         let w = harness.db_pool.writer();
         admin::create_custom_model(
@@ -64,7 +63,6 @@ async fn test_systemone_direct_call_success_and_records_usage() {
     assert_eq!(usage["output_tokens"], 5);
     assert_eq!(usage["total_tokens"], 20);
 
-    // Verify usage row is recorded in database
     let r = harness.db_pool.reader();
     let rows = usage::recent_desc(&r, 10).expect("query recent usage");
     assert!(
@@ -94,7 +92,6 @@ async fn test_systemone_missing_auth_returns_unauthorized() {
         }
     });
 
-    // Request with no Authorization header
     let req = axum::http::Request::builder()
         .method(Method::POST)
         .uri("/v1/systemone")
@@ -156,7 +153,6 @@ async fn test_systemone_upstream_error_handling() {
 async fn test_combo_decision_routing_simple_vs_complex() {
     let harness = TestHarness::new().await;
 
-    // Create decision model, fast model, and deep model
     {
         let w = harness.db_pool.writer();
         admin::create_custom_model(
@@ -248,7 +244,6 @@ async fn test_combo_decision_routing_simple_vs_complex() {
 
     harness.mock_handle.clear_recorded_requests();
 
-    // 1) Test simple prompt -> routes to mock-fast
     let (status, resp) = harness
         .client_chat_call("smart-combo", "Hello, how is your day?", false)
         .await;
@@ -273,7 +268,6 @@ async fn test_combo_decision_routing_simple_vs_complex() {
 
     harness.mock_handle.clear_recorded_requests();
 
-    // 2) Test complex prompt -> routes to mock-deep
     let (status, resp) = harness
         .client_chat_call("smart-combo", "Write a complex async parser in Rust", false)
         .await;
@@ -301,7 +295,6 @@ async fn test_combo_decision_routing_simple_vs_complex() {
 async fn test_combo_decision_fallback_on_timeout() {
     let harness = TestHarness::new().await;
 
-    // Create combo with tight timeout
     {
         let w = harness.db_pool.writer();
         admin::create_custom_model(
@@ -364,14 +357,12 @@ async fn test_combo_decision_fallback_on_timeout() {
         .expect("add target");
     }
 
-    // Set mock delay of 250ms (exceeding decision_timeout_ms of 50ms)
     harness.mock_handle.set_delay(Duration::from_millis(250));
 
     let (status, resp) = harness
         .client_chat_call("timeout-combo", "Fallback check prompt", false)
         .await;
 
-    // Must still succeed via graceful fallback to default target
     assert_eq!(status, StatusCode::OK, "fallback should succeed: {resp}");
     assert_eq!(resp["object"], "chat.completion");
 
@@ -400,7 +391,6 @@ async fn test_admin_model_tester_decision_model() {
 
     harness.mock_handle.clear_recorded_requests();
 
-    // Call POST /admin/api/models/:id/test (dashboard test button backend)
     let (status, resp) = harness
         .admin_post(&format!("/admin/api/models/{model_row_id}/test"), json!({}))
         .await;
@@ -412,7 +402,6 @@ async fn test_admin_model_tester_decision_model() {
     );
     assert_eq!(resp["status"], 200);
 
-    // Verify debug_payload contains the real System One request and response
     let debug = &resp["debug_payload"];
     assert!(
         debug["request_url"]
@@ -424,7 +413,6 @@ async fn test_admin_model_tester_decision_model() {
     assert!(debug["request_body"]["questions"]["status"].is_object());
     assert_eq!(debug["response_body"]["answers"]["status"]["choice"], "ok");
 
-    // Verify upstream mock recorded the systemone request
     let recorded = harness.mock_handle.recorded_requests();
     let sys_req = recorded
         .iter()
@@ -505,7 +493,6 @@ async fn test_systemone_routing_supports_provider_prefixed_and_combo_models() {
         })
     };
 
-    // 1) Test provider/model resolution
     let provider_model = format!("{}/jev-routed", harness.provider_id);
     let (status1, resp1) = harness
         .client_systemone_call(sample_payload(&provider_model))
@@ -517,7 +504,6 @@ async fn test_systemone_routing_supports_provider_prefixed_and_combo_models() {
     );
     assert_eq!(resp1["answers"]["health"]["choice"], "ok");
 
-    // 2) Test combo resolution
     let (status2, resp2) = harness
         .client_systemone_call(sample_payload("decision-combo"))
         .await;
@@ -528,7 +514,6 @@ async fn test_systemone_routing_supports_provider_prefixed_and_combo_models() {
     );
     assert_eq!(resp2["answers"]["health"]["choice"], "ok");
 
-    // Verify usage records row for combo dispatch
     let r = harness.db_pool.reader();
     let rows = usage::recent_desc(&r, 10).expect("fetch usage");
     let combo_row = rows

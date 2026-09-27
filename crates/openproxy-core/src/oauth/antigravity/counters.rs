@@ -13,26 +13,21 @@ use dashmap::DashMap;
 use crate::ids::AccountId;
 use crate::oauth::DbRef;
 
-/// Number of consecutive `invalid_grant` responses before marking the
-/// account `Unhealthy`. Mirrors `UNHEALTHY_THRESHOLD` in
-/// `crate::oauth::mod` (kept independent because this path runs
-/// on-demand, not from the scheduler).
+/// Consecutive `invalid_grant` responses before marking the account `Unhealthy`.
+/// Mirrors `UNHEALTHY_THRESHOLD` in `crate::oauth::mod`, kept independent because
+/// this path runs on demand, not from the scheduler.
 pub(crate) const ANTIGRAVITY_INVALID_GRANT_THRESHOLD: u32 = 3;
 
 /// Backoff schedule (ms) between retries on `invalid_grant`.
 /// `index 0 = before retry 1`, `index 1 = before retry 2`, `index 2 = before retry 3`.
 pub(crate) const ANTIGRAVITY_BACKOFF_MS: [u64; 3] = [500, 1_000, 2_000];
 
-/// Per-account consecutive-`invalid_grant` counter, scoped to the running
-/// process. Survives until the daemon is restarted; on restart the counter
-/// resets and the first `invalid_grant` is a clean slate. Acceptable because
-/// the DB's `health_status` column is the source of truth for "blocked"
-/// accounts.
+/// Per-account consecutive-`invalid_grant` counter, process-scoped. A restart
+/// resets it, which is fine: `accounts.health_status` is the source of truth for
+/// blocked accounts.
 ///
-/// The key is `account_id.0` (i64) so we never construct a transient
-/// `String` for hashing on the hot path. The value is an `AtomicU32`
-/// so concurrent refreshes for the same account don't race on the
-/// counter.
+/// Keyed by `account_id.0` so the hot path never builds a transient `String`,
+/// and valued `AtomicU32` so concurrent refreshes of one account do not race.
 pub(crate) static INVALID_GRANT_COUNTERS: LazyLock<DashMap<i64, AtomicU32>> =
     LazyLock::new(DashMap::new);
 
@@ -82,13 +77,10 @@ pub(crate) fn bump(account_id: AccountId) -> u32 {
     let counter = INVALID_GRANT_COUNTERS
         .entry(account_id.0)
         .or_insert_with(|| AtomicU32::new(0));
-    // `fetch_update` performs an atomic CAS loop and returns
-    // `Ok(previous)` on success, so we compute the NEW value by adding
-    // 1 to the previous one when the closure bumped it. The closure
-    // caps the value at `ANTIGRAVITY_INVALID_GRANT_THRESHOLD`, so
-    // concurrent bumps converge on the threshold instead of inflating
-    // it (BUG-2) and repeated calls do not grow it past the threshold
-    // (BUG-1).
+    // `fetch_update` is a CAS loop returning the pre-update value, so the new
+    // value is `previous + 1` unless the closure left it at the threshold. The
+    // cap makes concurrent bumps converge on the threshold (BUG-2) and keeps
+    // repeated calls from inflating it (BUG-1).
     let previous = counter
         .value()
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
@@ -98,13 +90,9 @@ pub(crate) fn bump(account_id: AccountId) -> u32 {
                 Some(current + 1)
             }
         })
-        // `fetch_update` only returns `Err` if the closure returns
-        // `None`, which we never do. Mapping the (impossible) error
-        // branch to the threshold is purely defensive.
+        // the closure never returns `None`, so this branch is unreachable
         .unwrap_or(ANTIGRAVITY_INVALID_GRANT_THRESHOLD);
-    // `previous` is the value seen inside the closure. If the closure
-    // bumped it (i.e. `previous < threshold`), the new value is
-    // `previous + 1`; otherwise it equals `previous`.
+    // `previous` is the value the closure saw: bumped means `previous + 1`
     if previous >= ANTIGRAVITY_INVALID_GRANT_THRESHOLD {
         previous
     } else {
@@ -112,24 +100,21 @@ pub(crate) fn bump(account_id: AccountId) -> u32 {
     }
 }
 
-/// Reset the counter to zero (called when a refresh succeeds).
-/// Drop the entry entirely so the map stays bounded by the number of
-/// accounts currently in a "bad streak".
+/// Reset the counter after a successful refresh by dropping the entry, so the
+/// map only tracks accounts in a bad streak.
 pub(crate) fn reset(account_id: AccountId) {
     INVALID_GRANT_COUNTERS.remove(&account_id.0);
 }
 
-/// Mark the account as `Unhealthy` in the DB. Two execution paths:
+/// Mark the account `Unhealthy` in the DB.
 ///
-/// * `DbRef::Pool` (production): spawn a `tokio::task::spawn_blocking`
-///   fire-and-forget task so the synchronous SQLite write never blocks
-///   the async runtime and the original `invalid_grant` error is
-///   surfaced to the caller without added latency.
-/// * `DbRef::Connection` (test path): lock the mutex inline because
-///   tests do not own a `DbPool`.
+/// `DbRef::Pool` goes through a fire-and-forget `spawn_blocking` so the
+/// synchronous write never stalls the runtime and the original `invalid_grant`
+/// error reaches the caller unencumbered. `DbRef::Connection` locks the mutex
+/// inline, which is the test path where no `DbPool` exists.
 ///
-/// Failures here are logged but do not propagate — we never want a
-/// secondary DB error to mask the original refresh failure.
+/// Failures are logged, never propagated: a secondary DB error must not mask the
+/// original refresh failure.
 pub(crate) fn mark_account_unhealthy(db: DbRef<'_>, account_id: AccountId) {
     let log_failure = move |e: &crate::error::CoreError, path: &str| {
         tracing::warn!(
@@ -181,15 +166,13 @@ mod tests {
         }
         assert_eq!(INVALID_GRANT_COUNTERS.len(), MAX_INVALID_GRANT_ENTRIES);
 
-        // Saturate some entries to threshold
         bump(AccountId(0));
-        bump(AccountId(0)); // Now count == 3 (threshold)
+        bump(AccountId(0)); // count == 3 (threshold)
 
-        // Adding another entry triggers pruning of saturated entries
+        // a new entry triggers pruning of the saturated ones
         bump(AccountId((MAX_INVALID_GRANT_ENTRIES + 1) as i64));
         assert!(INVALID_GRANT_COUNTERS.len() <= MAX_INVALID_GRANT_ENTRIES);
 
-        // Clean up
         INVALID_GRANT_COUNTERS.clear();
     }
 
@@ -197,7 +180,7 @@ mod tests {
     fn test_invalid_grant_counters_saturation_600_accounts() {
         let _guard = TEST_MUTEX.lock().unwrap();
         INVALID_GRANT_COUNTERS.clear();
-        // Insert 600 distinct accounts (all with count 1, below threshold)
+        // 600 distinct accounts, each below threshold
         for i in 0..600 {
             bump(AccountId(i));
             assert!(
@@ -215,13 +198,12 @@ mod tests {
     fn test_invalid_grant_counters_eviction_order_threshold_first() {
         let _guard = TEST_MUTEX.lock().unwrap();
         INVALID_GRANT_COUNTERS.clear();
-        // Fill to capacity 500
         for i in 0..MAX_INVALID_GRANT_ENTRIES {
             bump(AccountId(i as i64));
         }
         assert_eq!(INVALID_GRANT_COUNTERS.len(), MAX_INVALID_GRANT_ENTRIES);
 
-        // Account 10 is saturated to threshold 3 (expired/terminal)
+        // account 10 saturates to threshold
         bump(AccountId(10));
         bump(AccountId(10));
         assert_eq!(
@@ -232,7 +214,6 @@ mod tests {
             ANTIGRAVITY_INVALID_GRANT_THRESHOLD
         );
 
-        // Account 20 is active (count 1)
         assert_eq!(
             INVALID_GRANT_COUNTERS
                 .get(&20)
@@ -241,7 +222,7 @@ mod tests {
             1
         );
 
-        // Adding a new account triggers pruning: account 10 (saturated) MUST be pruned first
+        // a new account evicts the saturated one before an active one
         bump(AccountId(9999));
         assert!(INVALID_GRANT_COUNTERS.len() <= MAX_INVALID_GRANT_ENTRIES);
         assert!(

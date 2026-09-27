@@ -35,7 +35,6 @@ pub struct ScrapedProxy {
     pub priority: i32,
 }
 
-// Module-scope upstream URL constants.
 pub const PROXIFLY_URL: &str = "https://api.proxifly.dev/proxy?format=json&quantity=100";
 pub const ONEPROXY_URL: &str = "https://1proxy-api.aitradepulse.com/api/v1/proxies/advanced";
 pub const PROXYSCRAPE_CDN_URL: &str =

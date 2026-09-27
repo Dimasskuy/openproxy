@@ -147,13 +147,11 @@ pub(crate) async fn execute_image_multipart(
 ) -> Result<ImageGenerationResponse> {
     let started = Instant::now();
 
-    // 1. Resolve routing plan.
     let routing_plan = {
         let r = ctx.db_pool.reader();
         routing::resolve(&r, &body.model_name)?
     };
 
-    // 2. Resolve image targets.
     let targets = resolve_image_targets(
         ctx.db_pool,
         routing_plan,
@@ -166,7 +164,6 @@ pub(crate) async fn execute_image_multipart(
     let mut last_error = None;
     let mut attempt = 0;
 
-    // 3. Multi-target dispatch loop.
     for target in &targets {
         attempt += 1;
         let trace_id = format!("{request_id}:{attempt}");
@@ -177,7 +174,6 @@ pub(crate) async fn execute_image_multipart(
 
         crate::guarded_unary_target!(check: ctx.db_pool, ctx.circuit_breaker, target);
 
-        // Publish live log in-flight stage event
         openproxy_types::emit_stage_event!(
             request_id: request_id,
             trace_id: trace_id,
@@ -188,7 +184,6 @@ pub(crate) async fn execute_image_multipart(
             endpoint_kind: openproxy_types::EndpointKind::Image,
         );
 
-        // Adapter resolution.
         let Some(adapter) = ctx
             .adapters
             .iter()
@@ -202,7 +197,6 @@ pub(crate) async fn execute_image_multipart(
             continue;
         };
 
-        // Credentials decryption via master key.
         let api_key = match resolve_api_key(
             ctx.db_pool,
             ctx.master_key,
@@ -216,7 +210,7 @@ pub(crate) async fn execute_image_multipart(
             }
         };
 
-        // --- Horde special path: convert multipart to JSON img2img ---
+        // Horde: convierte multipart a JSON img2img
         let is_horde = target.provider.as_str() == "horde";
         let effective_upstream_model = if is_horde {
             let horde_models: Vec<&str> = targets
@@ -365,7 +359,7 @@ pub(crate) async fn execute_image_multipart(
             continue;
         }
 
-        // Parse upstream response — Horde requires async polling.
+        // Horde requiere polling asíncrono
         let parsed_response: ImageGenerationResponse = if is_horde || status_code == 202 {
             let response_format = body
                 .form_fields
@@ -424,7 +418,6 @@ pub(crate) async fn execute_image_multipart(
                 .record_success(CircuitBreakerKey::Account(account_id));
         }
 
-        // Publish live log completed event
         openproxy_types::emit_stage_event!(
             request_id: request_id,
             trace_id: trace_id,
@@ -436,7 +429,6 @@ pub(crate) async fn execute_image_multipart(
             endpoint_kind: openproxy_types::EndpointKind::Image,
         );
 
-        // Record usage row in openproxy-db.
         let total_ms = started.elapsed().as_millis() as u64;
         record_unary_usage(
             ctx.db_pool,

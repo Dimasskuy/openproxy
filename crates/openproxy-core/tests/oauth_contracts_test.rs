@@ -54,13 +54,10 @@ fn create_mock_jwt(payload: serde_json::Value) -> String {
     format!("{header}.{body}.mock_signature")
 }
 
-// ============================================================================
 // Golden Contract Spec Parity Test
-// ============================================================================
 
 #[test]
 fn test_oauth_golden_contracts_all_providers() {
-    // 1. Antigravity OAuth Spec
     assert_eq!(
         AG_CLIENT_ID.as_str(),
         format!(
@@ -77,7 +74,6 @@ fn test_oauth_golden_contracts_all_providers() {
     assert!(AG_SCOPES.contains(&"openid"));
     assert!(AG_SCOPES.contains(&"https://www.googleapis.com/auth/cloud-platform"));
 
-    // 2. MiniMax OAuth Spec
     assert_eq!(MM_CLIENT_ID, "mcode-public");
     assert_eq!(MM_SCOPE, "agent.default");
     assert_eq!(MM_AUDIENCE, "agent-backend");
@@ -86,7 +82,6 @@ fn test_oauth_golden_contracts_all_providers() {
         "urn:ietf:params:oauth:grant-type:device_code"
     );
 
-    // 3. Codex OAuth Spec
     assert_eq!(CODEX_CLIENT_ID, "app_EMoamEEZ73f0CkXaXp7hrann");
     assert_eq!(CODEX_TOKEN_URL, "https://auth.openai.com/oauth/token");
     assert_eq!(
@@ -110,7 +105,6 @@ fn test_oauth_golden_contracts_all_providers() {
         &["openid", "profile", "email", "offline_access"]
     );
 
-    // 4. Cline OAuth Spec
     assert_eq!(CLINE_DEFAULT_BASE_URL, "https://api.cline.bot");
     assert_eq!(CLINE_AUTH_AUTHORIZE_PATH, "/api/v1/auth/authorize");
     assert_eq!(CLINE_AUTH_TOKEN_PATH, "/api/v1/auth/token");
@@ -118,15 +112,12 @@ fn test_oauth_golden_contracts_all_providers() {
     assert_eq!(CLINE_CLIENT_TYPE, "extension");
     assert_eq!(CLINE_PROVIDER, "cline");
 
-    // 5. Kiro OAuth Provider
     let kiro = KiroOAuthProvider::new();
     assert_eq!(kiro.name(), "kiro");
     assert_eq!(kiro.flow(), OAuthFlow::DeviceCode);
 }
 
-// ============================================================================
 // Cline Wire Mock Protocol Verification
-// ============================================================================
 
 #[derive(Default)]
 struct ClineMockState {
@@ -153,7 +144,6 @@ async fn mock_cline_token_handler(
         );
     }
 
-    // Verify Cline spoofing & Content-Type headers
     assert_eq!(
         headers.get("content-type").and_then(|v| v.to_str().ok()),
         Some("application/json")
@@ -171,7 +161,6 @@ async fn mock_cline_token_handler(
         "x-client-version spoofing header must be present"
     );
 
-    // Verify payload schema
     let json: serde_json::Value = serde_json::from_slice(&body).expect("valid json body");
     assert_eq!(json["grant_type"], "authorization_code");
     assert_eq!(json["client_type"], "extension");
@@ -243,7 +232,6 @@ async fn test_cline_oauth_wire_mock_flow() {
     let provider = ClineOAuthProvider::with_base_url(&mock_base);
     let client = Arc::new(UpstreamClient::new());
 
-    // 1. Build auth url
     let (url, verifier, challenge, state_val) = provider
         .build_auth_url("http://127.0.0.1:8080/callback")
         .await
@@ -253,7 +241,6 @@ async fn test_cline_oauth_wire_mock_flow() {
     assert!(url.starts_with(&format!("{mock_base}/api/v1/auth/authorize?")));
     assert!(url.contains(&format!("state={state_val}")));
 
-    // 2. Exchange code
     let token = provider
         .exchange_code(
             "code_test_123",
@@ -272,7 +259,6 @@ async fn test_cline_oauth_wire_mock_flow() {
     assert_eq!(token.expires_in, Some(3600));
     assert_eq!(state.token_requests.load(Ordering::SeqCst), 1);
 
-    // 3. Refresh token
     let conn = parking_lot::Mutex::new(rusqlite::Connection::open_in_memory().unwrap());
     let db = DbRef::Connection(&conn);
     let refreshed = provider
@@ -320,9 +306,7 @@ async fn test_cline_oauth_error_wire_handling() {
     );
 }
 
-// ============================================================================
 // Codex Wire Mock Protocol Verification
-// ============================================================================
 
 #[derive(Default)]
 struct CodexMockState {
@@ -389,7 +373,7 @@ async fn mock_codex_poll_handler(
     assert_eq!(json["user_code"], "WDHC-7890");
 
     if !state.poll_approved.load(Ordering::SeqCst) {
-        // Pending authorization returns 403 or 404
+        // upstream signals pending authorization with 403
         return (
             StatusCode::FORBIDDEN,
             axum::Json(serde_json::json!({
@@ -470,7 +454,6 @@ async fn test_codex_oauth_wire_mock_flow() {
     let provider = CodexOAuthProvider::with_base_url(&mock_base);
     let client = Arc::new(UpstreamClient::new());
 
-    // 1. Request device code
     let dar = provider
         .request_device_code(&client)
         .await
@@ -482,14 +465,14 @@ async fn test_codex_oauth_wire_mock_flow() {
     assert_eq!(dar.expires_in, Some(900));
     assert_eq!(dar.interval, Some(5));
 
-    // 2. Poll while pending -> returns Ok(None)
+    // pending authorization maps to Ok(None)
     let pending = provider
         .poll_device_token(&dar.device_code, &client)
         .await
         .expect("poll pending");
     assert!(pending.is_none(), "pending authorization must yield None");
 
-    // 3. Approve and poll again -> exchanges code and returns Ok(Some(token))
+    // after approval the poll exchanges the code and returns Ok(Some(token))
     state.poll_approved.store(true, Ordering::SeqCst);
     let token_opt = provider
         .poll_device_token(&dar.device_code, &client)
@@ -504,7 +487,6 @@ async fn test_codex_oauth_wire_mock_flow() {
     );
     assert_eq!(token.expires_in, Some(3600));
 
-    // 4. Verify claim extraction
     assert_eq!(
         provider.email_from_token(&token).as_deref(),
         Some("chatgpt_user@example.com")
@@ -550,26 +532,23 @@ async fn test_codex_oauth_deviceauth_disabled_404_handling() {
     );
 }
 
-// ============================================================================
 // Registry Completeness and Refresh Lead Times
-// ============================================================================
 
 #[test]
 fn test_oauth_registry_and_refresh_lead_times() {
     let reg = OAuthProviderRegistry::builtin();
 
-    // Rotating / 5m lead time providers:
+    // rotating providers refresh 5m early
     assert_eq!(refresh_lead_seconds("antigravity"), 300);
     assert_eq!(refresh_lead_seconds("kiro"), 300);
     assert_eq!(refresh_lead_seconds("codex"), 300);
     assert_eq!(refresh_lead_seconds("cline"), 300);
 
-    // Non-rotating (default 15m lead time):
+    // non-rotating providers default to a 15m lead time
     assert_eq!(refresh_lead_seconds("minimax"), 900);
     assert_eq!(refresh_lead_seconds("google"), 900);
     assert_eq!(refresh_lead_seconds("github"), 900);
 
-    // Builtins and aliases resolve cleanly
     let keys = [
         ("antigravity", "antigravity", OAuthFlow::AuthorizationCode),
         (
@@ -601,16 +580,13 @@ fn test_oauth_registry_and_refresh_lead_times() {
     }
 }
 
-// ============================================================================
 // Remote Live Upstream Contract Verification Tests
-// ============================================================================
 
 #[tokio::test]
 async fn test_codex_remote_upstream_live_contract_parity() {
     let client = Arc::new(UpstreamClient::new());
     let cancel = CancellationToken::new();
 
-    // 1. Probe OpenAI OpenID Configuration
     let req = UpstreamRequest::get("https://auth.openai.com/.well-known/openid-configuration");
     let resp = match client
         .call(req, TimeoutProfile::OAuth, cancel.clone())
@@ -646,7 +622,6 @@ async fn test_codex_remote_upstream_live_contract_parity() {
         );
     }
 
-    // 2. Probe OpenAI live device usercode endpoint using standard CodexOAuthProvider
     let provider = CodexOAuthProvider::new();
     let dar = match provider.request_device_code(&client).await {
         Ok(res) => res,
@@ -670,7 +645,6 @@ async fn test_cline_remote_upstream_live_contract_parity() {
     let client = Arc::new(UpstreamClient::new());
     let cancel = CancellationToken::new();
 
-    // 1. Probe upstream Cline VSCode extension manifest
     let req = UpstreamRequest::get(
         "https://raw.githubusercontent.com/cline/cline/main/apps/vscode/package.json",
     );
@@ -702,7 +676,7 @@ async fn test_cline_remote_upstream_live_contract_parity() {
     assert_eq!(pkg_json["homepage"], "https://cline.bot");
     assert_eq!(pkg_json["publisher"], "saoudrizwan");
 
-    // 2. Probe Cline production token endpoint with an expired / probe code
+    // probe the Cline production token endpoint with an expired code
     let provider = ClineOAuthProvider::new();
     let res = provider
         .exchange_code(
@@ -713,7 +687,7 @@ async fn test_cline_remote_upstream_live_contract_parity() {
         )
         .await;
 
-    // Upstream live server returns 400 Bad Request with json error
+    // the live server answers 400 with a json error envelope
     assert!(
         res.is_err(),
         "probe code must be rejected by upstream server"

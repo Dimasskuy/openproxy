@@ -4,9 +4,7 @@ use super::{
     build_discovered_model_full, fetch_models_with_auth,
 };
 
-// =====================================================================
 // Cloudflare Workers AI
-// =====================================================================
 
 /// Adapter for <https://developers.cloudflare.com/workers-ai/>.
 ///
@@ -44,19 +42,12 @@ impl ProviderAdapter for CloudflareWorkersAIAdapter {
     }
 
     fn build_chat_url(&self, _target_format: TargetFormat, _model: &ModelId) -> String {
-        // build_chat_url is the label-less path. Cloudflare's URL
-        // template requires the account label, so without it the URL
-        // is invalid. Previously this returned a URL with the literal
-        // `__missing_account_label__` placeholder, which produced a
-        // confusing 404 from upstream. Now we return a clearly-bogus
-        // URL with a descriptive sentinel so the failure mode is
-        // obvious in logs and error messages.
+        // Cloudflare's URL template needs the account label, so the label-less
+        // path returns a descriptive sentinel rather than a plausible URL.
         //
-        // The real chat path goes through `build_chat_url_for_account`
-        // (see `Pipeline::execute_single`). This method is only
-        // reached by tests or by code paths that didn't resolve the
-        // account — both should be fixed to use the for_account
-        // variant.
+        // The chat path goes through `build_chat_url_for_account` (see
+        // `Pipeline::execute_single`). Reaching this method means the account
+        // never resolved.
         format!(
             "{}/MISSING_ACCOUNT_LABEL_USE_build_chat_url_for_account/ai/v1/chat/completions",
             self.config.base_url

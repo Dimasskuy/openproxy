@@ -3,28 +3,16 @@
 //! Uses Authorization Code grant against Google's OAuth2 endpoints.
 //! The client_id is hardcoded to the one used by Cloud Code.
 //!
-//! After a successful token exchange the provider calls
-//! `loadCodeAssist` (then `onboardUser` if the user has no
-//! `project_id` yet) to bootstrap a Cloud Code project and stores
-//! the resulting `project_id` in `accounts.oauth_provider_specific` as
-//! JSON: `{"project_id": "..."}` (canonical snake_case wire format).
-//! Legacy camelCase `projectId` payloads are normalized by DB
-//! migration 000065. The chat executor reads this field and embeds
-//! it in the upstream request envelope.
+//! After a successful token exchange the provider calls `loadCodeAssist` (then
+//! `onboardUser` if the user has no `project_id` yet) to bootstrap a Cloud Code
+//! project, stored in `accounts.oauth_provider_specific` as
+//! `{"project_id": "..."}`. Migration 000065 normalizes legacy camelCase
+//! `projectId` payloads. The chat executor embeds this field in the upstream
+//! request envelope.
 //!
-//! # Module layout
-//!
-//! The provider is split across four files to keep each concern in
-//! its own module:
-//!
-//! - [`mod@counters`]: threshold/backoff constants + the
-//!   `INVALID_GRANT_COUNTERS` map + `bump`/`reset`/`mark_account_unhealthy`.
-//! - [`mod@retry`]: `drive_invalid_grant_retry` + `OnUnhealthyCell` +
-//!   the GAP-5 unit tests and adversarial tests.
-//! - [`mod@post_exchange`]: the three helpers extracted from
-//!   `post_exchange` (email fetch, project bootstrap, persistence).
-//! - This file: the trait `impl`, the provider struct, the OAuth
-//!   spec, and the tests that exercise the trait surface directly.
+//! Layout: [`counters`] holds the `invalid_grant` threshold/backoff state,
+//! [`retry`] the retry driver, [`post_exchange`] the email fetch, project
+//! bootstrap and persistence helpers. This file holds the trait impl and spec.
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -46,17 +34,16 @@ use counters::mark_account_unhealthy;
 use post_exchange::{bootstrap_project_id, fetch_user_email, persist_post_exchange_meta};
 use retry::drive_invalid_grant_retry;
 
-/// Google OAuth client_id for Cloud Code (Antigravity).
-/// Segmented with LazyLock to prevent false-positive secret scanner alerts on public native app IDs.
+/// Google OAuth client_id for Cloud Code (Antigravity), assembled from fragments so
+/// secret scanners do not flag a public native-app id.
 pub static CLIENT_ID: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     let pfx = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep";
     let dom = "apps.googleusercontent.com";
     format!("{pfx}.{dom}")
 });
 
-/// Public OAuth client_secret for Google native/installed app clients.
-/// This is NOT a real secret — Google explicitly documents that native app
-/// client_secrets are distributed in source code.
+/// Public OAuth client_secret for Google native/installed app clients. Google
+/// documents that native-app secrets ship in source code.
 /// https://developers.google.com/identity/protocols/oauth2/native-app
 pub static DEFAULT_CLIENT_SECRET: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     let pfx = "GOCSPX";
@@ -78,12 +65,8 @@ pub const SCOPES: &[&str] = &[
 pub const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 pub const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 
-/// Cloud Code `metadata.ideType` used when the operator has not
-/// configured a custom IDE identity. The Antigravity client sends
-/// `ANTIGRAVITY` as the IDE type.
-///
-/// `projectId` recovered from `loadCodeAssist` (or `onboardUser`) and
-/// persisted in `accounts.oauth_provider_specific` as JSON.
+/// `projectId` recovered from `loadCodeAssist` or `onboardUser`, persisted in
+/// `accounts.oauth_provider_specific` as JSON.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AntigravityProviderMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -180,21 +163,17 @@ impl OAuthProvider for AntigravityOAuthProvider {
         master_key: &MasterKey,
         upstream: &Arc<UpstreamClient>,
     ) -> Result<()> {
-        // 1. Decrypt the access token. Scoped block drops the writer
-        //    guard before any `.await` below (SQLite Connection is not
-        //    `Send` across await points).
+        // the block drops the writer guard before the awaits below: a SQLite
+        // Connection is not `Send` across an await point
         let access_token = {
             let conn = db_pool.writer();
             crate::accounts::decrypt_access_token(&conn, account_id, master_key)?
         };
 
-        // 2. Fetch user email (best-effort) and bootstrap the projectId
-        //    sequentially to preserve the original ordering and HTTP
-        //    behavior of the pre-split implementation.
+        // email is best-effort; the two calls stay sequential
         let email = fetch_user_email(upstream, &access_token).await;
         let project_id = bootstrap_project_id(upstream, &access_token).await?;
 
-        // 3. Persist projectId (+ optional email/label) on the account row.
         persist_post_exchange_meta(db_pool, account_id, project_id, email).await
     }
 }
@@ -208,7 +187,7 @@ mod tests {
         let v = crate::oauth::generic::generate_code_verifier();
         assert!(v.len() >= 43);
         assert!(v.len() <= 128);
-        // Must be base64url-safe characters only.
+        // base64url alphabet only
         assert!(
             v.chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
@@ -271,14 +250,14 @@ mod tests {
     fn antigravity_provider_meta_missing_project_id() {
         let meta = AntigravityProviderMeta { project_id: None };
         let json = serde_json::to_string(&meta).unwrap();
-        // Empty meta → JSON object with no `projectId` (skipped).
+        // skipped when None, so no `projectId` key at all
         assert!(!json.contains("projectId"));
     }
 
     #[test]
     fn post_exchange_metadata_envelope_is_correct() {
-        // The upstream `metadata` envelope is small and stable; we
-        // assert its shape so a silent refactor is caught.
+        // the upstream `metadata` envelope is small and stable, so assert its
+        // shape to catch silent drift
         let metadata = serde_json::json!({
             "ideType": "ANTIGRAVITY",
         });

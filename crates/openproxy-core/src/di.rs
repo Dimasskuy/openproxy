@@ -16,12 +16,10 @@ impl ServiceContainer {
         }
     }
 
-    /// Register a service instance `T` wrapped in an `Arc`.
     pub fn register<T: Send + Sync + 'static>(&mut self, service: Arc<T>) {
         self.services.insert(TypeId::of::<T>(), service);
     }
 
-    /// Register a service instance `T` (will be wrapped in `Arc`).
     pub fn register_val<T: Send + Sync + 'static>(&mut self, service: T) {
         self.register(Arc::new(service));
     }
@@ -38,7 +36,6 @@ impl ServiceContainer {
         self
     }
 
-    /// Retrieve a service `T` wrapped in `Arc<T>`.
     pub fn get<T: Send + Sync + 'static>(&self) -> Result<Arc<T>> {
         self.services
             .get(&TypeId::of::<T>())

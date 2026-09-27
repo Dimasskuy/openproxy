@@ -1,18 +1,11 @@
-// views/playground/shared.ts — Shared types, state model, model-type
-// inference, and playground utilities for the Playground view.
-//
-// Core functions that are consumed by chat.ts / image.ts / inspector.ts / index.ts.
-// Heavy sub-modules have been extracted:
-//   - `src/static/src/lib/markdown.ts` — pure markdown + LaTeX rendering
-//   - `./hyperparams.ts` — hyperparameter UI renderers
-//   - `./curl.ts` — cURL command generator and API key resolution
+// Shared types, state model, model-type inference, and utilities for the
+// Playground view. Consumed by chat.ts, image.ts, inspector.ts and index.ts.
+// Rendering lives in lib/markdown.ts, hyperparams.ts and curl.ts.
 
 import { copyToClipboard } from '../../lib/clipboard.js';
 import { showToast } from '../../components/toast.js';
 
-// ==========
 // Public types
-// ==========
 
 export type ModalityType = 'chat' | 'image' | 'embedding' | 'audio' | 'decision';
 export type ResponseTab = 'formatted' | 'raw' | 'headers' | 'stream';
@@ -47,14 +40,9 @@ export interface ExtractedThinking {
   isThinking: boolean;
 }
 
-// ==========
-// Shared mutable state model
-//
-// Every module-local owned by the original monolithic view lives in this
-// single object. The orchestrator (`index.ts`) creates it, `bindPlaygroundState`
-// exposes it to presentation sub-modules, and the lifecycle hooks mutate it
-// directly — mirroring the original module-locals 1:1.
-// ==========
+// Shared mutable state model. index.ts creates it, `bindPlaygroundState`
+// exposes it to the presentation sub-modules, and the lifecycle hooks mutate
+// it directly.
 
 export interface PlaygroundState {
   modality: ModalityType;
@@ -244,9 +232,7 @@ export function getPlaygroundState(): PlaygroundState {
   return _state;
 }
 
-// ==========
 // Helpers
-// ==========
 
 export function estimateTokens(text: string): number {
   if (!text) return 0;
@@ -269,9 +255,7 @@ export function copyText(text: string, label = 'Content'): void {
     });
 }
 
-// ==========
 // Model type inference
-// ==========
 
 const CHAT_GUARDS = ['gemini', 'gpt-', 'claude', 'qwen', 'llama', 'mistral', 'mixtral', 'deepseek', 'gemma', 'inkling', 'mimo', 'muse-spark'];
 const AUDIO_EXPLICIT = ['whisper', 'tts', '-asr', '_asr', '/asr', 'deepgram', 'speechmatics', 'elevenlabs', 'fish-audio'];
@@ -300,9 +284,7 @@ export function inferModelTypeFrontend(
   return 'chat';
 }
 
-// ==========
 // Reasoning / Thinking extraction
-// ==========
 
 export function extractThinkingProcess(
   explicitReasoning: string,
@@ -343,14 +325,9 @@ export function extractThinkingProcess(
   };
 }
 
-// ==========
-// Code block copy handler (installed once as a delegated `click` listener;
-// consumed by lib/markdown.ts rendered HTML in fenced code blocks).
-//
-// The rendered markup carries NO inline `onclick` — the dashboard's CSP
-// (`script-src 'self'`) blocks inline handlers — so we listen at the
-// document level and match `button.md-copy-btn`.
-// ==========
+// Code block copy handler: a single delegated `click` listener for the
+// `button.md-copy-btn` that lib/markdown.ts renders into fenced code blocks.
+// The markup carries NO inline `onclick` — CSP `script-src 'self'` blocks it.
 
 /** Copy the fenced code stored in `data-code` (percent-encoded) to the
  *  clipboard and flash a "Copied!" label on the button. Exported for tests. */

@@ -77,7 +77,7 @@ describe("models-sync", () => {
 
     dispatchWs(envelope);
 
-    // Wait microtasks
+    // Drain microtasks.
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(state.models).toHaveLength(1);

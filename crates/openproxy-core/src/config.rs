@@ -11,40 +11,26 @@ pub use openproxy_types::config::{
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Per-target cooldown duration. When a target fails with a
-/// retryable error (5xx, 429, timeout, or connection error — see
-/// [`crate::retry::RetryPolicy::is_retryable`]), the pipeline parks
-/// it in `target_cooldowns` for `cooldown_secs` seconds and skips
-/// it on subsequent requests. The in-memory circuit breaker
-/// complements this for *accounts*; this section is the
-/// *target*-scoped, *persistent* counterpart.
+/// Per-target cooldown. A retryable failure (5xx, 429, timeout, connection
+/// error, see [`crate::retry::RetryPolicy::is_retryable`]) parks the target in
+/// `target_cooldowns` for `cooldown_secs`, and later requests skip it. The
+/// in-memory circuit breaker is the account-scoped counterpart; this is the
+/// target-scoped, persistent one.
 ///
-/// Override at the boundary:
-/// - `OPENPROXY_COOLDOWN_SECS` env var (read at config-load time,
-///   wins over the TOML value)
-/// - `[cooldown] cooldown_secs = 60` in `config.toml`
+/// Precedence: `OPENPROXY_COOLDOWN_SECS` (read by [`AppConfig::load_or_default`]
+/// at load time) over `[cooldown] cooldown_secs` in `config.toml`, so a container
+/// can flip the value without rewriting the baked-in file.
 ///
-/// The env var is checked in [`AppConfig::load_or_default`] so a
-/// docker container can flip the cooldown without rewriting the
-/// baked-in config file.
+/// Per-combo columns (`cooldown_base_secs`, `cooldown_max_secs`,
+/// `cooldown_factor`, migration 000035) take precedence over these defaults; they
+/// are the fallback for a combo whose column is `NULL`. The pipeline resolves
+/// combo-override vs global default per request, so a change here lands on the
+/// next request without a restart.
 ///
-/// ## Exponential cooldown (migration 000035)
-///
-/// Per-combo overrides (`cooldown_base_secs`, `cooldown_max_secs`,
-/// `cooldown_factor`) on the `combos` table take precedence over
-/// these defaults; the fields below are the fallback used when a
-/// combo's column is `NULL` (the legacy / pre-migration-000035
-/// state). The pipeline resolves "combo override or global
-/// default?" at request time, so flipping a value here takes
-/// effect on the next request without a restart.
-///
-/// - `cooldown_secs`: the flat-window duration AND the exponential
-///   `base_secs` (the two are intentionally the same field so a
-///   pre-migration config keeps working unchanged).
-/// - `max_secs`: the cap on the exponential growth. Default 3600
-///   (1 hour).
-/// - `factor`: the exponential growth factor. Default 2 (each
-///   failure doubles the cooldown window).
+/// - `cooldown_secs` is both the flat window and the exponential `base_secs`, so a
+///   pre-migration config keeps working unchanged.
+/// - `max_secs` caps the exponential growth, default 3600.
+/// - `factor` is the growth factor, default 2.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoggingConfig {
@@ -70,7 +56,7 @@ pub enum LogFormat {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct CompressionConfig {
-    /// Modo de compresión: "off" | "lite" | "rtk"
+    /// Compression mode: "off" | "lite" | "rtk"
     #[serde(default)]
     pub mode: CompressionMode,
 }
@@ -83,12 +69,8 @@ impl Default for CompressionConfig {
     }
 }
 
-/// Database maintenance configuration: automatic VACUUM + usage row
-/// retention. All fields have sensible defaults so the `[storage]`
-/// section in `config.toml` can omit the entire `[storage.maintenance]`
-/// subsection.
-///
-/// ## TOML example
+/// Automatic VACUUM plus usage row retention. Defaults let `[storage]` in
+/// `config.toml` omit `[storage.maintenance]` entirely:
 ///
 /// ```toml
 /// [storage.maintenance]
@@ -97,11 +79,9 @@ impl Default for CompressionConfig {
 /// usage_retention_days = 7    # default: 7
 /// ```
 ///
-/// Set `auto_vacuum = false` to disable the background VACUUM task
-/// entirely (the manual `POST /admin/api/debug/vacuum` endpoint still
-/// works). The usage row prune task runs regardless (it prevents the
-/// `usage` table from growing without bound), but `usage_retention_days`
-/// controls how old rows must be before they're deleted.
+/// `auto_vacuum = false` stops the background task; `POST /admin/api/debug/vacuum`
+/// still works. The prune task always runs, since the `usage` table would grow
+/// without bound, and `usage_retention_days` sets how old a row must be.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuotaSyncConfig {
@@ -166,7 +146,7 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    /// Load from a TOML file. Env vars OPENPROXY_<SECTION>__<FIELD> override.
+    /// Load from a TOML file, where `OPENPROXY_<SECTION>__<FIELD>` overrides.
     pub fn load(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let contents = std::fs::read_to_string(path.as_ref())
             .map_err(|e| CoreError::Config(format!("read {}: {}", path.as_ref().display(), e)))?;
@@ -175,14 +155,11 @@ impl AppConfig {
         Ok(cfg)
     }
 
-    /// Load with default fallback if file doesn't exist.
+    /// Load with defaults when the file is missing.
     ///
-    /// Env-var overrides (per the spec's `OPENPROXY_*` convention) are
-    /// applied *after* the TOML load. Today we only honor
-    /// `OPENPROXY_COOLDOWN_SECS` (the only knob that operators
-    /// typically want to flip without rewriting the config file);
-    /// the rest of the `OPENPROXY_*__*` namespace is reserved for a
-    /// future structured-override pass.
+    /// Env overrides are applied after the TOML load. Only
+    /// `OPENPROXY_COOLDOWN_SECS` is honoured today; the rest of the
+    /// `OPENPROXY_*__*` namespace is reserved.
     pub fn load_or_default(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let mut cfg = if path.as_ref().exists() {
             Self::load(path)?

@@ -1,22 +1,10 @@
-// views/providers/index.ts — providers view orchestrator.
+// views/providers/index.ts — `mountProviders({detailId?})`, imported by
+// state/router.ts for `#/providers` and `#/providers/:id`.
 //
-// Public entry point: `mountProviders({detailId?})`. The router in
-// `state/router.ts` imports this symbol directly:
-//
-//   - `#/providers`            → `mountProviders()`
-//   - `#/providers/:id`        → `mountProviders({ detailId: ctx })`
-//
-// On mount we:
-//   1. Set the module-local `detailProviderId` / `loadError` (shared
-//      with list.ts / detail.ts via `./shared`).
-//   2. Cold-paint providers / accounts / models / proxies via
-//      `Promise.all` so the first render has data.
-//   3. Schedule a background refresh so quotas and statuses don't
-//      freeze when the user navigates back into a warm cache.
-//
-// All UI rendering lives in `./list.ts` (grid) and `./detail.ts`
-// (per-provider). This file is intentionally thin — it owns only
-// the lifecycle.
+// Sets the module-local detail/loadError state shared with list.ts and
+// detail.ts, cold-paints providers/accounts/models/proxies in parallel, then
+// schedules a background refresh so warm-cache quotas don't freeze. UI lives
+// in list.ts and detail.ts; this file owns only the lifecycle.
 
 import { state } from '../../state/index.js';
 import { api } from '../../state/api.js';
@@ -39,17 +27,15 @@ export async function mountProviders(
   if (opts.detailId) {
     setDetailProviderId(opts.detailId);
     setLoadError(null);
-    // Switching providers always starts with an empty selection —
-    // visible row_ids live in the previous provider's table.
+    // Row ids are provider-scoped, so a provider switch clears the selection.
     if (state.selectedModelsProvider !== opts.detailId) {
       state.selectedModels.clear();
       state.selectedModelsProvider = opts.detailId;
     }
     const cleanup = mountView(main, renderProviderDetail);
     try {
-      // Cold paint: fetch providers/accounts/models. Warm re-render
-      // (from cache after navigate()) skips the network initially, but
-      // does a background refresh to prevent frozen quotas and statuses.
+      // Warm re-render renders from cache first, then refreshes in the background
+      // so quotas and statuses don't freeze.
       const proxiesPromise = api('/proxies?status=alive') as Promise<FreeProxy[]>;
       if (state.providers.length === 0) {
         const [providers, accounts, models, proxies] = await Promise.all([
@@ -91,7 +77,6 @@ export async function mountProviders(
     return cleanup;
   }
 
-  // Grid view.
   setDetailProviderId(null);
   setLoadError(null);
   const cleanup = mountView(main, renderProvidersGrid);

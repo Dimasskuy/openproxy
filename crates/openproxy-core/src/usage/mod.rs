@@ -23,7 +23,6 @@ pub use analytics::*;
 
 use std::sync::{LazyLock, OnceLock};
 
-// Globals for broadcast
 static USAGE_SENDER: OnceLock<tokio::sync::broadcast::Sender<openproxy_types::RecentUsageRow>> =
     OnceLock::new();
 static STAGE_SENDER: OnceLock<tokio::sync::broadcast::Sender<openproxy_types::usage::StageEvent>> =
@@ -39,7 +38,7 @@ pub fn get_active_inflight_attempts() -> Vec<openproxy_types::usage::InflightAtt
         .unwrap_or_default()
         .as_millis() as u64;
 
-    // Retain only fresh inflight attempts (<30m safety net)
+    // Descarta intentos de más de 30m
     INFLIGHT_REGISTRY.retain(|_, v| now.saturating_sub(v.updated_at_ms) < 1_800_000);
 
     let mut list: Vec<_> = INFLIGHT_REGISTRY

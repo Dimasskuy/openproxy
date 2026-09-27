@@ -1,22 +1,16 @@
 //! Timeout profiles — per-use-type defaults, overrideable via `Custom`.
 //!
-//! Each `TimeoutProfile` variant maps to a coarse "use type" (chat, quota,
-//! oauth, ...) and resolves to a fully-expanded `ResolvedTimeouts` with a
-//! numeric value for every pipeline phase. The caller may pass
-//! `TimeoutProfile::Custom(ResolvedTimeouts { ... })` to override any
-//! value.
+//! Each `TimeoutProfile` variant maps to a coarse use type (chat, quota, oauth,
+//! ...) and resolves to a `ResolvedTimeouts` holding a value for every pipeline
+//! phase. `TimeoutProfile::Custom` overrides any value.
 //!
-//! The default numeric values mirror the existing `TimeoutsConfig` in
-//! `crates/openproxy-core/src/timeouts.rs` so behavior is identical to
-//! the legacy UpstreamClient path until call sites are migrated one by one.
+//! The numbers mirror `TimeoutsConfig` in `crates/openproxy-core/src/timeouts.rs`
+//! so the profile path and the legacy UpstreamClient path behave identically.
 
-/// Fully-resolved per-phase timeouts (in milliseconds).
-///
-/// All values are in milliseconds. The spec defines the phases as
-/// `dns` (resolve), `dial` (TCP connect), `tls` (TLS handshake),
-/// `write` (request line + headers + body), `headers` (wait for
-/// response headers — composes dial+tls+write+wait), `body_chunk`
-/// (max gap between two body chunks), and `total` (hard ceiling).
+/// Fully-resolved per-phase timeouts in milliseconds: `dns` (resolve), `dial`
+/// (TCP connect), `tls` (handshake), `write` (request line + headers + body),
+/// `headers` (wait for response headers, composes dial+tls+write+wait),
+/// `body_chunk` (max gap between two body chunks) and `total` (hard ceiling).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResolvedTimeouts {
     pub dns_ms: u64,
@@ -29,14 +23,9 @@ pub struct ResolvedTimeouts {
 }
 
 impl ResolvedTimeouts {
-    /// Sensible production defaults: a few seconds for connection,
-    /// a generous chunk gap for streaming, a 5-minute total ceiling.
-    ///
-    /// These are the system defaults used when no profile override is
-    /// provided. They match the `TimeoutsConfig` defaults in
-    /// `timeouts.rs::Timeouts::from_config` (as of the current config
-    /// schema: connect=5s, request_send=10s, ttft=30s, idle_chunk=120s,
-    /// total=300s).
+    /// Applied when no profile override is given. Kept equal to the
+    /// `TimeoutsConfig` defaults in `timeouts.rs::Timeouts::from_config`
+    /// (connect=5s, request_send=10s, ttft=30s, idle_chunk=120s, total=300s).
     pub const SYSTEM_DEFAULTS: Self = Self {
         dns_ms: 5_000,
         dial_ms: 5_000,         // == `connect_ms` system default
@@ -48,23 +37,15 @@ impl ResolvedTimeouts {
     };
 }
 
-/// Per-use-type default profile. Each variant resolves to a
-/// `ResolvedTimeouts` tuned for that workload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimeoutProfile {
-    /// Chat completion: fast first byte, generous body chunk gap.
-    /// Slightly tighter `headers_ms` than the system default to fail
-    /// fast when an upstream is dead.
+    /// Tighter `headers_ms` than the system default, to fail fast on a dead
+    /// upstream.
     Chat,
-    /// Quota refresh: short overall, no streaming body.
     Quota,
-    /// OAuth token refresh: very short, no body.
     OAuth,
-    /// Model discovery: long body, lots of JSON parsing.
     ModelDiscovery,
-    /// Image generation (future): very long body.
     ImageGeneration,
-    /// Caller-supplied: bypasses the per-variant defaults.
     Custom(ResolvedTimeouts),
 }
 
@@ -119,7 +100,6 @@ impl TimeoutProfile {
         }
     }
 
-    /// Resolve to a fully-expanded `ResolvedTimeouts`.
     pub const fn resolve(&self) -> ResolvedTimeouts {
         match self {
             TimeoutProfile::Custom(t) => *t,
@@ -137,7 +117,6 @@ mod tests {
         let t = TimeoutProfile::Chat.resolve();
         assert_eq!(t.headers_ms, 6_000);
         assert_eq!(t.body_chunk_ms, 90_000);
-        // non-overridden phases fall back to system defaults
         assert_eq!(t.total_ms, 300_000);
         assert_eq!(t.dns_ms, 5_000);
     }

@@ -1,4 +1,3 @@
-/* ----- Combo grid ----- */
 .combo-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -6,10 +5,9 @@
 }
 
 
-/* ----- Combo settings bars (priority mode + cooldown) -----
-   Rendered below the page-header / context-window-bar in the
-   combo detail view. Each bar holds a `<select>` for the mode and
-   an optional `<details>` for the mode-specific parameters. */
+/* Combo settings bars (priority mode + cooldown), rendered below
+   the page-header / context-window-bar. Each bar holds a `<select>`
+   for the mode and an optional `<details>` for the mode parameters. */
 .combo-settings-bar {
   display: flex;
   align-items: flex-start;
@@ -64,7 +62,6 @@
 .weight-input { width: 4rem; }
 
 
-/* Combo settings bars — compact, space-efficient */
 .combo-settings-bar {
   display: flex; align-items: center; gap: var(--space-3);
   padding: var(--space-1) var(--space-2); margin: var(--space-1) 0;
@@ -95,7 +92,6 @@
 }
 .combo-mode-params-body input { width: 80px; }
 
-/* Combo context window bar */
 .combo-context-window-bar {
   display: flex; align-items: center; gap: var(--space-4);
   padding: var(--space-2) var(--space-3); margin: var(--space-2) 0;
@@ -107,14 +103,12 @@
 .weight-input { width: 60px; }
 .race-input { width: 50px; }
 
-/* Cooldown banner */
 .cooldown-banner {
   padding: var(--space-2) var(--space-3); margin: var(--space-2) 0;
   border-radius: var(--radius-md); background: var(--color-warn-soft);
   color: var(--color-warn); font-size: var(--fs-sm); font-weight: 500;
 }
 
-/* Combo grid (legacy) */
 .combo-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--space-3); margin-top: var(--space-3);
@@ -126,7 +120,7 @@
 .combo-card h3 { margin: 0 0 var(--space-1); font-size: var(--fs-md); }
 .combo-card .provider-meta { font-size: var(--fs-xs); color: var(--color-text-muted); }
 
-/* ----- Combos Table & Sections ----- */
+/* Combos table and sections */
 .combos-list-container {
   display: flex;
   flex-direction: column;
@@ -216,7 +210,6 @@
   font-size: var(--fs-sm);
 }
 
-/* Auto-combos collapsible section */
 .auto-combos-section {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -267,11 +260,9 @@
   border-top: 1px solid var(--color-border);
 }
 
-/* Targets table columns */
 .combo-targets-table { width: 100%; }
 .col-target-weight, .col-target-thinking, .col-target-cooldown { font-size: var(--fs-xs); }
 
-/* ----- Sub-combo Grouped Styling ----- */
 .subcombo-group-row {
   background: rgba(99, 102, 241, 0.05);
   border-left: 4px solid var(--chart-indigo, #6366f1) !important;
@@ -368,7 +359,6 @@
   color: var(--color-text-muted);
 }
 
-/* Accordion nested row & container */
 .subcombo-accordion-row {
   background: rgba(99, 102, 241, 0.02);
   border-left: 4px solid var(--chart-indigo, #6366f1) !important;
@@ -472,7 +462,6 @@
   background: var(--color-surface-2);
 }
 
-/* Sub-combo nested table */
 .subcombo-nested-table {
   width: 100%;
   border-collapse: collapse;
@@ -508,7 +497,6 @@
   font-size: var(--fs-sm);
 }
 
-/* Edit Sub-Combo Modal */
 .subcombo-modal {
   max-width: 540px;
 }
@@ -532,6 +520,6 @@
   font-size: var(--fs-xs);
   margin-right: auto;
 }
-/* Responsive mobile specification extracted to combos_mobile.css */
+/* Responsive mobile rules live in combos_mobile.css. */
 
 

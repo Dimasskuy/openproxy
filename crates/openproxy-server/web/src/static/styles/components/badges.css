@@ -1,8 +1,4 @@
-/* ============================================
-   BADGES, CHIPS & STATUS INDICATORS
-   ============================================ */
 
-/* ----- Badges & Chips ----- */
 .badge {
   display: inline-block;
   padding: 0.15rem 0.5rem;
@@ -53,7 +49,6 @@
   line-height: 1;
 }
 
-/* ----- Status pill ----- */
 .status-pill {
   display: inline-block;
   padding: 0.12rem 0.5rem;
@@ -84,7 +79,6 @@
   border-color: var(--color-status-lost);
 }
 
-/* ----- Quota bar ----- */
 .quota-bar {
   display: flex;
   flex-direction: column;
@@ -115,7 +109,6 @@
 .quota-bar-fill.error { background: var(--color-error, #ef4444); }
 .quota-bar-label { font-size: var(--fs-xs); color: var(--color-text-muted); }
 
-/* ----- Connection badge & Status dot ----- */
 .status-dot {
   width: 6px;
   height: 6px;

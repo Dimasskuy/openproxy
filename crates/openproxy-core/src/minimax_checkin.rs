@@ -28,7 +28,6 @@ pub fn start_checkin_scheduler(
     let token = cancel.clone();
 
     tokio::spawn(async move {
-        // Initial delay so system boot finishes
         tokio::select! {
             () = token.cancelled() => return,
             () = sleep(Duration::from_secs(45)) => {}
@@ -152,7 +151,6 @@ pub async fn run_account_checkin(
         .as_deref()
         .map_or(MiniMaxRegion::Global, MiniMaxRegion::parse_str);
 
-    // Enrich identity (real_user_id, email, display_name)
     let identity =
         crate::oauth::minimax::resolve_user_identity(upstream_client, &access_token, region).await;
     if meta.real_user_id.is_none() && identity.real_user_id.is_some() {
@@ -171,7 +169,7 @@ pub async fn run_account_checkin(
     meta.last_checkin_date = Some(today);
     meta.streak_days = Some(summary.streak_days);
 
-    // Refresh membership info (op_group_id, tier, credit_balance) AFTER checkin
+    // AFTER checkin: refresca membresía (op_group_id, tier, credit_balance)
     let uid = meta.real_user_id.as_deref().unwrap_or("0");
     if let Some((op_group_id, tier, credits)) =
         crate::oauth::minimax::resolve_membership_info(upstream_client, &access_token, uid, region)

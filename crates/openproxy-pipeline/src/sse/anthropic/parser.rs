@@ -3,12 +3,11 @@
 use super::super::MAX_SSE_EVENT_TYPE_BYTES;
 use openproxy_types::error::Result;
 
-/// Parse a single line from an Anthropic SSE stream.
-/// Anthropic SSE uses `event:` lines to set the event type, then `data:` lines
-/// with the payload. This function tracks state across calls.
+/// Parse one Anthropic SSE stream line, tracking the current event type
+/// across calls.
 ///
-/// Returns `Ok(Some(payload))` when a complete data payload is found,
-/// `Ok(None)` for non-data lines, and `Err` for parse failures.
+/// Returns `Ok(Some("event_type\ndata_payload"))` on a `data:` line and
+/// `Ok(None)` for every other line, including `event:` lines.
 pub fn parse_anthropic_sse_stream_line(
     line: &str,
     current_event: &mut Option<String>,
@@ -16,7 +15,6 @@ pub fn parse_anthropic_sse_stream_line(
     let line = line.trim_end_matches('\r');
 
     if line.is_empty() {
-        // Empty line = end of event, reset
         *current_event = None;
         return Ok(None);
     }
@@ -29,7 +27,7 @@ pub fn parse_anthropic_sse_stream_line(
                 max = MAX_SSE_EVENT_TYPE_BYTES,
                 "SSE event type exceeds maximum length — truncating"
             );
-            // Truncate instead of erroring to keep the stream alive.
+            // Truncating keeps the stream alive.
             *current_event = None;
             return Ok(None);
         }
@@ -39,11 +37,9 @@ pub fn parse_anthropic_sse_stream_line(
 
     if let Some(data) = line.strip_prefix("data: ") {
         let event_type = current_event.as_deref().unwrap_or("unknown");
-        // Return the event type alongside the data so the caller can translate
-        // Format: "event_type\ndata_payload"
         return Ok(Some(format!("{event_type}\n{data}")));
     }
 
-    // Ignore id:, retry:, comments, etc.
+    // id:, retry: and comment lines carry no event.
     Ok(None)
 }

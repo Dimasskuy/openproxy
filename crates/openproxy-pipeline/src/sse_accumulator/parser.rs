@@ -188,18 +188,17 @@ pub(crate) fn extract_delta_field<'a>(payload: &'a str, target_key: &str) -> Opt
     None
 }
 
-/// Extract `delta.content` from an OpenAI streaming chunk JSON payload
-/// strictly within `choices[0].delta` object boundary, ignoring nested tool calls.
+/// `delta.content`, read strictly inside the `choices[0].delta` object so
+/// nested `tool_calls` arguments are not mistaken for it.
 pub(crate) fn extract_delta_content(payload: &str) -> Option<&str> {
     extract_delta_field(payload, "content")
 }
 
-/// Extract `delta.reasoning_content` strictly within `choices[0].delta`.
+/// `delta.reasoning_content`, read under the same `choices[0].delta` boundary.
 pub fn extract_reasoning_content(payload: &str) -> Option<&str> {
     extract_delta_field(payload, "reasoning_content")
 }
 
-/// Normalize non-standard reasoning fields in an OpenAI streaming chunk.
 fn should_check_reasoning_fields(payload: &str) -> bool {
     if !payload.contains("reasoning") {
         return false;

@@ -1,17 +1,15 @@
 //! HTTP router.
 //!
-//! Spec §2: every public + admin endpoint is wired here, in axum 0.8
-//! syntax. Routes are grouped into nested sub-routers (`public_api_routes`,
-//! `admin_routes`, `admin_api_routes`) for readability, then merged
-//! into the root `Router`. The request-id middleware sits on the
-//! outermost layer so every response — public or admin — carries an
-//! `x-request-id` header.
+//! Spec §2: every public + admin endpoint is wired here, in axum 0.8 syntax.
+//! Routes are grouped into nested sub-routers (`public_api_routes`, `admin_routes`,
+//! `admin_api_routes`) then merged into the root `Router`; the request-id
+//! middleware sits on the outermost layer so every response carries
+//! `x-request-id`.
 //!
-//! ## Top-level URL layout (post-F0 merge of the dashboard SPA into
-//! the server binary)
+//! ## Top-level URL layout (dashboard SPA merged into the server binary)
 //!
 //! | Path                          | Handler / source                          |
-//! |-------------------------------|--------------------------------------------|
+//! |----------|----------|
 //! | `GET  /v1/health`             | `health` (unauthenticated)                |
 //! | `GET  /v1/models`             | `handlers::models::list_models`           |
 //! | `POST /v1/chat/completions`   | `handlers::chat::chat_completions`        |
@@ -32,15 +30,14 @@
 //! | `GET  /admin/health`          | `handlers::admin::runtime::admin_health` (unauthenticated, kept public for LB probes) |
 //! | `GET  /admin/oauth/callback`  | `handlers::admin::oauth::oauth_callback` (unauthenticated, browser callback) |
 //!
-//! The dashboard SPA loads BEFORE auth: `index.html`, `callback.html`,
-//! and every `/admin/dist/*` / `/admin/styles/*` / `/admin/fonts/*`
-//! asset are served without checking credentials. The SPA itself
-//! sends the admin API key as a Bearer token on each `/admin/api/*`
-//! call. The WebSocket upgrade at `/admin/ws` does its own auth
-//! inside the handler (`handlers::admin::usage::usage_stream`): it accepts
-//! a Bearer header (non-browser clients) or a single-use `?ticket=` minted
-//! by `POST /admin/api/ws-ticket` (browsers can't set headers on WS
-//! handshakes, and a raw key in the URL would end up in proxy logs).
+//! The SPA loads BEFORE auth: `index.html`, `callback.html` and every
+//! `/admin/dist/*` / `/admin/styles/*` / `/admin/fonts/*` asset are served
+//! without credentials; the SPA then sends the admin API key as a Bearer token
+//! on each `/admin/api/*` call. `/admin/ws` does its own auth in the handler
+//! (`handlers::admin::usage::usage_stream`): a Bearer header (non-browser
+//! clients) or a single-use `?ticket=` from `POST /admin/api/ws-ticket` —
+//! browsers cannot set headers on a WS handshake and a raw key in the URL would
+//! land in proxy logs.
 
 use axum::{Json, Router, middleware, routing::get};
 use serde_json::json;
@@ -71,87 +68,63 @@ pub fn build_router(state: AppState) -> Router {
         .layer(middleware::from_fn(
             crate::middleware::request_id::request_id,
         ))
-        // MEDIUM fix (audit finding #8): axum's default body limit is
-        // 2 MiB, which is too small for a single legitimate prompt (some
-        // long-context requests attach tens of KiB of system prompt +
-        // tool definitions) and has no project-wide ceiling for the
-        // admin JSON extractors (POST /admin/api/combos/{id}/targets,
-        // handlers::admin::models::bulk_toggle_models, handlers::admin::combos::reorder_combo_targets, etc.). Raising to
-        // 32 MiB allows long-context chat while keeping a sane DoS
-        // ceiling. Streaming requests (SSE) are not affected — the
-        // limit applies to the request body, not the response.
+        // 32 MiB: axum's 2 MiB default is too small for a long-context prompt
+        // (tens of KiB of system prompt + tool definitions) and leaves admin JSON
+        // extractors (combo targets, bulk_toggle_models, reorder_combo_targets)
+        // without a project-wide ceiling. Request bodies only — SSE responses
+        // are unaffected.
         .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024))
         .with_state(state)
-        // Browser security headers (CSP / X-Frame-Options / nosniff) on
-        // the outermost layer so every response carries them. See
-        // `middleware::security_headers` for the policy rationale.
+        // Outermost so every response carries the browser security headers;
+        // policy rationale in `middleware::security_headers`.
         .layer(middleware::from_fn(
             crate::middleware::security_headers::security_headers,
         ))
 }
 
 fn build_admin_router(state: &AppState) -> Router<AppState> {
-    // Admin REST API. Every route here is mounted under `/admin/api/*`
-    // (see `admin_routes` below). The auth middleware
-    // (`admin_auth_middleware`) is layered on this sub-router ONLY —
-    // the SPA shell, static assets, the WS handler, and the
-    // public OAuth/health endpoints stay unauthenticated so the
-    // dashboard can load before the user enters credentials.
+    // Admin REST API. `admin_auth_middleware` is layered on this sub-router
+    // ONLY, so the SPA shell, static assets, the WS handler and the public
+    // OAuth/health endpoints stay unauthenticated and the dashboard can load
+    // before credentials are entered.
     //
-    // Authorization model: every admin REST route EXCEPT the
-    // liveness probe (`/admin/health`) and the OAuth browser
-    // callback (`/admin/oauth/callback`) requires a `manage`-scope
-    // API key, verified by [`admin_auth_middleware`]. Those two
-    // exempt routes are intentionally public: the liveness probe
-    // is for load balancers and uptime monitors that should not
-    // need credentials, and the OAuth callback is the URL the
-    // upstream provider (Google, etc.) redirects the user's
-    // browser to — by design the browser arrives without admin
-    // credentials, and the handler just echoes back the `code`
-    // for the user to copy into the dashboard.
+    // Every route here requires a `manage`-scope API key except two
+    // intentional exemptions: `/admin/health` (LB probes carry no credentials)
+    // and `/admin/oauth/callback` (the provider redirects the browser there by
+    // design; the handler just echoes the `code` back for pasting into the
+    // dashboard).
     //
-    // The middleware reads only the `Authorization` header, which
-    // is the contract for the HTTP path. The WebSocket upgrade
-    // handler (`handlers::admin::usage::usage_stream`) additionally
-    // accepts a single-use `?ticket=` (never a raw key) — that path is
-    // handled inside the handler itself (the middleware would not see
-    // the WS upgrade as a normal request), so the per-handler auth
-    // check there is the source of truth for the WebSocket path.
+    // The middleware reads only the `Authorization` header (the HTTP contract).
+    // The WebSocket upgrade additionally accepts a single-use `?ticket=` — never
+    // a raw key — and is authenticated inside
+    // `handlers::admin::usage::usage_stream`, since the middleware would not see
+    // a WS upgrade as a normal request.
     let admin_api_routes = handlers::admin::admin_api_routes();
 
-    // Apply the admin auth middleware to the protected admin REST
-    // routes ONLY. The state-clone is required because
-    // `from_fn_with_state` takes ownership of the state; we still
-    // attach the same state to the root router via `with_state(state)`
-    // below.
+    // The state clone is required because `from_fn_with_state` takes ownership;
+    // the same state is attached to the root router via `with_state(state)`.
     let admin_api_routes = admin_api_routes.layer(middleware::from_fn_with_state(
         state.clone(),
         admin_auth_middleware,
     ));
 
-    // Top-level admin router. Mounts the SPA shell at `/admin` and
-    // `/admin/`, the OAuth callback page at `/admin/callback.html`,
-    // the protected REST API under `/admin/api/*`, the WS upgrade at
-    // `/admin/ws`, and the two intentionally-public endpoints
-    // (`/admin/health`, `/admin/oauth/callback`). Anything else under
-    // `/admin/*` falls through to `admin_ui::serve_asset`, which
-    // either serves an embedded static asset (`/admin/dist/app.js`,
-    // `/admin/styles/index.css`, etc.) or the SPA shell (for unknown
-    // paths — the SPA's hash-router takes over from there).
+    // Top-level admin router: SPA shell at `/admin` and `/admin/`, the OAuth
+    // callback page, the protected REST API under `/admin/api/*`, the WS upgrade,
+    // and the two public endpoints. Anything else under `/admin/*` falls through
+    // to `admin_ui::serve_asset`, which serves an embedded asset or (unknown
+    // path) the SPA shell, whose hash-router takes over.
     //
     // Auth scope:
-    //   - `/admin/api/*`       — auth middleware (above)
-    //   - `/admin/ws`          — per-handler auth (`handlers::admin::usage::usage_stream`)
-    //   - `/admin/health`      — public (LB probes)
+    //   - `/admin/api/*`         — auth middleware (above)
+    //   - `/admin/ws`            — per-handler auth (`handlers::admin::usage::usage_stream`)
+    //   - `/admin/health`        — public (LB probes)
     //   - `/admin/oauth/callback` — public (browser callback)
-    //   - everything else      — public (SPA shell + assets)
+    //   - everything else        — public (SPA shell + assets)
     Router::new()
-        // `/admin` and `/admin/` both serve the SPA shell. axum 0.7+
-        // treats trailing-slash and no-trailing-slash as different
-        // paths, so we register both. (Note: axum 0.8 rejects empty-string
-        // route paths, so we only register "/" here — the outer router's
-        // `.nest("/admin", admin_routes)` handles the no-trailing-slash case
-        // via the SPA fallback.)
+        // axum 0.7+ treats trailing-slash and no-trailing-slash as distinct
+        // paths. Only "/" is registered here: axum 0.8 rejects empty-string route
+        // paths, and the outer `.nest("/admin", admin_routes)` covers the
+        // no-trailing-slash form via the SPA fallback.
         .route("/", get(admin_ui::index_html))
         .route(
             "/callback.html",
@@ -163,31 +136,24 @@ fn build_admin_router(state: &AppState) -> Router<AppState> {
             get(handlers::admin::oauth::oauth_callback),
         )
         .route("/ws", get(handlers::admin::usage::usage_stream))
-        // F3: i18n string packs. Public (no auth) — the dashboard's
-        // `loadLang('en')` runs at boot BEFORE the SPA can attach the
-        // admin Bearer token, and i18n packs contain no secrets
-        // (only generic UI labels). Registered as a literal route here
-        // (not under `/api`) so it stays outside the auth middleware.
+        // i18n string packs, public (no auth): `loadLang('en')` runs at boot
+        // before the SPA can attach the admin Bearer token, and the packs hold
+        // only generic UI labels. Registered here (not under `/api`) to stay
+        // outside the auth middleware.
         //
-        // NOTE on the route pattern: axum 0.8 rejects `/i18n/{lang}.json`
-        // ("Only one parameter is allowed per path segment") because
-        // mixing a path-param with a literal `.json` suffix in a single
-        // segment is no longer supported. We register `/i18n/{lang}`
-        // instead, which matches `/i18n/en.json` as a single segment
-        // (no slash in `en.json`) and captures `lang = "en.json"`.
-        // The handler then strips the optional `.json` extension and
-        // validates the lang code. See `admin_ui::serve_i18n` for the
-        // path-traversal guard + cache headers + extension parsing.
+        // Route pattern: axum 0.8 rejects `/i18n/{lang}.json` ("Only one
+        // parameter is allowed per path segment"), so `/i18n/{lang}` is
+        // registered instead — it matches `/i18n/en.json` as one segment and
+        // captures `lang = "en.json"`. The handler strips the optional `.json`
+        // and validates the code; path-traversal guard, cache headers and
+        // extension parsing in `admin_ui::serve_i18n`.
         .route("/i18n/{lang}", get(admin_ui::serve_i18n))
         .nest("/api", admin_api_routes)
         .fallback(admin_ui::serve_asset)
 }
 
-/// `GET /v1/health` — unauthenticated liveness probe.
-///
-/// Returns `{"status": "ok", "version": <CARGO_PKG_VERSION>}`. The
-/// version string is baked at compile time and reflects the server
-/// crate's package version.
+/// `GET /v1/health` — unauthenticated liveness probe returning
+/// `{"status": "ok", "version": <CARGO_PKG_VERSION>}` (baked at compile time).
 async fn health() -> Json<serde_json::Value> {
     Json(json!({
         "status": "ok",
@@ -276,8 +242,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_models_catalog_requires_key_unless_anonymous_opt_in() {
-        // Zero active keys AND `allow_anonymous = false` (the default):
-        // `/v1/models` must NOT leak the catalog. Same gate as chat.
+        // No active keys + `allow_anonymous = false` (the default): the catalog
+        // must not leak. Same gate as chat.
         let (pool, _path) = fresh_pool();
         let db_pool = Arc::new(pool);
         let master_key = Arc::new(MasterKey::generate().unwrap());
@@ -300,8 +266,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
-        // With the explicit opt-in (what `make_state()` sets) the
-        // first-boot anonymous window still works.
+        // The explicit opt-in (`make_state()`) keeps the first-boot window open.
         let app = build_router(make_state().await);
         let response = app
             .oneshot(
@@ -348,7 +313,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_admin_api_fallback_404_json() {
-        // Unmatched /admin/api/* routes should return JSON 404, not HTML
+        // Unmatched /admin/api/* must return JSON 404, not the HTML SPA shell.
         let state = make_state().await;
         let app = build_router(state.clone()).layer(axum::Extension(
             axum::extract::connect_info::ConnectInfo(

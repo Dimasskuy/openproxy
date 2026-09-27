@@ -14,8 +14,8 @@ mod openai;
 mod responses;
 mod stream_to_value;
 
-// Re-export the Anthropic `merge_usage` helper so the streaming state
-// can call it without exposing the rest of the Anthropic submodule.
+// Re-exported so the streaming state reaches it without importing the rest of
+// the Anthropic submodule.
 pub(crate) use anthropic::merge_usage;
 
 use crate::translation::OpenAIUsage;
@@ -33,42 +33,35 @@ pub struct UpstreamSseChunk {
     pub payload: Value,
     /// Whether this is the final chunk ([DONE] sentinel).
     pub done: bool,
-    /// Usage stats if present in this chunk (usually only the final one).
+    /// Usage stats if present in this chunk, usually only the final one.
     pub usage: Option<OpenAIUsage>,
     /// Upstream stop reason (e.g. "end_turn", "max_tokens", "stop_sequence"
     /// for Anthropic; mapped finish_reason for OpenAI). Only set on the
     /// final chunk.
     pub stop_reason: Option<String>,
-    /// Extracted per-chunk reasoning delta. Populated by:
-    /// - Gemini `parts[].thought == true` items,
-    /// - Anthropic `content_block_delta` with `delta.type == "thinking_delta"`.
+    /// Extracted per-chunk reasoning delta. Populated by Gemini
+    /// `parts[].thought == true` items and by Anthropic
+    /// `content_block_delta` with `delta.type == "thinking_delta"`.
     ///
     /// `None` when this chunk carries no reasoning.
     pub delta_reasoning: Option<String>,
-    /// Extracted per-chunk tool_calls deltas. Populated by:
-    /// - Anthropic `content_block_start` (tool_use block) emits the
-    ///   `{index, id, type, function:{name, arguments:""}}` record,
-    /// - Anthropic `content_block_delta` with `delta.type == "input_json_delta"`
-    ///   emits the running `{index, function:{arguments:...}}` record.
+    /// Extracted per-chunk tool_calls deltas. Anthropic
+    /// `content_block_start` (tool_use block) emits the
+    /// `{index, id, type, function:{name, arguments:""}}` record, and
+    /// `content_block_delta` with `delta.type == "input_json_delta"` emits
+    /// the running `{index, function:{arguments:...}}` record.
     ///
     /// Empty when this chunk carries no tool_calls.
     pub delta_tool_calls: Vec<serde_json::Value>,
-    /// Whether this chunk carries "real content" — i.e. actual generated
-    /// tokens (text, reasoning, or tool-call argument fragments) as
-    /// opposed to metadata-only events (block announcements, stop
-    /// signals, usage reports).
+    /// Whether this chunk carries real generated tokens (text, reasoning or
+    /// tool-call argument fragments) as opposed to metadata-only events.
     ///
-    /// The pipeline uses this flag to decide whether to call
-    /// [`UpstreamBodyStream::note_content_chunk`], which resets the
-    /// chunk-gap (`idle_chunk_ms`) timer. Only chunks with `has_content
-    /// == true` should reset the timer — metadata-only events (like
-    /// Anthropic's `content_block_start` for a `tool_use` block, which
-    /// announces the tool call id+name but carries empty arguments)
-    /// must NOT reset it, because the model hasn't started generating
-    /// actual argument tokens yet.
+    /// The pipeline calls `note_content_chunk` (which resets the chunk-gap
+    /// `idle_chunk_ms` timer) only when this is `true`. An Anthropic
+    /// `content_block_start` for a `tool_use` block announces the tool id and
+    /// name with empty arguments, so it must not reset the timer.
     ///
-    /// Default is `true` (most chunks carry content). Set to `false`
-    /// explicitly in translators for metadata-only events.
+    /// Defaults to `true`; translators set `false` for metadata-only events.
     pub has_content: bool,
 }
 
@@ -102,16 +95,15 @@ impl UpstreamSseChunk {
     }
 
     /// Get the forwardable JSON string. Returns the raw payload if
-    /// available (zero allocation), otherwise serializes the parsed payload.
+    /// available, otherwise serializes the parsed payload.
     pub fn into_json_string(self) -> String {
         self.raw_payload.unwrap_or_else(|| {
             serde_json::to_string(&self.payload).unwrap_or_else(|_| "{}".to_string())
         })
     }
 
-    /// Get the SSE frame as pre-formatted `data: {json}\n\n` `Bytes`,
-    /// ready for direct socket write. Avoids the intermediate `String`
-    /// allocation when the frame is immediately written to the socket.
+    /// Pre-formatted `data: {json}\n\n` frame, ready for a direct socket write
+    /// with no intermediate `String`.
     pub fn into_sse_bytes(self) -> bytes::Bytes {
         if let Some(raw) = self.raw_payload {
             return build_sse_frame(&raw);
@@ -128,9 +120,9 @@ impl UpstreamSseChunk {
     }
 }
 
-/// Build a `data: <payload>\n\n` SSE frame as `Bytes`, ready for socket write.
-/// The `+ 16` covers `"data: "` (6) + `"\n\n"` (2) + slack for BytesMut's
-/// allocation strategy. Caller passes the inner JSON (no leading `data: `).
+/// `data: <payload>\n\n` as `Bytes`, ready for a socket write. The caller
+/// passes the inner JSON with no leading `data: `; `+ 16` covers `"data: "`
+/// (6) plus `"\n\n"` (2) plus BytesMut's allocation slack.
 pub fn build_sse_frame(payload: &str) -> bytes::Bytes {
     let mut b = bytes::BytesMut::with_capacity(payload.len() + 16);
     b.extend_from_slice(b"data: ");
@@ -139,13 +131,9 @@ pub fn build_sse_frame(payload: &str) -> bytes::Bytes {
     b.freeze()
 }
 
-/// Helper to extract data payload from an SSE line.
-///
-/// Trims line endings (`\r`, `\n`), ignores empty lines and comment lines (starting with `:`),
-/// strips the `data:` prefix, and trims leading whitespace.
-///
-/// Returns `None` if the line is empty, a comment, not a `data:` line, or has an empty payload.
-/// Otherwise returns `Some(payload)` (e.g. `Some("[DONE]")` or `Some("{\"content\":\"...\"}")`).
+/// Data payload of an SSE line, trimming line endings and leading whitespace
+/// and skipping empty, comment (leading `:`) and non-`data:` lines. `None` for
+/// anything but a non-empty payload.
 #[inline]
 pub fn parse_sse_data_line(line: &str) -> Option<&str> {
     let trimmed = line.trim_end_matches(['\r', '\n']);
@@ -206,7 +194,6 @@ impl SseParser {
             let line_bytes = self.buffer.split_to(pos);
             self.buffer.advance(1); // skip '\n'
 
-            // Pre-reserve buffer space to avoid repeated reallocations
             if self.buffer.capacity() - self.buffer.len() < 4096 {
                 self.buffer.reserve(16384);
             }
@@ -239,8 +226,6 @@ pub(crate) enum SseDataOrDone<'a> {
 }
 
 /// Classify an SSE line as payload, `[DONE]` sentinel, or skippable.
-/// Replaces the `parse_sse_data_line` + `[DONE]` check duplicated in
-/// every provider parser.
 #[inline]
 pub(crate) fn parse_sse_data_or_done(line: &str) -> SseDataOrDone<'_> {
     let Some(payload) = parse_sse_data_line(line) else {
@@ -253,8 +238,7 @@ pub(crate) fn parse_sse_data_or_done(line: &str) -> SseDataOrDone<'_> {
 }
 
 /// Deserialize an SSE payload as JSON, returning
-/// `CoreError::Parse("<provider> sse json: ...")`. Replaces the
-/// duplicated `serde_json::from_str` + `map_err` pattern.
+/// `CoreError::Parse("<provider> sse json: ...")`.
 #[inline]
 pub(crate) fn parse_provider_json<T, S>(payload: S, provider: &str) -> Result<T>
 where
@@ -325,9 +309,9 @@ pub(crate) fn make_text_delta(
     }
 }
 
-/// OpenAI-shape chunk for a tool-call start event (id, name, empty
-/// arguments). `has_content=false` so the idle-chunk timer isn't reset
-/// before argument tokens arrive.
+/// OpenAI-shape chunk for a tool-call start event (id, name, empty arguments).
+/// `has_content=false` so the idle-chunk timer is not reset before argument
+/// tokens arrive.
 #[inline]
 pub(crate) fn make_tool_call_start(
     chunk_id: &str,
@@ -583,14 +567,9 @@ pub fn parse_inline_sse_error<'a>(json_payload: &'a str) -> Option<ParsedInlineE
     })
 }
 
-// `MAX_TOOL_*` / `MAX_RESPONSES_*` are `pub(crate)` in their submodules
-// (spec §2.3: crate-visible, hidden from the external API). They are NOT
-// re-exported here because no in-crate consumer references them via
-// `crate::sse::MAX_TOOL_*` (verified in `streaming_state.rs` and friends:
-// all SSE-bound constants are accessed from inside the module that owns
-// them, or from `mod.rs` directly). Re-exporting `pub(crate)` items via
-// `pub(crate) use` is legal but triggers `unused_imports` under
-// `-D warnings`; this is the root-cause fix that keeps clippy clean.
+// `MAX_TOOL_*` / `MAX_RESPONSES_*` stay `pub(crate)` in their submodules: no
+// in-crate consumer reaches them through `crate::sse::*`, and a `pub(crate) use`
+// of an unused item trips `unused_imports` under `-D warnings`.
 pub use anthropic::{
     AnthropicToolUseAccumulator, parse_anthropic_sse_stream_line, translate_anthropic_sse_event,
     translate_anthropic_sse_payload,
@@ -652,25 +631,21 @@ mod tests {
 
     #[test]
     fn parse_sse_data_line_edge_cases() {
-        // Empty payloads
         assert_eq!(parse_sse_data_line(""), None);
         assert_eq!(parse_sse_data_line("data: "), None);
 
-        // Multibyte UTF-8 boundaries
         let utf8_line = "data: {\"content\": \"こんにちは\"}";
         assert_eq!(
             parse_sse_data_line(utf8_line),
             Some("{\"content\": \"こんにちは\"}")
         );
 
-        // Malformed JSON (handled gracefully because it just extracts the data string)
         let malformed_line = "data: {\"content\": \"malformed";
         assert_eq!(
             parse_sse_data_line(malformed_line),
             Some("{\"content\": \"malformed")
         );
 
-        // Edge cases with colons
         let multi_colon = "data: :data:hello";
         assert_eq!(parse_sse_data_line(multi_colon), Some(":data:hello"));
     }

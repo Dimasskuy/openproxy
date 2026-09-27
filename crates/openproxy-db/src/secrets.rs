@@ -22,8 +22,8 @@ const PREVIOUS_ENV_VAR: &str = "OPENPROXY_MASTER_KEY_PREVIOUS";
 #[derive(Clone)]
 pub struct MasterKey {
     current: [u8; KEY_LEN],
-    /// Optional previous key for rotation. If decryption with the
-    /// current key fails, the decrypt path falls back to this key.
+    /// Previous key for rotation: `decrypt` falls back to it when the current
+    /// key fails.
     previous: Option<[u8; KEY_LEN]>,
 }
 
@@ -101,12 +101,10 @@ impl MasterKey {
         let nonce = Nonce::try_from(nonce_bytes)
             .map_err(|_| CoreError::Internal("failed to parse nonce".into()))?;
 
-        // Try current key first.
         if let Some(res) = try_decrypt(&self.current, &nonce, ct) {
             return res;
         }
 
-        // Fall back to previous key (rotation).
         if let Some(prev) = &self.previous
             && let Some(res) = try_decrypt(prev, &nonce, ct)
         {
@@ -175,7 +173,6 @@ mod tests {
 
     #[test]
     fn from_env_missing() {
-        // Point at a definitely-unset var by temporarily unsetting it.
         let prev = std::env::var(ENV_VAR).ok();
         // SAFETY: tests are single-threaded; no other thread reads this env var.
         unsafe {
@@ -193,7 +190,7 @@ mod tests {
 
     #[test]
     fn from_env_wrong_length() {
-        // 16 bytes (not 32) base64-encoded.
+        // 16 bytes, not 32: base64 of the raw key, unpadded.
         let short = BASE64.encode([0u8; 16]);
         let prev = std::env::var(ENV_VAR).ok();
         // SAFETY: tests are single-threaded; no other thread reads this env var.
@@ -217,7 +214,6 @@ mod tests {
     #[test]
     fn truncated_blob_fails() {
         let key = MasterKey::generate().unwrap();
-        // 5 bytes is less than the 12-byte nonce.
         assert!(key.decrypt(&[0u8; 5]).is_err());
     }
 

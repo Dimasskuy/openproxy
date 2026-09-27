@@ -1,22 +1,17 @@
-// handlers/key-handlers.test.ts — unit tests for buildKeyBodyFromForm().
+// handlers/key-handlers.test.ts — unit tests for buildKeyBodyFromForm(), the pure form→JSON
+// payload builder extracted from `createKey` / `updateKey`. jsdom supplies the
+// `HTMLFormElement` contract; no network is touched (the fetch-backed `api()` belongs to the
+// surrounding async handlers, not the builder).
 //
-// Scope: the pure form→JSON payload builder extracted from
-// `createKey` / `updateKey`. jsdom supplies the `HTMLFormElement`
-// contract; we never hit the network (the fetch-backed `api()` is
-// only called by the surrounding async handlers, not by the builder).
-//
-// Covering here:
-//   - " " sentinel → `[]` (explicit clear-all) vs "" → `null` (no-op)
-//   - comma splitting with trim + dedupe of blanks
-//   - expiry amount/unit → ISO timestamp or null
-//   - validation failure → null (no scopes)
+// Covering: the " " sentinel → `[]` (explicit clear-all) vs "" → `null` (no-op); comma splitting
+// with trim + dedupe of blanks; expiry amount/unit → ISO timestamp or null; validation failure →
+// null (no scopes).
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { buildKeyBodyFromForm } from "./key-handlers.js";
 
-/** Build a minimal-but-realistic key form. Fields omitted here stay
- *  absent from the DOM, exercising the `querySelector → null` branch
- *  of the builder. */
+/** Build a minimal-but-realistic key form. Fields omitted here stay absent from the DOM,
+ *  exercising the builder's `querySelector → null` branch. */
 function makeKeyForm(fields: {
   label?: string;
   scopes?: string[];
@@ -31,8 +26,7 @@ function makeKeyForm(fields: {
     if (tag === "select") {
       const sel = document.createElement("select");
       sel.name = name;
-      // jsdom resets `select.value` to "" unless an <option> matches,
-      // so seed one option with the requested value.
+      // jsdom resets `select.value` to "" unless an <option> matches, so seed one.
       const opt = document.createElement("option");
       opt.value = value;
       sel.appendChild(opt);

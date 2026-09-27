@@ -1,7 +1,5 @@
-// views/playground/studio-header.ts — Playground studio header.
-//
-// Renders the top bar: status badge (idle / generating / ready / error),
-// segmented modality selector, and quick actions (run/stop, copy cURL, clear).
+// views/playground/studio-header.ts — top bar: status badge, modality selector,
+// and run/stop + copy-cURL + clear actions.
 
 import { html, type TemplateResult } from 'lit-html';
 import { requestUpdate } from '../../state/reactive.js';

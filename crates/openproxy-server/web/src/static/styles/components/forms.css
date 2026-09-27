@@ -1,8 +1,4 @@
-/* ============================================
-   FORMS & BUTTONS COMPONENT STYLES
-   ============================================ */
 
-/* ----- Buttons ----- */
 button.primary,
 .btn-primary {
   background: var(--color-primary);
@@ -86,14 +82,12 @@ button.close-btn {
   justify-content: center;
 }
 
-/* Centralized SVG Icon styling */
 .icon {
   display: inline-block;
   vertical-align: -0.125em;
   flex-shrink: 0;
 }
 
-/* ----- Forms ----- */
 .field { margin-bottom: var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); }
 .field label, .field .field-label, .field-label {
   font-size: var(--fs-sm);
@@ -103,7 +97,6 @@ button.close-btn {
 .field small { color: var(--color-text-muted); font-size: var(--fs-xs); }
 .radio-group { display: flex; gap: var(--space-3); flex-wrap: wrap; }
 
-/* ----- Theme toggle ----- */
 .theme-toggle {
   width: 36px;
   height: 36px;
@@ -125,7 +118,6 @@ button.close-btn {
   transform: rotate(15deg);
 }
 
-/* ----- Sidebar footer (collapse toggle + theme toggle) ----- */
 .sidebar-footer {
   display: flex;
   align-items: center;
@@ -136,7 +128,6 @@ button.close-btn {
 .sidebar-toggle { flex: 1; }
 body.sidebar-collapsed .sidebar-toggle { text-align: center; }
 
-/* ----- Recording toggle ----- */
 .logs-recording-toggle {
   display: inline-flex;
   align-items: center;
@@ -180,7 +171,6 @@ body.sidebar-collapsed .sidebar-toggle { text-align: center; }
 .logs-recording-toggle.off .logs-recording-dot { background: var(--color-text-muted); }
 .logs-recording-toggle strong { font-weight: 600; }
 
-/* ----- Generic toggle button (config view) ----- */
 .toggle-btn {
   position: relative;
   display: inline-flex;
@@ -224,17 +214,14 @@ body.sidebar-collapsed .sidebar-toggle { text-align: center; }
   outline-offset: 2px;
 }
 
-/* ----- Shared .actions button-bar (used by providers/list.ts, keys,
-   proxies etc. as a horizontal row of action buttons). The mobile
-   grid override (.actions:has(button)) lives in the view that owns
-   the specific button bar layout. ----- */
+/* Shared .actions button-bar. The mobile grid override
+   (.actions:has(button)) lives in the view that owns the layout. */
 .actions {
   display: inline-flex;
   gap: var(--space-1);
   align-items: center;
 }
 
-/* ----- Variant buttons missing from the historical forms.css ----- */
 button.secondary {
   background: transparent;
   color: var(--color-text-muted);

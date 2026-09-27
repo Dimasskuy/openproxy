@@ -198,7 +198,6 @@ fn test_extract_inline_tools_from_response() {
 fn test_streaming_extractor_multi_chunk() {
     let mut extractor = InlineToolStreamExtractor::new();
 
-    // Chunk 1: Normal text
     let chunk1 = json!({
         "choices": [{
             "index": 0,
@@ -210,7 +209,6 @@ fn test_streaming_extractor_multi_chunk() {
     let res1 = extractor.process_chunk(&chunk1);
     assert_eq!(res1, StreamAction::Passthrough);
 
-    // Chunk 2: Opening tag and part of invoke
     let chunk2 = json!({
         "choices": [{
             "index": 0,
@@ -220,10 +218,9 @@ fn test_streaming_extractor_multi_chunk() {
     })
     .to_string();
     let res2 = extractor.process_chunk(&chunk2);
-    // Should suppress (skip) so client doesn't see partial XML
+    // Partial XML must not reach the client.
     assert_eq!(res2, StreamAction::Skip);
 
-    // Chunk 3: Rest of invoke and close tag
     let chunk3 = json!({
         "choices": [{
             "index": 0,
@@ -245,7 +242,6 @@ fn test_streaming_extractor_multi_chunk() {
         other => panic!("expected Mutate with tool_calls, got {other:?}"),
     }
 
-    // Chunk 4: Final chunk with finish_reason: "stop" -> converted to "tool_calls"
     let chunk4 = json!({
         "choices": [{
             "index": 0,
@@ -292,18 +288,15 @@ fn test_end_to_end_anthropic_translation_with_inline_tools() {
         usage: None,
     };
 
-    // 1. Pipeline extracts inline tools into OpenAI response
     let openai_resp = extract_inline_tools_from_response(raw_minimax_response);
     assert_eq!(
         openai_resp.choices[0].finish_reason.as_deref(),
         Some("tool_calls")
     );
 
-    // 2. Client connecting via Anthropic (/v1/messages) receives translated Anthropic response
     let anthropic_resp = crate::translation::openai_response_to_anthropic(openai_resp);
     assert_eq!(anthropic_resp.stop_reason.as_deref(), Some("tool_use"));
 
-    // Verify content blocks
     assert_eq!(anthropic_resp.content.len(), 2);
     assert_eq!(anthropic_resp.content[0]["type"], "text");
     assert_eq!(anthropic_resp.content[0]["text"], "Checking models now.");
@@ -406,7 +399,6 @@ fn test_consecutive_hermes_json_objects() {
 fn test_streaming_tag_prefix_split_across_chunks() {
     let mut extractor = InlineToolStreamExtractor::new();
 
-    // Chunk 1: ends with partial prefix "<tool_"
     let chunk1 = json!({
         "choices": [{
             "index": 0,
@@ -416,7 +408,6 @@ fn test_streaming_tag_prefix_split_across_chunks() {
     })
     .to_string();
     let res1 = extractor.process_chunk(&chunk1);
-    // Should emit "Checking data: " and buffer "<tool_"
     match res1 {
         StreamAction::Mutate(s) => {
             let val: Value = serde_json::from_str(&s).unwrap();
@@ -425,7 +416,6 @@ fn test_streaming_tag_prefix_split_across_chunks() {
         other => panic!("expected Mutate with content before, got {other:?}"),
     }
 
-    // Chunk 2: completes tag and invoke
     let chunk2 = json!({
         "choices": [{
             "index": 0,
@@ -448,7 +438,7 @@ fn test_streaming_tag_prefix_split_across_chunks() {
 fn test_streaming_multi_invoke_split_across_chunks() {
     let mut extractor = InlineToolStreamExtractor::new();
 
-    // Chunk 1: Opens <tool_call> and contains first invoke with its closing tag </invoke>
+    // First invoke is closed but <tool_call> is not yet.
     let chunk1 = json!({
         "choices": [{
             "index": 0,
@@ -458,10 +448,9 @@ fn test_streaming_multi_invoke_split_across_chunks() {
     })
     .to_string();
     let res1 = extractor.process_chunk(&chunk1);
-    // Should NOT close early at </invoke>; must stay buffering
+    // </invoke> must not end the block.
     assert_eq!(res1, StreamAction::Skip);
 
-    // Chunk 2: Second invoke and closing </tool_call>
     let chunk2 = json!({
         "choices": [{
             "index": 0,
@@ -545,7 +534,6 @@ fn test_multiple_self_closing_invokes() {
 fn test_long_tag_prefix_split_across_streaming_chunks() {
     let mut extractor = InlineToolStreamExtractor::new();
 
-    // Chunk 1: Ends with opening tag > 20 chars without closing '>'
     let chunk1 = json!({
         "choices": [{
             "index": 0,
@@ -562,7 +550,6 @@ fn test_long_tag_prefix_split_across_streaming_chunks() {
         other => panic!("expected Mutate with text before, got {other:?}"),
     }
 
-    // Chunk 2: Closes '>' and body
     let chunk2 = json!({
         "choices": [{
             "index": 0,

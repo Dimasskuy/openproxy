@@ -1,23 +1,15 @@
 //! Connection pool keyed by `(scheme, host, port)`.
 //!
-//! The spec calls for `Mutex<HashMap<HostKey, hyper::client::conn::http1::SendRequest>>`.
-//! We deviate from that exact primitive (see "Deviations from the spec"
-//! in the module-level docs) because `SendRequest` is not `Clone` and
-//! owns its half of the connection: holding a `SendRequest` inside a
-//! shared `Mutex` would require `&mut` access for every send, which
-//! forces a global write lock per request and serializes all traffic
-//! to the same host.
+//! The spec asks for `Mutex<HashMap<HostKey, hyper::client::conn::http1::SendRequest>>`.
+//! `SendRequest` is not `Clone` and owns its half of the connection, so holding
+//! it in a shared `Mutex` would need `&mut` per send and serialize all traffic
+//! to one host. `hyper_util::client::legacy::Client` is `Clone` and shares an
+//! internal per-host pool, so the spec's surface (`UpstreamConnectionPool` is
+//! `Clone` and exposes a `reuses()` counter) sits on top of it.
 //!
-//! The "right primitive" in hyper 1.10 is `hyper_util::client::legacy::Client`,
-//! which is `Clone` and shares an internal per-host pool. We keep the
-//! spec's surface (`UpstreamConnectionPool` is `Clone`, exposes a
-//! `reuses()` counter) and use the legacy `Client` underneath.
-//!
-//! For unit-test observability, a `PoolObserver` connector is supported:
-//! when used, the pool tracks how many times a connection was reused
-//! (a borrowed-already-open connection from the pool) vs. freshly
-//! dialed. The counter is exposed via `UpstreamConnectionPool::reuses()`
-//! and is what the `conn_pool_reuse` test asserts on.
+//! A `PoolObserver` connector tracks reuse vs. fresh dial per host. The
+//! counter is exposed through `UpstreamConnectionPool::reuses()` and is what
+//! the `conn_pool_reuse` test asserts on.
 
 use dashmap::DashMap;
 use std::sync::Arc;
@@ -74,42 +66,35 @@ impl HostKey {
     }
 }
 
-/// Process-wide `Instant` captured at first use. We store `Instant`
-/// as a `Duration` since this epoch in an `AtomicU64` (millis), which
-/// gives us a monotonic, lock-free "last used" timestamp per pool
-/// entry. `Instant` itself is not `Copy` into an atomic, so we
-/// convert to `u64` millis at store time and back to `Instant` at
-/// load time. Monotonicity is guaranteed by `Instant` (NTP-immune).
+/// Process-wide `Instant` captured at first use. Stored as millis in an
+/// `AtomicU64` per pool entry to get a monotonic, lock-free "last used"
+/// stamp: `Instant` is not storable in an atomic, so it converts on store and
+/// load. Monotonicity comes from `Instant` (NTP-immune).
 static PROCESS_START: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
 
 fn process_start() -> Instant {
     *PROCESS_START
 }
 
-/// Current monotonic millis since `process_start()`. Used as the
-/// "last used" timestamp stored in `PoolEntry::last_used_ms`.
+/// Monotonic millis since `process_start()`, stored in
+/// `PoolEntry::last_used_ms`.
 fn now_ms() -> u64 {
     Instant::now().duration_since(process_start()).as_millis() as u64
 }
 
-/// Per-host, lazily-initialized pool entry.
-///
-/// In the current implementation the actual connection reuse is done
-/// by `hyper_util::client::legacy::Client`'s internal pool. This struct
-/// is the user-facing wrapper: it tracks the per-key "is the connection
-/// warm?" hint and the observability counter.
+/// Per-host pool entry: the warm-connection hint plus observability counters.
+/// Actual reuse happens in `hyper_util::client::legacy::Client`'s internal
+/// pool.
 #[derive(Debug)]
 struct PoolEntry {
-    /// Number of times a request to this host reused an already-open
-    /// connection (i.e. the second and later requests in a burst).
-    /// The first request is a "dial", not a "reuse".
+    /// Requests to this host that reused an already-open connection, so the
+    /// second and later requests in a burst. The first is a dial.
     reuses: AtomicUsize,
-    /// Total requests to this host. Useful as a denominator.
+    /// Total requests to this host, the denominator for `reuses`.
     total: AtomicUsize,
-    /// Last successful use as monotonic millis since `process_start()`.
-    /// Used by the time-based eviction sweep (MEDIUM-3 fix: replaced
-    /// the old tick-count field with wall-clock time so that idle
-    /// hosts are evicted even when no requests are bumping the tick).
+    /// Last successful use as monotonic millis since `process_start()`, read by
+    /// the eviction sweep. Wall-clock rather than a tick count so idle hosts
+    /// are evicted even when no traffic bumps the tick.
     last_used_ms: AtomicU64,
 }
 
@@ -125,22 +110,17 @@ impl PoolEntry {
 
 /// A shared, observable handle to a per-host connection pool.
 ///
-/// Cloning is cheap (one `Arc` clone). The actual pooled connections
-/// live in `hyper_util::client::legacy::Client`; this struct holds
-/// the observability counters and the idle-eviction sweep.
+/// Cloning is cheap (one `Arc` clone). Real sockets live in
+/// `hyper_util::client::legacy::Client`; this struct holds the observability
+/// counters and the idle-eviction sweep.
 ///
-/// Idle eviction (MEDIUM-3 fix): every clone shares a single
-/// `Mutex<HashMap<HostKey, PoolEntry>>`. A background sweep (started
-/// by `UpstreamClient::new`) wakes up every 30s and drops any entry
-/// whose `last_used_ms` is more than 60s old. The previous design
-/// used a tick-count that was only bumped by `record_dial` /
-/// `record_reuse` — under low traffic, the tick barely advanced and
-/// idle entries were NEVER evicted. The new design uses wall-clock
-/// `Instant` (monotonic, NTP-immune) so eviction is independent of
-/// request volume. Because the underlying
-/// `hyper_util::client::legacy::Client` owns the real sockets, the
-/// sweep only affects the observability map; the legacy client will
-/// re-dial on the next request to that host.
+/// Idle eviction: a background sweep (started by `UpstreamClient::new`) wakes
+/// every 30s and drops entries idle for more than 60s. The sweep uses
+/// wall-clock `Instant` (monotonic, NTP-immune) so eviction does not depend on
+/// request volume, which a request-bumped tick counter did: under low traffic
+/// the tick barely advanced and idle entries survived. Since the legacy client
+/// owns the sockets, evicting only prunes the observability map; the next
+/// request to that host re-dials.
 #[derive(Default)]
 pub struct UpstreamConnectionPool {
     inner: Arc<DashMap<HostKey, PoolEntry>>,
@@ -159,8 +139,7 @@ impl UpstreamConnectionPool {
         Self::default()
     }
 
-    /// Total reuses across all hosts. Used by the `conn_pool_reuse`
-    /// unit test.
+    /// Total reuses across all hosts.
     pub fn reuses(&self) -> usize {
         self.inner
             .iter()
@@ -193,15 +172,14 @@ impl UpstreamConnectionPool {
         self.inner.contains_key(key)
     }
 
-    /// Record that a request to `key` just used a freshly-dialed
-    /// connection (i.e. it was the first request in a burst).
+    /// Record a request to `key` on a freshly-dialed connection.
     pub fn record_dial(&self, key: HostKey) {
         let entry = self.inner.entry(key).or_insert_with(PoolEntry::new);
         entry.total.fetch_add(1, Ordering::Relaxed);
         entry.last_used_ms.store(now_ms(), Ordering::Relaxed);
     }
 
-    /// Record that a request to `key` just reused a pooled connection.
+    /// Record a request to `key` that reused a pooled connection.
     pub fn record_reuse(&self, key: HostKey) {
         let entry = self.inner.entry(key).or_insert_with(PoolEntry::new);
         entry.total.fetch_add(1, Ordering::Relaxed);
@@ -209,9 +187,8 @@ impl UpstreamConnectionPool {
         entry.last_used_ms.store(now_ms(), Ordering::Relaxed);
     }
 
-    /// Drop entries whose `last_used_ms` is older than `max_age`
-    /// (a wall-clock `Duration`, not a tick count). Called by the
-    /// background sweep. Returns the number of entries evicted.
+    /// Drop entries idle for longer than `max_age` (wall-clock, not ticks).
+    /// Returns how many were evicted.
     pub fn evict_older_than(&self, max_age: Duration) -> usize {
         let cutoff = now_ms().saturating_sub(max_age.as_millis() as u64);
         let mut evicted = 0;
@@ -226,8 +203,8 @@ impl UpstreamConnectionPool {
         evicted
     }
 
-    /// Spawn the background eviction loop with a weak reference to `inner`.
-    /// Exits automatically when all strong `Arc` references to the pool are dropped.
+    /// Spawn the background eviction loop holding only a `Weak` reference, so
+    /// it exits once every strong `Arc` to the pool is dropped.
     pub fn spawn_eviction_loop(&self) {
         if tokio::runtime::Handle::try_current().is_err() {
             return;
@@ -328,15 +305,12 @@ mod tests {
 
         assert_eq!(pool.host_count(), 2);
 
-        // Everything should be kept if max_age is large
         let evicted = pool.evict_older_than(Duration::from_hours(1));
         assert_eq!(evicted, 0);
         assert_eq!(pool.host_count(), 2);
 
-        // Sleep to ensure time advances past 0
         std::thread::sleep(Duration::from_millis(5));
 
-        // Everything should be evicted if max_age is 0
         let evicted = pool.evict_older_than(Duration::from_millis(0));
         assert_eq!(evicted, 2);
         assert_eq!(pool.host_count(), 0);

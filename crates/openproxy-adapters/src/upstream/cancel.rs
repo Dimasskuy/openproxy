@@ -1,10 +1,9 @@
 //! Cancellation primitives.
 //!
-//! `CancellationToken` is a tiny, `Clone`-able, atomically-flippable flag
-//! that the client races against the I/O future at every phase boundary
-//! and inside long phases (e.g. body read). It is intentionally NOT a
-//! `tokio_util::sync::CancellationToken` so this module has zero extra
-//! dependencies.
+//! `CancellationToken` is a tiny, `Clone`-able, atomically-flippable flag the
+//! client races against the I/O future at every phase boundary and inside long
+//! phases (e.g. the body read). Hand-rolled rather than
+//! `tokio_util::sync::CancellationToken` so this module adds no dependency.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -12,9 +11,8 @@ use tokio::sync::watch;
 
 /// A cloneable, thread-safe cancel signal.
 ///
-/// Cheap to clone (one `Arc` clone). `cancel()` is idempotent. The
-/// associated counter (`cancel_count`) is incremented every time
-/// `cancel()` is called and is observable for metrics / tests.
+/// Cheap to clone (one `Arc` clone). `cancel()` is idempotent. `cancel_count`
+/// counts every `cancel()` call and is observable for metrics and tests.
 #[derive(Clone)]
 pub struct CancellationToken {
     inner: Arc<Inner>,
@@ -23,9 +21,9 @@ pub struct CancellationToken {
 struct Inner {
     flag: AtomicBool,
     cancel_count: AtomicUsize,
-    // For tests: how many observers saw the flag.
+    // How many observers saw the flag.
     observe_count: AtomicUsize,
-    // Async notification channel. Value transitions false → true once.
+    // Async notification channel. Value transitions false -> true once.
     cancel_tx: watch::Sender<bool>,
 }
 
@@ -49,16 +47,15 @@ impl CancellationToken {
         }
     }
 
-    /// Signal cancellation. Idempotent. Does NOT block.
+    /// Signal cancellation. Idempotent, never blocks.
     pub fn cancel(&self) {
         self.inner.flag.store(true, Ordering::SeqCst);
         self.inner.cancel_count.fetch_add(1, Ordering::SeqCst);
         let _ = self.inner.cancel_tx.send(true);
     }
 
-    /// Async wait for cancellation. Returns immediately if already
-    /// cancelled, otherwise suspends until `cancel()` is called.
-    /// Cheap: one `subscribe()` + one `Arc` clone.
+    /// Async wait for cancellation: returns at once if already cancelled,
+    /// otherwise suspends until `cancel()`. One `subscribe()` + one `Arc` clone.
     pub async fn cancelled(&self) {
         if self.is_cancelled() {
             return;
@@ -67,8 +64,8 @@ impl CancellationToken {
         if *rx.borrow_and_update() {
             return;
         }
-        // `changed()` returns Err when the sender is dropped.
-        // Treat that as cancellation (the token is being torn down).
+        // `changed()` errors once the sender is dropped: that means the token
+        // is being torn down, so treat it as cancellation.
         while rx.changed().await.is_ok() {
             if *rx.borrow() {
                 return;
@@ -76,9 +73,8 @@ impl CancellationToken {
         }
     }
 
-    /// Create a `watch::Receiver` that observes the internal cancel
-    /// notification channel. Use this to poll `changed()` in hot loops
-    /// without creating a new subscription per iteration.
+    /// A `watch::Receiver` over the internal cancel notification, for polling
+    /// `changed()` in hot loops without a new subscription per iteration.
     pub fn subscribe(&self) -> watch::Receiver<bool> {
         self.inner.cancel_tx.subscribe()
     }
@@ -92,12 +88,9 @@ impl CancellationToken {
         was
     }
 
-    /// Create a child token that is cancelled if EITHER the parent OR
-    /// the child is cancelled. The child observes the parent's state
-    /// on every `is_cancelled` call; cancelling the parent does NOT
-    /// mutate the child (the child inherits a snapshot semantics on
-    /// `child()`). This is the "parent stays valid" semantic the spec
-    /// requires: cancelling a child never cancels the parent.
+    /// Create a child token cancelled if EITHER the parent or the child is
+    /// cancelled. The child snapshots the parent's state on `child()` and
+    /// cancelling the child never cancels the parent.
     pub fn child(&self) -> Self {
         let child = Self::new();
         if self.is_cancelled() {
@@ -106,26 +99,21 @@ impl CancellationToken {
         child
     }
 
-    /// Total number of `cancel()` calls observed across all clones.
-    /// Useful for tests / metrics.
+    /// Total `cancel()` calls observed across all clones, for tests and metrics.
     pub fn cancel_count(&self) -> usize {
         self.inner.cancel_count.load(Ordering::SeqCst)
     }
 
-    /// Number of times `is_cancelled()` returned `true` for this token
-    /// or any of its children that share the same `Arc`. Useful for
-    /// tests that want to assert the client actually consulted the
-    /// token.
+    /// Number of times `is_cancelled()` returned `true` for this token or a
+    /// clone sharing the same `Arc`, so a test can assert the client consulted
+    /// the token.
     pub fn observe_count(&self) -> usize {
         self.inner.observe_count.load(Ordering::SeqCst)
     }
 
-    /// Build a token that mirrors a `tokio::sync::watch::Receiver<bool>`:
-    /// the token flips to "cancelled" the first time the watch's value
-    /// transitions to `true` (and stays cancelled forever after — the
-    /// watch is one-shot from the token's point of view).
-    ///
-    /// The returned token owns a background task that drives the flip.
+    /// A token mirroring a `watch::Receiver<Option<CancelReason>>`: it flips to
+    /// cancelled the first time the watch value becomes `Some`, and stays
+    /// cancelled. A background task drives the flip.
     pub fn from_watch(mut rx: watch::Receiver<Option<openproxy_types::CancelReason>>) -> Self {
         let token = Self::new();
         if rx.borrow_and_update().is_some() {
@@ -134,10 +122,8 @@ impl CancellationToken {
         }
         let inner = CancellationToken::clone(&token);
         tokio::spawn(async move {
-            // `changed()` returns Err when the sender is dropped; treat
-            // that as a no-op (the upstream call will finish or hit its
-            // own deadline). We only cancel when we observe an actual
-            // `true` value.
+            // `changed()` errors once the sender is dropped: treat that as a
+            // no-op, the upstream call finishes or hits its own deadline.
             while rx.changed().await.is_ok() {
                 if rx.borrow().is_some() {
                     inner.cancel();
@@ -148,15 +134,6 @@ impl CancellationToken {
         token
     }
 
-    /// Build a combined token that flips to "cancelled" when EITHER the
-    /// `watch::Receiver<bool>` transitions to `true` OR the provided
-    /// `CancellationToken` is cancelled.
-    ///
-    /// Use this for race lanes: the lane's upstream call is cancelled
-    /// when the client disconnects **or** when the race is lost (another
-    /// lane sent the first token). This closes the cancellation window
-    /// — losers' HTTP connections are dropped at the transport level,
-    /// stopping upstream token generation immediately.
     fn is_initially_cancelled(
         rx: &mut watch::Receiver<Option<openproxy_types::CancelReason>>,
         race_token: &CancellationToken,
@@ -189,15 +166,12 @@ impl CancellationToken {
         });
     }
 
-    /// Build a combined token that flips to "cancelled" when EITHER the
-    /// `watch::Receiver<bool>` transitions to `true` OR the provided
-    /// `CancellationToken` is cancelled.
+    /// A token that cancels when EITHER the `watch::Receiver<Option<CancelReason>>`
+    /// yields `Some` OR the `race_token` is cancelled.
     ///
-    /// Use this for race lanes: the lane's upstream call is cancelled
-    /// when the client disconnects **or** when the race is lost (another
-    /// lane sent the first token). This closes the cancellation window
-    /// — losers' HTTP connections are dropped at the transport level,
-    /// stopping upstream token generation immediately.
+    /// For race lanes: the lane's upstream call ends on client disconnect or
+    /// when the race is lost, so losers drop their HTTP connection at the
+    /// transport level and upstream token generation stops immediately.
     pub fn from_watch_and_token(
         mut rx: watch::Receiver<Option<openproxy_types::CancelReason>>,
         race_token: &CancellationToken,
@@ -209,9 +183,9 @@ impl CancellationToken {
         }
         let inner = CancellationToken::clone(&token);
         let cancel_rx = race_token.inner.cancel_tx.subscribe();
-        // Close TOCTOU: if cancelled between is_cancelled() above and
-        // subscribe(), the initial value is already true but changed()
-        // won't fire for it.  Re-check explicitly.
+        // TOCTOU: a cancel landing between `is_initially_cancelled` and
+        // `subscribe()` leaves `borrow()` already true, and `changed()` never
+        // fires for the current value. Re-check explicitly.
         if *cancel_rx.borrow() {
             inner.cancel();
             return token;
@@ -267,7 +241,7 @@ mod tests {
         let child = parent.child();
         assert!(child.is_cancelled(), "child must see pre-existing cancel");
 
-        // Decoupling: cancelling the child does not cancel the parent.
+        // Decoupling: cancelling the child leaves the parent valid.
         let parent2 = CancellationToken::new();
         let child2 = parent2.child();
         child2.cancel();
@@ -277,16 +251,15 @@ mod tests {
         );
     }
 
-    // The `from_watch` tests below need a Tokio runtime because the
-    // helper spawns a background task that races the watch.
+    // `from_watch` needs a Tokio runtime: the helper spawns a task that races
+    // the watch.
     #[tokio::test]
     async fn from_watch_already_cancelled_starts_cancelled() {
         let (tx, mut rx) = watch::channel::<Option<openproxy_types::CancelReason>>(None);
-        // Flip the watch to `true` BEFORE constructing the token —
-        // mirrors the pre-flight check in the chat pipeline.
+        // Flip the watch BEFORE constructing the token, mirroring the
+        // pre-flight check in the chat pipeline.
         tx.send(Some(openproxy_types::CancelReason::ClientDisconnected))
             .unwrap();
-        // Give the receiver a moment to see the change.
         rx.changed().await.unwrap();
         let token = CancellationToken::from_watch(rx);
         assert!(token.is_cancelled());
@@ -297,11 +270,8 @@ mod tests {
         let (tx, rx) = watch::channel::<Option<openproxy_types::CancelReason>>(None);
         let token = CancellationToken::from_watch(rx);
         assert!(!token.is_cancelled());
-        // Flip the watch — the background task should observe the
-        // change and flip the token.
         tx.send(Some(openproxy_types::CancelReason::ClientDisconnected))
             .unwrap();
-        // Spin briefly to let the task run.
         for _ in 0..50 {
             if token.is_cancelled() {
                 break;
@@ -315,7 +285,6 @@ mod tests {
     async fn cancelled_returns_immediately_if_already_cancelled() {
         let t = CancellationToken::new();
         t.cancel();
-        // Should return instantly, not hang.
         t.cancelled().await;
     }
 
@@ -329,7 +298,6 @@ mod tests {
             t2.cancel();
         });
 
-        // Should suspend until t2 cancels.
         t.cancelled().await;
         assert!(t.is_cancelled());
         handle.await.unwrap();
@@ -358,9 +326,8 @@ mod tests {
     async fn from_watch_drops_cleanly_when_sender_dropped() {
         let (tx, rx) = watch::channel::<Option<openproxy_types::CancelReason>>(None);
         let token = CancellationToken::from_watch(rx);
-        // Drop the sender. The background task should observe the
-        // closed channel via `changed()` returning Err and exit
-        // cleanly. The token stays uncancelled.
+        // Sender dropped: the task must see `changed()` fail and exit without
+        // flipping the token.
         drop(tx);
         for _ in 0..50 {
             tokio::task::yield_now().await;
@@ -425,13 +392,10 @@ mod tests {
 
     #[tokio::test]
     async fn from_watch_and_token_toctou_closes() {
-        // Race: cancel race_token between subscribe() and borrow()
-        // The re-check after subscribe() must catch it.
+        // Cancelling between subscribe() and borrow() must be caught by the
+        // re-check after subscribe(), not left to a `changed()` that never fires.
         let (_tx, rx) = watch::channel::<Option<openproxy_types::CancelReason>>(None);
         let race_token = CancellationToken::new();
-        // Cancel BEFORE creating the combined token — the pre-flight
-        // check catches this. But also test the TOCTOU path by
-        // cancelling between subscribe and the background task start.
         race_token.cancel();
         let token = CancellationToken::from_watch_and_token(rx, &race_token);
         assert!(token.is_cancelled());

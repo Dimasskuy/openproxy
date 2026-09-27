@@ -56,13 +56,11 @@ pub fn start(
 ) -> DiscoveryScheduler {
     let parent_cancel = CancellationToken::new();
 
-    // Collect all provider candidates:
-    // 1. Built-in providers defined in seed
-    // 2. Custom providers existing in DB
+    // Candidatos: builtins de seed, luego custom de DB.
     let mut seen_providers = HashSet::new();
     let mut resolved_providers = Vec::new();
 
-    // 1. Built-in providers that have an adapter in `adapters`
+    // Builtins con adapter en `adapters`
     for pid_str in seed::builtin_provider_ids() {
         let provider = ProviderId::new(pid_str);
         if let Some(a) = adapters.iter().find(|a| a.id() == &provider) {
@@ -77,7 +75,7 @@ pub fn start(
         }
     }
 
-    // 2. Custom providers from DB
+    // Custom desde DB
     {
         let r = db_pool.reader();
         if let Ok(db_list) = providers::list(&r) {
@@ -102,7 +100,7 @@ pub fn start(
 
     let task_count = resolved_providers.len();
 
-    // If there are no providers to schedule, return immediately without spawning workers.
+    // Sin proveedores no se spawnean workers.
     if task_count == 0 {
         return DiscoveryScheduler {
             cancel: parent_cancel,
@@ -115,7 +113,7 @@ pub fn start(
     let rx = Arc::new(tokio::sync::Mutex::new(rx));
     let in_flight = Arc::new(parking_lot::Mutex::new(HashSet::new()));
 
-    // Bounded worker pool: spawn 2-4 concurrent workers (default 3, capped by task_count)
+    // Pool acotado de workers concurrentes
     let worker_count = DISCOVERY_WORKER_POOL_SIZE.min(task_count).max(1);
     for _ in 0..worker_count {
         let worker_cancel = parent_cancel.child_token();

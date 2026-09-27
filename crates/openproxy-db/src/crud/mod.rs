@@ -5,12 +5,10 @@ use rusqlite::{Connection, OptionalExtension, Params, Row};
 
 use crate::error::map_db_error_ctx;
 
-/// Trait for converting a database row into a domain struct/type.
 pub trait FromRow: Sized {
     fn from_row(row: &Row<'_>) -> rusqlite::Result<Self>;
 }
 
-/// Executes a query expecting 0 or 1 row mapped via `FromRow`.
 pub fn query_one<T: FromRow, P: Params>(
     conn: &Connection,
     sql: &str,
@@ -20,7 +18,6 @@ pub fn query_one<T: FromRow, P: Params>(
     query_one_with(conn, sql, params, T::from_row, ctx)
 }
 
-/// Executes a query expecting 0 or 1 row mapped via custom closure `f`.
 pub fn query_one_with<T, P: Params>(
     conn: &Connection,
     sql: &str,
@@ -33,7 +30,6 @@ pub fn query_one_with<T, P: Params>(
         .map_err(map_db_error_ctx(ctx.as_ref()))
 }
 
-/// Executes a query returning a list of `T` mapped via `FromRow`.
 pub fn query_all<T: FromRow, P: Params>(
     conn: &Connection,
     sql: &str,
@@ -43,7 +39,6 @@ pub fn query_all<T: FromRow, P: Params>(
     query_all_with(conn, sql, params, T::from_row, ctx)
 }
 
-/// Executes a query returning a list of `T` mapped via custom closure `f`.
 pub fn query_all_with<T, P: Params>(
     conn: &Connection,
     sql: &str,
@@ -59,7 +54,6 @@ pub fn query_all_with<T, P: Params>(
         .collect()
 }
 
-/// Executes an SQL modification statement (`INSERT`, `UPDATE`, `DELETE`) with mapped error context.
 pub fn execute<P: Params>(
     conn: &Connection,
     sql: &str,
@@ -70,7 +64,6 @@ pub fn execute<P: Params>(
         .map_err(map_db_error_ctx(ctx.as_ref()))
 }
 
-/// Helper function for checking existence via SQL query.
 pub fn exists<P: Params>(
     conn: &Connection,
     sql: &str,
@@ -84,7 +77,6 @@ pub fn exists<P: Params>(
     Ok(exists)
 }
 
-/// Declarative macros for macro-based CRUD operations.
 #[macro_export]
 macro_rules! db_execute {
     ($conn:expr, $sql:expr, $params:expr, $ctx:expr $(,)?) => {
@@ -141,32 +133,18 @@ macro_rules! db_query_all {
     };
 }
 
-/// Declarative macro for typed `rusqlite::Row` extraction.
-///
-/// Supports qualifiers:
-/// - `@bool(idx)`: extracts a boolean
-/// - `@opt_bool(idx)`: extracts an `Option<bool>`
-/// - `@u8(idx)`: extracts a `u8`
-/// - `@box_str(idx)`: extracts a `String` and converts to `Box<str>`
-/// - `@opt_box_str(idx)`: extracts an `Option<String>` and converts to `Option<Box<str>>`
-/// - `@u16(idx)`: extracts a `u16`
-/// - `@opt_u16(idx)`: extracts an `Option<u16>`
-/// - `@u32(idx)`: extracts a `u32`
-/// - `@opt_u32(idx)`: extracts an `Option<u32>`
-/// - `@u64(idx)`: extracts a `u64`
-/// - `@opt_u64(idx)`: extracts an `Option<u64>`
-/// - `@id(idx, Type)`: extracts numeric id as `Type(i64)`
-/// - `@opt_id(idx, Type)`: extracts optional numeric id as `Option<Type>`
-/// - `@id_str(idx, Type)`: extracts string id as `Type::new(String)`
-/// - `@enum_parse(idx, Type)`: extracts `&str` and parses into `Type` via `FromStr`
-/// - `@opt_enum_parse(idx, Type)`: extracts `Option<&str>` and parses into `Option<Type>`
-/// - `@enum(idx, Type)`: alias for `@enum_parse`
-/// - `@opt_enum(idx, Type)`: alias for `@opt_enum_parse`
-/// - `@from_db(idx, Type)`: extracts `Option<&str>` and calls `Type::from_db(Option<&str>)`
-/// - `@json(idx)`: extracts `Option<String>` and parses as JSON deserializable `T`
-/// - `@opt_default(idx, [Type,] default)`: extracts `Option<T>` or falls back to `default`
-/// - `(idx, Type)`: extracts typed value `row.get::<_, Type>(idx)?`
-/// - `idx`: extracts value `row.get(idx)?`
+/// Typed `rusqlite::Row` extraction. Qualifiers:
+/// - `@bool(idx)`, `@opt_bool(idx)`, `@u8(idx)`, `@u16(idx)`, `@opt_u16(idx)`,
+///   `@u32(idx)`, `@opt_u32(idx)`, `@u64(idx)`, `@opt_u64(idx)`
+/// - `@box_str(idx)`, `@opt_box_str(idx)`: `String` as `Box<str>`
+/// - `@id(idx, Type)`, `@opt_id(idx, Type)`: numeric id as `Type`
+/// - `@id_str(idx, Type)`: string id as `Type::new(String)`
+/// - `@enum_parse(idx, Type)`, `@opt_enum_parse(idx, Type)`: `FromStr` parse,
+///   also spelled `@enum(idx, Type)` / `@opt_enum(idx, Type)`
+/// - `@from_db(idx, Type)`: `Type::from_db(Option<&str>)`
+/// - `@json(idx)`: JSON deserializable `T`
+/// - `@opt_default(idx, [Type,] default)`: `Option<T>` or `default`
+/// - `(idx, Type)`, `idx`
 #[macro_export]
 macro_rules! map_row_fields {
     (@get $row:expr, @box_str($idx:expr)) => {
@@ -292,7 +270,6 @@ macro_rules! map_row_fields {
     };
 }
 
-/// Declarative macro to define standard `SELECT` projections for a table.
 #[macro_export]
 macro_rules! def_table_select {
     ($macro_name:ident, $table:literal, $cols:literal $(,)?) => {
@@ -308,7 +285,6 @@ macro_rules! def_table_select {
     };
 }
 
-/// Declarative macro for updating a single field in a table.
 #[macro_export]
 macro_rules! db_update_field {
     ($conn:expr, $table:literal, $col:ident = $val:expr, WHERE $id_col:ident = $id_val:expr, $ctx:expr $(,)?) => {
@@ -391,7 +367,6 @@ macro_rules! db_update_field {
     };
 }
 
-/// Declarative macro for mapping a `rusqlite::Row` into a typed domain struct.
 #[macro_export]
 macro_rules! map_row_struct {
     ($row:ident, $struct_ty:ident { $($fields:tt)* }) => {
@@ -480,17 +455,15 @@ macro_rules! map_row_struct {
     };
 }
 
-/// Declarative macro for mapping a `rusqlite::Row` into a typed tuple $O(1)$.
+/// Maps a `rusqlite::Row` into a typed tuple. Fields are
+/// `@qualifier(...)` (`@id(0, AccountId)`, `@enum_parse(1, Status)`),
+/// `(idx, Type)` or a bare `idx`.
 ///
-/// Supports qualifiers:
-/// - `@qualifier(...)` (e.g. `@id(0, AccountId)`, `@enum_parse(1, Status)`)
-/// - `(idx, Type)` (e.g. `(0, i64)`, `(1, String)`)
-/// - `idx` (e.g. `0`, `1`)
-///
-/// Syntax examples:
-/// - `map_row_tuple!(row => (0, 1))`
-/// - `map_row_tuple!(row, ((0, i64), (1, String)))`
-/// - `map_row_tuple!(row => (@id(0, AccountId), 1, @bool(2)))`
+/// ```ignore
+/// map_row_tuple!(row => (0, 1))
+/// map_row_tuple!(row, ((0, i64), (1, String)))
+/// map_row_tuple!(row => (@id(0, AccountId), 1, @bool(2)))
+/// ```
 #[macro_export]
 macro_rules! map_row_tuple {
     ($row:ident, ( $($elem:tt)+ )) => {

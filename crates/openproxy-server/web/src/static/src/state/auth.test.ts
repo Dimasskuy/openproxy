@@ -1,21 +1,5 @@
-// state/auth.test.ts — unit tests for the admin-token store.
-//
-// Verifies the spec contract from playground-refactor.md §8.A:
-//   - login(token) persists the token to localStorage
-//   - logout() clears the token
-//   - getToken() returns the stored token if present, null otherwise
-//   - getToken() caches the in-memory copy so the second call does
-//     NOT hit localStorage again
-//   - The token survives a simulated reload (localStorage round-trip)
-//   - Trimming: pasted tokens with surrounding whitespace are cleaned
-//   - Defensive: when localStorage throws (SecurityError, QuotaExceeded),
-//     the in-memory copy is still updated so the current session keeps
-//     working; logout tolerates the same failure
-//
-// All cases run under jsdom (vitest.config.ts) which provides a real
-// localStorage global. We use vi.resetModules() per case so the
-// module-local `currentToken` cache doesn't bleed between tests —
-// every import re-runs the top-level state initialiser.
+// Unit tests for the admin-token store, under the jsdom localStorage that
+// vitest.config.ts provides.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
@@ -24,8 +8,7 @@ const STORAGE_KEY = "openproxy_admin_token";
 describe("auth store", () => {
   beforeEach(() => {
     localStorage.clear();
-    // Force a re-evaluation of the module so the module-local
-    // `currentToken` cache is reset between cases.
+    // The module-local `currentToken` cache must not bleed between cases.
     vi.resetModules();
   });
 
@@ -59,7 +42,7 @@ describe("auth store", () => {
   });
 
   it("getToken returns null when the stored value is empty", async () => {
-    // An empty string is treated as "no token stored" by the loader.
+    // An empty string counts as "no token stored".
     localStorage.setItem(STORAGE_KEY, "");
     const { getToken } = await import("./auth.js");
     expect(getToken()).toBeNull();
@@ -69,9 +52,7 @@ describe("auth store", () => {
     const { setToken } = await import("./auth.js");
     setToken("persistent-token");
 
-    // Simulate a full page reload by resetting the module cache.
-    // After the reset, the in-memory `currentToken` is null again —
-    // the next getToken() must pull from localStorage.
+    // After the reset `currentToken` is null, so getToken() must re-read localStorage.
     vi.resetModules();
     const { getToken } = await import("./auth.js");
     expect(getToken()).toBe("persistent-token");
@@ -99,9 +80,7 @@ describe("auth store", () => {
 
     expect(getToken()).toBe("cached-token");
 
-    // Mutate localStorage behind the module's back. Because the
-    // module-local `currentToken` is now non-null, getToken() must
-    // return the cached value, not the new one.
+    // A non-null `currentToken` means the new value is ignored.
     localStorage.setItem(STORAGE_KEY, "tampered-token");
 
     expect(getToken()).toBe("cached-token");
@@ -130,8 +109,7 @@ describe("auth store", () => {
       const { setToken, getToken } = await import("./auth.js");
       setToken("session-only-token");
 
-      // The token is still usable for the current session even though
-      // localStorage refused the write.
+      // Usable for this session despite the refused write.
       expect(getToken()).toBe("session-only-token");
       expect(warn).toHaveBeenCalled();
     } finally {
@@ -149,9 +127,7 @@ describe("auth store", () => {
     });
 
     try {
-      // Must not throw — the in-memory cache is already null after
-      // clearToken() runs, so the in-session behaviour is correct
-      // regardless of localStorage availability.
+      // The in-memory cache is already null, so localStorage is moot.
       expect(() => clearToken()).not.toThrow();
     } finally {
       spy.mockRestore();

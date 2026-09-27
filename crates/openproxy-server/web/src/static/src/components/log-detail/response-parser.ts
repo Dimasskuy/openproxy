@@ -1,27 +1,18 @@
-// components/log-detail/response-parser.ts — recognizes OpenAI / Anthropic
-// response shapes, extracts structured content (message, reasoning, tool
-// calls, other properties) and renders the per-response collapsible blocks
-// that the log-detail Response tab composes.
-//
-// Depends only on json-prune.ts (formatJson) — no cycles.
-//
-// Split out of the former components/log-detail.ts monolith (Q19).
+// Recognizes OpenAI / Anthropic response shapes, extracts structured content
+// (message, reasoning, tool calls, other properties), and renders the
+// per-response collapsible blocks the Response tab composes. Depends only on
+// json-prune.ts (formatJson).
 
 import { html, type TemplateResult } from "lit-html";
 import { formatJson } from "./json-prune.js";
 
-// ---- SPEC_LOG_DETAIL_MODAL constants and renderers ----
 
-/** Displayed in the Response tab when `response_body_json` is null
- *  (i.e. for requests where the response was not recorded —
- *  recording was off, or the request was cancelled before a
- *  response arrived). */
+/** Shown in the Response tab when `response_body_json` is null. */
 export const NO_RESPONSE_PLACEHOLDER_TEXT =
   "No response body recorded.";
 
-/** A single tool call extracted from an OpenAI chat-completion
- *  response's `choices[0].message.tool_calls[i]`. The `arguments`
- *  field is commonly a JSON-encoded string, hence `unknown`. */
+/** One `choices[0].message.tool_calls[i]` entry. `arguments` is commonly a
+ *  JSON-encoded string, hence `unknown`. */
 interface ToolCall {
   id?: string;
   type?: string;
@@ -120,23 +111,16 @@ function extractMessageContent(
 const TOP_LEVEL_RESPONSE_IGNORED_KEYS = new Set(["choices"]);
 const CHOICE_RESPONSE_IGNORED_KEYS = new Set(["message", "delta", "text"]);
 
-/** Try to recognize an OpenAI chat-completion shape. Returns null if
- *  the value is not a recognized chat-completion (so the caller can
- *  fall through to a "Raw response" block). Only ever called with
- *  a non-string value — the string normalization happens in
- *  renderResponseTab.
+/** Recognize an OpenAI chat-completion shape, or null so the caller can fall
+ *  through to a "Raw response" block. Only ever called with a non-string value;
+ *  renderResponseTab normalizes strings first.
  *
- *  The returned `otherProperties` field carries the response-level
- *  metadata (id, model, object, created, usage, system_fingerprint,
- *  service_tier, …) AND the choice-level metadata (index,
- *  finish_reason, logprobs) so the caller can render them in a
- *  separate collapsible "Other properties" block. This is important
- *  for responses where `content` is null and `tool_calls` is empty
- *  (e.g. a `finish_reason: "tool_calls"` response whose tool calls
- *  were emitted in a prior chunk of a streamed turn) — without
- *  surfacing `usage` and `finish_reason`, the Response tab would
- *  show only "Raw response" and the operator would have to expand
- *  it to see the request actually succeeded. */
+ *  `otherProperties` merges response-level metadata (id, model, object,
+ *  created, usage, system_fingerprint, service_tier) with choice-level
+ *  metadata (index, finish_reason, logprobs). Without it, a `finish_reason:
+ *  "tool_calls"` response whose calls arrived in an earlier streamed chunk
+ *  would show only "Raw response", hiding the usage and finish reason that
+ *  prove the request succeeded. */
 export function parseOpenAiChatResponse(value: unknown): {
   message: string | null;
   reasoning: string | null;
@@ -173,9 +157,8 @@ export function parseOpenAiChatResponse(value: unknown): {
   return { message, reasoning, toolCalls, otherProperties: otherPropsNonNull };
 }
 
-/** Pretty-print a tool-call `arguments` field for display. The
- *  returned string is fed to a `<pre>` element — lit-html will
- *  auto-escape it. */
+/** Pretty-print a tool-call `arguments` field. The result goes into a `<pre>`,
+ *  which lit-html escapes. */
 function parseToolCallArguments(args: unknown): { pretty: string } | null {
   if (args == null) return null;
   if (typeof args === "string") {
@@ -197,10 +180,9 @@ function parseToolCallArguments(args: unknown): { pretty: string } | null {
   return { pretty: String(args) };
 }
 
-/** Render a single tool-call arguments block with structured
- *  collapsible sections when the arguments parse as an object.
- *  Returns null when there's nothing to render — the caller omits
- *  the block entirely in that case. */
+/** A tool-call arguments block with structured collapsibles when the arguments
+ *  parse as an object. Null when there is nothing to render, and the caller
+ *  omits the block. */
 function renderToolCallArgsBlock(args: unknown): TemplateResult | null {
   if (args == null) return null;
   let parsed: Record<string, unknown> | null = null;
@@ -217,17 +199,15 @@ function renderToolCallArgsBlock(args: unknown): TemplateResult | null {
         <pre class="json-viewer log-detail-collapsible-body">${formatJson(v)}</pre>
       </details>`)}`;
   }
-  // Fall back to raw pretty-print.
+  // Fall back to the raw pretty-print.
   const result = parseToolCallArguments(args);
   return result != null
     ? html`<pre class="json-viewer log-detail-collapsible-body">${result.pretty}</pre>`
     : null;
 }
 
-/** Render a single "Message" (content) block. Returns null when the
- *  content is null/empty — the caller omits the block entirely in
- *  that case, so a content-less response doesn't show an empty
- *  Message section. */
+/** A "Message" (content) block, or null when empty so the caller omits the
+ *  section entirely. */
 function renderMessageBlock(message: string): TemplateResult {
   return html`<details class="log-detail-collapsible" open>
     <summary>Message</summary>
@@ -235,8 +215,7 @@ function renderMessageBlock(message: string): TemplateResult {
   </details>`;
 }
 
-/** Render a single "Reasoning" block. Same omit-when-empty contract
- *  as `renderMessageBlock`. */
+/** A "Reasoning" block. Same omit-when-empty contract as renderMessageBlock. */
 function renderReasoningBlock(reasoning: string): TemplateResult {
   return html`<details class="log-detail-collapsible" open>
     <summary>Reasoning</summary>
@@ -244,16 +223,12 @@ function renderReasoningBlock(reasoning: string): TemplateResult {
   </details>`;
 }
 
-/** Render a single tool call as an independent collapsible block.
- *  Each tool call gets its own `<details>` at the top level of the
- *  Response tab — they are NOT nested under a parent "Tool calls"
- *  collapsible. This makes it easy to expand/collapse each one
- *  independently and keeps the visible height of the tab low when
- *  there are many tool calls.
+/** One tool call as its own top-level collapsible in the Response tab, not
+ *  nested under a parent "Tool calls" block, so each expands independently and
+ *  the tab stays short with many calls.
  *
- *  `index` is the 0-based position in the tool_calls array, used
- *  only to label the summary ("Tool call #1", "Tool call #2", …)
- *  so the operator can correlate with the upstream's index field. */
+ *  `index` is the 0-based position in tool_calls, used only to label the
+ *  summary so the operator can match the upstream's index field. */
 function renderToolCallBlock(tc: ToolCall, index: number): TemplateResult {
   const idTag: TemplateResult | null = tc.id != null
     ? html` <span class="log-detail-key-meta">${tc.id}</span>`
@@ -268,9 +243,8 @@ function renderToolCallBlock(tc: ToolCall, index: number): TemplateResult {
       ${argsHtml}
     </details>`;
   }
-  // No arguments to show — render a non-collapsible header so the
-  // tool call is still visible (its existence is information the
-  // operator needs).
+    // No arguments: still render a non-collapsible header, since the call's
+    // existence carries information.
   return html`<div class="log-detail-tool-call">
     <div class="log-detail-tool-call-header">
       <span class="log-detail-tool-call-name">Tool call #${index + 1}: ${tc.function.name}</span>${idTag}${typeTag}
@@ -278,15 +252,9 @@ function renderToolCallBlock(tc: ToolCall, index: number): TemplateResult {
   </div>`;
 }
 
-/** Render the "Other properties" block: every response-level and
- *  choice-level field that isn't part of the structured content /
- *  reasoning / tool_calls extraction (e.g. `id`, `model`, `object`,
- *  `created`, `usage`, `system_fingerprint`, `service_tier`,
- *  `choice.finish_reason`, `choice.index`, `choice.logprobs`).
- *
- *  Collapsed by default — these fields are useful for debugging
- *  but not the primary thing the operator wants to see.
- *  Returns null when `props` is empty. */
+/** "Other properties": every response- and choice-level field outside the
+ *  structured content / reasoning / tool_calls extraction. Collapsed by
+ *  default, null when empty. */
 function renderOtherPropertiesBlock(props: Record<string, unknown>): TemplateResult | null {
   const entries = Object.entries(props);
   if (entries.length === 0) return null;
@@ -301,9 +269,8 @@ function renderOtherPropertiesBlock(props: Record<string, unknown>): TemplateRes
   </details>`;
 }
 
-/** Render the "Raw response" block. ALWAYS collapsed by default —
- *  it's the escape hatch for "the structured blocks above didn't
- *  show me what I needed, let me see the raw JSON". */
+/** "Raw response", always collapsed: the escape hatch for whatever the
+ *  structured blocks did not show. */
 export function renderRawResponseBlock(response: unknown): TemplateResult {
   return html`<details class="log-detail-collapsible">
     <summary>Raw response</summary>
@@ -311,7 +278,8 @@ export function renderRawResponseBlock(response: unknown): TemplateResult {
   </details>`;
 }
 
-/** Render the raw response stream body block (always open by default for debugging interrupted / empty streams). */
+/** Raw response stream body, open by default for debugging interrupted or
+ *  empty streams. */
 export function renderRawResponseBodyBlock(rawBody: string): TemplateResult {
   return html`<div class="log-detail-raw-stream-captured" style="margin-bottom: var(--space-3);">
     <h5 style="margin: 0 0 var(--space-1) 0; font-size: var(--fs-sm); color: var(--color-text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Captured Raw Upstream Stream (Interrupted / Empty)</h5>
@@ -319,17 +287,9 @@ export function renderRawResponseBodyBlock(rawBody: string): TemplateResult {
   </div>`;
 }
 
-/** Detect whether `response` was interrupted mid-stream by reading the
- *  `partial` marker the backend writes inside the first choice's
- *  message/delta. The `isPartial` arg is a caller-provided hint (it
- *  reads `is_streaming && !stream_complete`).
- *
- *  @param isPartial - When true, the response was interrupted
- *        mid-stream — show a "Partial response" banner so the
- *        operator knows the response didn't complete normally even
- *        though there IS a body to inspect. Passed from the caller
- *        which reads `is_streaming && !stream_complete` (and the
- *        `partial` marker inside the JSON, when present). */
+/** Whether `response` was cut short, from the `partial` marker the backend
+ *  writes in the first choice's message/delta, plus the caller's
+ *  `isPartial` hint (`is_streaming && !stream_complete`). */
 export function detectPartialResponse(response: unknown, isPartial?: boolean): boolean {
   if (isPartial === true) return true;
   if (typeof response !== "object" || response === null || Array.isArray(response)) return false;
@@ -451,9 +411,8 @@ export function renderFallbackResponseBlocks(response: unknown): TemplateResult[
   return blocks;
 }
 
-/** Count tool_use / tool_result blocks in an Anthropic-style message
- *  and collect the tool_result IDs. Used by the Request tab to badge
- *  Anthropic messages (consumed by index.ts). */
+/** Count tool_use / tool_result blocks in an Anthropic-style message and
+ *  collect the tool_result IDs, for the Request tab's message badges. */
 export function extractAnthropicToolStats(content: unknown): {
   toolUses: number;
   toolResults: number;

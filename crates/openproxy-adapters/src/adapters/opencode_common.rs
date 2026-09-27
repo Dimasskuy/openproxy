@@ -11,46 +11,39 @@ use super::{
 use crate::spoofer::{ClientSpoofer, OpenCodeSpoofer};
 use openproxy_types::ResultExt;
 
-/// Heuristic for picking the wire format of a model in OpenCode's catalogue.
-///
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OpenCodeFlavor {
     Zen,
     Go,
 }
 
-/// Classify wire target format for OpenCode Zen (`https://opencode.ai/zen/v1`).
 pub fn classify_zen_target_format(id: &str) -> TargetFormat {
     classify_opencode_target_format(OpenCodeFlavor::Zen, id)
 }
 
-/// Classify wire target format for OpenCode Go (`https://opencode.ai/zen/go/v1`).
 pub fn classify_go_target_format(id: &str) -> TargetFormat {
     classify_opencode_target_format(OpenCodeFlavor::Go, id)
 }
 
-/// Classify wire target format for OpenCode models (Zen & Go).
+/// Wire target format per the OpenCode Console routing tables:
+/// - Anthropic `/messages`: claude, minimax, qwen, union-alpha
+/// - Gemini `/models/{model}:streamGenerateContent?alt=sse`: gemini
+/// - Responses `/responses`: gpt-5, gpt-6, grok, muse-spark
+/// - OpenAI `/chat/completions`: deepseek, glm, kimi, mimo, ling, nemotron,
+///   big-pickle, etc.
 ///
-/// Per OpenCode Console routing:
-/// - Anthropic (/messages): claude, minimax, qwen, union-alpha
-/// - Gemini (/models/{model}:streamGenerateContent?alt=sse): gemini
-/// - Responses (/responses): gpt-5, gpt-6, grok, muse-spark
-/// - OpenAI (/chat/completions): deepseek, glm, kimi, mimo, ling, nemotron, big-pickle, etc.
-///
-/// Zen and Go expose different backends under the same alias, and the catalogue
-/// mixes wire formats *inside* a family (Zen answers `minimax-m3` on
-/// `/chat/completions` but `minimax-m3-free` only on `/messages`), so exact-ID
-/// overrides are checked before the family heuristic.
+/// Exact-ID overrides run before the family heuristic because Zen and Go expose
+/// different backends under the same alias, and the catalogue mixes wire
+/// formats inside a family: Zen answers `minimax-m3` on `/chat/completions` but
+/// `minimax-m3-free` only on `/messages`.
 ///
 /// Sources: the endpoints tables at <https://opencode.ai/docs/zen> and
 /// <https://opencode.ai/docs/go>, plus the per-model `provider.npm` metadata of
-/// the `opencode` / `opencode-go` entries in models.dev (the routing metadata
-/// OpenCode itself selects the endpoint from).
+/// the `opencode` / `opencode-go` entries in models.dev.
 pub fn classify_opencode_target_format(flavor: OpenCodeFlavor, id: &str) -> TargetFormat {
     let lower = id.to_ascii_lowercase();
-    // Compile-time jump table over the aliases the family heuristic misroutes.
     match (flavor, lower.as_str()) {
-        // `messages`-only stealth model; no Anthropic substring in the ID.
+        // `messages`-only, with no Anthropic substring to match on.
         (_, "union-alpha") => TargetFormat::Anthropic,
         (
             OpenCodeFlavor::Zen,
@@ -61,7 +54,6 @@ pub fn classify_opencode_target_format(flavor: OpenCodeFlavor, id: &str) -> Targ
     }
 }
 
-/// Substring heuristic used when no exact-ID override matches.
 fn family_target_format(lower: &str) -> TargetFormat {
     if lower.contains("jev") || lower.contains("systemone") {
         TargetFormat::SystemOne
@@ -103,7 +95,6 @@ fn append_format_auth_headers(
     }
 }
 
-/// Build headers for OpenCode requests (Anthropic vs OpenAI/Gemini branching).
 pub fn build_opencode_headers(
     adapter: &impl ProviderAdapter,
     api_key: &str,
@@ -129,7 +120,6 @@ pub fn build_opencode_headers(
     headers
 }
 
-/// Fetch and parse models from an OpenCode endpoint.
 pub async fn fetch_opencode_models(
     adapter: &impl ProviderAdapter,
     flavor: OpenCodeFlavor,
@@ -282,8 +272,9 @@ impl OpenCodeAdapter {
     }
 }
 
-/// Upstream OpenCode Console enforces a mandatory agent quartet (`bash`, `glob`, `grep`, `read`)
-/// and `stream: true` on free tier requests (Bearer public, keyless, or free models) on both Zen and Go.
+/// Free tier on either Zen or Go requires a Bearer auth of `public` (or none) and
+/// a mandatory agent quartet: `bash`, `glob`, `grep`, `read`, plus
+/// `stream: true`.
 pub fn is_free_opencode_tier(
     _flavor: OpenCodeFlavor,
     api_key: &str,

@@ -1,8 +1,6 @@
-// views/playground/dispatcher.ts — Request execution dispatcher.
-//
-// Owns `executeRequest`: validates auth/model, resets execution state,
-// dispatches to the per-modality executor (chat / image / embedding / audio),
-// and handles abort, error, and latency finalization.
+// views/playground/dispatcher.ts — `executeRequest`: validates auth/model, resets
+// execution state, dispatches to the per-modality executor, finalizes
+// abort/error/latency.
 
 import { requestUpdate } from '../../state/reactive.js';
 import { showToast } from '../../components/toast.js';

@@ -1,46 +1,22 @@
-//! In-memory ring buffer of recent `tracing` events, exposed to the
-//! dashboard via `GET /admin/debug/logs`.
+//! In-memory ring buffer of recent `tracing` events, exposed to the dashboard
+//! via `GET /admin/debug/logs`.
 //!
-//! ## Why
+//! The `usage` table only stores per-request `error_msg`, not the broader
+//! `tracing`-level context (discovery skips, OAuth refresh failures, race
+//! cancellation reasons) that goes to stdout where the operator cannot read it.
+//! [`init`] installs a `tracing_subscriber::Layer` that captures `WARN`/`ERROR`
+//! (optionally `INFO`) into a bounded `VecDeque`; the dashboard polls
+//! `?since=N` and offers a "Copy all" action over the visible subset.
 //!
-//! The user asked for "un registro en el dashboard de debug logs que
-//! sean fácilmente copiables toda la info de depuración" — a way to
-//! see detailed error logs in the dashboard, easily copiable, so when
-//! something fails they can grab the full context and share it.
-//!
-//! The existing `usage` table stores per-request error messages (the
-//! `error_msg` / `error_msg_redacted` columns), but it doesn't capture
-//! the broader `tracing`-level context: discovery scheduler skips,
-//! OAuth refresh failures, race cancellation reasons, etc. Those events
-//! go to stdout via `tracing_subscriber::fmt`, which the operator can't
-//! access from the dashboard.
-//!
-//! This module installs a custom `tracing_subscriber::Layer` that
-//! captures every `WARN` / `ERROR` event (and optionally `INFO`) into
-//! a bounded `parking_lot::Mutex<VecDeque<DebugLogEntry>>` (capacity
-//! 1000). The dashboard polls `GET /admin/debug/logs?since=N` to read
-//! the buffer, and a "Copy all" button serializes the visible subset
-//! to the clipboard.
-//!
-//! ## Design
-//!
-//! - **In-memory only.** Tracing events are high-volume and don't
-//!   belong in SQLite. The buffer is bounded at 1000 entries ×
-//!   ~500 B avg ≈ 500 KB worst case — trivial.
-//! - **Bounded VecDeque.** New entries push to the back; when full,
-//!   the oldest entry is evicted. Each entry gets a monotonic `seq`
-//!   so the frontend can poll with `?since=N` to fetch only new
-//!   entries.
-//! - **Span context extraction.** When a tracing event fires inside
-//!   a span that carries `request_id` / `trace_id` fields (set by
-//!   the pipeline's `info!(request_id = …, trace_id = …, …)` calls),
-//!   the layer extracts them so the dashboard can correlate events
+//! - In-memory only: high-volume events do not belong in SQLite. 1000 entries ×
+//!   ~500 B ≈ 500 KB worst case.
+//! - Bounded `VecDeque`: newest pushed to the back, oldest evicted when full,
+//!   each with a monotonic `seq` so the frontend can poll incrementally.
+//! - Span context extraction pulls `request_id`/`trace_id` so events correlate
 //!   with usage rows.
-//! - **No redaction here.** The layer captures the formatted message
-//!   string (post-`tracing` field formatting). The pipeline already
-//!   redacts sensitive values before logging them (see `redact.rs`),
-//!   so we don't re-redact. If a future caller logs raw secrets, the
-//!   `cost::redact_error_msg` regex is available to apply here too.
+//! - No redaction here: the layer captures the post-`tracing` formatted message
+//!   and the pipeline already redacts before logging (see `redact.rs`);
+//!   `cost::redact_error_msg` is available if a caller ever logs a raw secret.
 
 use std::collections::VecDeque;
 use std::sync::{LazyLock, OnceLock};
@@ -54,39 +30,29 @@ use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::{Layer, layer::Context};
 
-/// Maximum number of entries kept in the ring buffer. Older entries
-/// are evicted when this is exceeded. 1000 entries × ~500 B avg ≈
-/// 500 KB worst case — a trivial amount of memory for hours of
-/// debugging context.
+/// Maximum entries kept; older ones are evicted. 1000 × ~500 B ≈ 500 KB.
 const BUFFER_CAPACITY: usize = 1000;
 const FILE_LOG_CAPACITY: usize = 1000;
 
-/// A single captured tracing event, ready to be serialized to the
-/// dashboard via `GET /admin/debug/logs`.
+/// A single captured tracing event, serialized to the dashboard via
+/// `GET /admin/debug/logs`.
 #[derive(Debug, Clone, Serialize)]
 pub struct DebugLogEntry {
-    /// Monotonically increasing sequence number. The frontend polls
-    /// with `?since=N` to fetch only entries with `seq > N`.
+    /// Monotonic sequence number; the frontend polls `?since=N` for `seq > N`.
     pub seq: u64,
-    /// UTC timestamp. Formatted as ISO-8601 when serialized.
+    /// UTC timestamp, serialized as ISO-8601.
     pub timestamp: DateTime<Utc>,
     /// `WARN`, `ERROR`, `INFO`, etc.
     pub level: &'static str,
-    /// The tracing target (usually the module path, e.g.
-    /// `openproxy_core::pipeline`).
+    /// Tracing target (usually a module path, e.g. `openproxy_core::pipeline`).
     pub target: String,
-    /// The formatted message string (post-`tracing` field
-    /// formatting). Sensitive values are already redacted by the
-    /// pipeline before logging.
+    /// Post-`tracing` formatted message; the pipeline redacts before logging.
     pub message: String,
-    /// `request_id` extracted from the span context, when available.
-    /// Used by the dashboard to correlate events with usage rows.
+    /// `request_id` from the span/event context, for correlating with usage rows.
     pub request_id: Option<String>,
-    /// `trace_id` extracted from the span context, when available.
+    /// `trace_id` from the span/event context.
     pub trace_id: Option<String>,
-    /// The span hierarchy as a slash-separated path (e.g.
-    /// `execute_single/dispatch_upstream_streaming`). Useful for
-    /// understanding where in the pipeline the event fired.
+    /// Slash-separated span hierarchy, e.g. `execute_single/dispatch_upstream_streaming`.
     pub span_path: Option<String>,
 }
 
@@ -188,9 +154,8 @@ fn spawn_file_logger_task(path: std::path::PathBuf, mut rx: mpsc::Receiver<Debug
     });
 }
 
-/// Initialize the global ring buffer. Must be called once at startup
-/// (from `telemetry::init`) before any [`DebugLogLayer`] is installed.
-/// Idempotent: subsequent calls are no-ops.
+/// Initialize the global ring buffer. Must be called once at startup from
+/// `telemetry::init`, before any [`DebugLogLayer`] is installed. Idempotent.
 pub fn init() {
     let _ = &*DEBUG_LOG_BUFFER;
     let _ = FILE_LOG_SENDER.get_or_init(|| {
@@ -201,15 +166,13 @@ pub fn init() {
     });
 }
 
-/// Snapshot ALL entries currently in the buffer, in insertion order
-/// (oldest first). Used by the dashboard's initial fetch.
+/// Snapshot all entries, insertion order (oldest first) — the dashboard's initial fetch.
 pub fn snapshot() -> Vec<DebugLogEntry> {
     let guard = DEBUG_LOG_BUFFER.lock();
     guard.entries.iter().cloned().collect()
 }
 
-/// Snapshot entries with `seq > since`, in insertion order. Used by
-/// the dashboard's polling fetch.
+/// Snapshot entries with `seq > since` — the dashboard's polling fetch.
 pub fn snapshot_since(since: u64) -> Vec<DebugLogEntry> {
     let guard = DEBUG_LOG_BUFFER.lock();
     guard
@@ -220,24 +183,21 @@ pub fn snapshot_since(since: u64) -> Vec<DebugLogEntry> {
         .collect()
 }
 
-/// The highest `seq` currently in the buffer. The frontend uses this
-/// to know what `since` value to pass on the next poll.
+/// Highest `seq` in the buffer: what the frontend passes as `since` next poll.
 pub fn latest_seq() -> u64 {
     let guard = DEBUG_LOG_BUFFER.lock();
     guard.entries.back().map_or(0, |e| e.seq)
 }
 
-/// Clear all entries from the buffer. Used by `POST /admin/debug/clear`
-/// for "reproduce then capture" workflows.
+/// Clear the buffer (`POST /admin/debug/clear`) for "reproduce then capture".
 pub fn clear() {
     let mut guard = DEBUG_LOG_BUFFER.lock();
     guard.entries.clear();
     guard.next_seq = 1;
 }
 
-/// A `tracing_subscriber::Layer` that captures every event into the
-/// global ring buffer. Installed by `telemetry::init` alongside the
-/// existing `fmt::layer()`.
+/// A `tracing_subscriber::Layer` capturing every event into the global ring
+/// buffer. Installed by `telemetry::init` alongside `fmt::layer()`.
 pub struct DebugLogLayer;
 
 impl<S> Layer<S> for DebugLogLayer
@@ -251,10 +211,8 @@ where
         let target = event.metadata().target().to_string();
         let timestamp = Utc::now();
 
-        // Visit the event's fields to build the formatted message.
-        // The visitor also opportunistically extracts `request_id`
-        // and `trace_id` if they're set directly on the event (not
-        // on a parent span).
+        // The visitor also opportunistically extracts `request_id`/`trace_id`
+        // when set on the event itself rather than on a parent span.
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
         // Extract the fields we care about BEFORE calling
@@ -264,19 +222,14 @@ where
         let raw_message = visitor.into_message();
         let (message, _) = openproxy_core::cost::redact_error_msg(&raw_message);
 
-        // Walk the span hierarchy (from the current span up to the
-        // root) to build the span path. `ctx.event_scope(event)`
-        // returns an iterator from the current span up through all
-        // parents.
+        // `event_scope` iterates from the current span up through all parents,
+        // so the resulting path is slash-separated.
         //
-        // We DON'T extract request_id / trace_id from span fields
-        // here because the tracing-subscriber 0.3 API for reading
-        // stored span values (`SpanRef::values()` + a custom
-        // `Visit`) is unstable across versions. Instead, we rely on
-        // the pipeline's existing practice of stamping
-        // `request_id` / `trace_id` directly on each `tracing::event!`
-        // call (via `info!(request_id = %rid, …)` etc.), which
-        // `MessageVisitor` captures via the event's own fields.
+        // request_id/trace_id are NOT read from span fields: reading stored
+        // values (`SpanRef::values()` + a custom `Visit`) is unstable across
+        // tracing-subscriber 0.3.x. The pipeline instead stamps them on each
+        // `tracing::event!` call (`info!(request_id = %rid, …)`), which
+        // `MessageVisitor` captures from the event's own fields.
         let mut span_path_parts: Vec<String> = Vec::new();
         if let Some(scope) = ctx.event_scope(event) {
             for span in scope.from_root() {
@@ -316,13 +269,10 @@ where
     }
 }
 
-/// Visit the event's fields to build a human-readable message. The
-/// `tracing` macro formats fields as `name=value` pairs, with the
-/// special `"message"` field treated as the primary message text.
-///
-/// Also opportunistically extracts `request_id` and `trace_id` when
-/// they're set directly on the event (not on a parent span — those
-/// are handled by `SpanFieldVisitor`).
+/// Visit the event's fields to build a human-readable message: the `tracing`
+/// macro formats fields as `name=value` pairs, with the special `"message"`
+/// field as the primary text. Also extracts `request_id`/`trace_id` when set
+/// directly on the event (span-level ones are not available — see `on_event`).
 #[derive(Default)]
 struct MessageVisitor {
     parts: Vec<(String, String)>,
@@ -334,11 +284,8 @@ struct MessageVisitor {
 impl Visit for MessageVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
         let name = field.name();
-        // For request_id / trace_id, the tracing macro emits them
-        // via `record_debug` with a `DisplayValue` wrapper when the
-        // caller uses `%value` syntax. The Debug formatting of
-        // `DisplayValue` wraps the string in quotes — we strip them
-        // so the extracted value matches what the caller passed.
+        // `%value` syntax routes through `DisplayValue`, whose `Debug` wraps the
+        // string in quotes; strip them so the value matches what the caller passed.
         let value_str = format!("{value:?}");
         let cleaned = strip_debug_quotes(&value_str);
         match name {
@@ -376,12 +323,10 @@ impl Visit for MessageVisitor {
     }
 }
 
-/// Strip surrounding quotes from a `{:?}`-formatted string. The
-/// `tracing` macro's `%value` syntax emits the value via
-/// `DisplayValue` whose `Debug` impl wraps the string in quotes:
-/// `"req-abc123"` → `req-abc123`. This is a best-effort strip —
-/// if the string doesn't start AND end with a quote, return it
-/// unchanged.
+/// Strip surrounding quotes from a `{:?}`-formatted string: the `%value` syntax
+/// emits `DisplayValue`, whose `Debug` quotes the string (`"req-abc123"` →
+/// `req-abc123`). Best-effort: returns the input unchanged unless it both
+/// starts and ends with a quote.
 fn strip_debug_quotes(s: &str) -> &str {
     if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
         &s[1..s.len() - 1]
@@ -423,10 +368,8 @@ mod tests {
     async fn buffer_evicts_oldest_when_full() {
         let _test_lock = TEST_MUTEX.lock().unwrap();
         init();
-        // Push BUFFER_CAPACITY + 10 entries; verify only the last
-        // BUFFER_CAPACITY are kept. The snapshot is taken INSIDE
-        // the same lock to avoid races with other tests that share
-        // the global buffer.
+        // Push BUFFER_CAPACITY + 10 entries and snapshot inside the same lock,
+        // so only the last BUFFER_CAPACITY survive and sibling tests cannot race.
         let snap = {
             let mut guard = DEBUG_LOG_BUFFER.lock();
             guard.entries.clear();
@@ -514,28 +457,19 @@ mod tests {
         assert!(json.contains("\"seq\":42"));
     }
 
-    // B1 (Bug 3): verify the DebugLogLayer captures WARN events
-    // when wired into a real subscriber. This test does NOT call
-    // `telemetry::init` (which would `try_init` a global subscriber
-    // and pollute other tests); instead it uses
-    // `tracing_subscriber::registry().with(...).set_default(...)`
-    // to install a thread-local subscriber for the duration of the
-    // scope. The previous tests pushed entries directly into the
-    // buffer; this one exercises the full path from
-    // `tracing::warn!(...)` → `DebugLogLayer::on_event` → buffer.
+    // Exercises the full `tracing::warn!` → `DebugLogLayer::on_event` → buffer
+    // path, unlike the tests above that push entries directly. A thread-local
+    // subscriber stands in for `telemetry::init`, which would `try_init` a
+    // global subscriber and pollute other tests.
     //
-    // We also verify that INFO events are NOT captured when the
-    // layer is wrapped in a `LevelFilter::WARN` per-layer filter
-    // (the production wiring in `telemetry::init`). This guards
-    // against a future refactor that accidentally drops the
-    // per-layer filter, which would re-introduce the bug where
-    // `RUST_LOG=error` silences WARN from the ring buffer.
+    // Also asserts INFO is NOT captured under the production per-layer
+    // `LevelFilter::WARN`: dropping that filter would let `RUST_LOG=error`
+    // silence WARN from the ring buffer.
     #[tokio::test]
     async fn debug_log_layer_captures_warn_and_error_via_subscriber() {
         let _test_lock = TEST_MUTEX.lock().unwrap();
         init();
-        // Reset the buffer to a known-empty state inside the lock
-        // so we don't see entries from other tests that ran first.
+        // Reset the buffer inside the lock, so entries from earlier tests are absent.
         {
             let mut guard = DEBUG_LOG_BUFFER.lock();
             guard.entries.clear();
@@ -543,13 +477,8 @@ mod tests {
         }
         let before = latest_seq();
 
-        // Install a thread-local subscriber with the DebugLogLayer
-        // wrapped in the same `LevelFilter::WARN` filter used by
-        // `telemetry::init`. `set_default` returns a guard that
-        // uninstalls the subscriber on drop — keeping the test
-        // hermetic. The `tracing_subscriber::prelude::*` import
-        // pulls in `SubscriberExt` (for `Registry::with`) and
-        // `Layer` (for `with_filter`).
+        // Thread-local subscriber with the same per-layer `LevelFilter::WARN` as
+        // production; the guard uninstalls it on drop, keeping the test hermetic.
         let _guard = tracing_subscriber::registry()
             .with(DebugLogLayer.with_filter(LevelFilter::WARN))
             .set_default();
@@ -580,7 +509,7 @@ mod tests {
             2,
             "expected exactly 2 entries (WARN + ERROR), got {snap:?}",
         );
-        // Oldest-first ordering: WARN comes before ERROR.
+        // Oldest first: WARN precedes ERROR.
         assert_eq!(snap[0].level, "WARN");
         assert_eq!(snap[1].level, "ERROR");
         assert!(snap[0].message.contains("simulated discovery tick failure"));

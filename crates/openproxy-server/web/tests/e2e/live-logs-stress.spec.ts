@@ -60,11 +60,9 @@ test.describe('Live Logs Stress Test', () => {
       throw e;
     }
 
-    // Verify UI is still responsive by clicking the row
     await lastRow.click();
     await expect(page.locator('.log-detail-modal')).toBeVisible();
 
-    // Verify we can close it
     const modal = page.locator('.log-detail-modal');
     await modal.locator('.close-btn').click();
     await expect(modal).toBeHidden();

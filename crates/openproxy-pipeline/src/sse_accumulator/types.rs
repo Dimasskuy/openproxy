@@ -1,40 +1,35 @@
 //! Types and constants for SSE streaming response accumulation.
 
-/// Maximum number of bytes the accumulator's text fields may collectively
-/// hold. After this is reached, additional chunks are dropped and the
-/// `truncated` flag is set. Streaming responses are passed chunk-by-chunk to
-/// the downstream client without an artificial wire-size ceiling, while this
-/// 256 KiB cap exists to bound the per-stream heap footprint of the accumulator
-/// itself under high concurrency (e.g. 50 concurrent streams × 256 KiB = 12.8 MiB
-/// worst case, down from 200 MiB at 4 MiB).
+/// Cap on the accumulator's text fields combined. The client stream itself
+/// has no wire-size ceiling; this bounds only the retained copy, which
+/// under concurrency (50 streams × 256 KiB = 12.8 MiB) would otherwise
+/// reach 200 MiB at 4 MiB per stream. Chunks past the cap are dropped and
+/// `truncated` is set.
 pub const MAX_ACCUMULATED_BYTES: usize = 256 * 1024; // 262,144 bytes
 
-/// Data for opening an Anthropic tool call.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnthropicToolOpen {
     pub id: String,
     pub name: String,
 }
 
-/// Per-provider marker for tool_use events. Anthropic streams a tool call
-/// across multiple SSE events; this enum lets the loop dispatch without
-/// inspecting the raw payload.
+/// Anthropic splits one tool call across three SSE events, so the loop
+/// dispatches on this marker instead of the raw payload.
 #[derive(Debug, Clone)]
 pub enum AnthropicToolEvent {
-    /// `content_block_start` with `type: "tool_use"`. Carries `id` and
-    /// `name`. The accumulator opens a new tool_call entry.
+    /// `content_block_start` with `type: "tool_use"`, carrying `id` and
+    /// `name`. Opens a new tool_call entry.
     Open(Box<AnthropicToolOpen>),
-    /// `content_block_delta` with `type: "input_json_delta"`. Carries a
-    /// `partial_json` fragment that gets appended to the in-flight tool
-    /// call's `arguments`.
+    /// `content_block_delta` with `type: "input_json_delta"`, whose
+    /// `partial_json` fragment is appended to the in-flight arguments.
     Delta { partial_json: String },
-    /// `content_block_stop`. Closes the in-flight tool call.
+    /// `content_block_stop`.
     Close,
 }
 
-/// A single accumulated tool call (Anthropic or OpenAI). For OpenAI the
-/// `arguments` field is a JSON-encoded string per the OpenAI spec. For
-/// Anthropic it's the concatenation of `partial_json` fragments.
+/// A single accumulated tool call. For OpenAI, `arguments` is a
+/// JSON-encoded string per the OpenAI spec. For Anthropic, the
+/// concatenation of `partial_json` fragments.
 #[derive(Debug, Clone, Default)]
 pub struct AccumulatedToolCall {
     pub id: String,

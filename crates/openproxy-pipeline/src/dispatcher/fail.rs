@@ -1,7 +1,7 @@
 //! Manejo de fallos HTTP: clasificación de `UpstreamError` → `CoreError`,
 //! respuesta a non-2xx, marcado de cuenta inválida y live-limited.
-//! Concentra las llamadas a `self.record_and_fail*` (los 3 variantes:
-//! sin trace_id, con trace_id, con partial-params).
+//! Concentra las llamadas a `self.record_and_fail*` (sin trace_id, con
+//! trace_id, con partial-params).
 
 use super::UpstreamDispatcher;
 use super::types::DispatchContext;
@@ -14,8 +14,8 @@ use openproxy_types::error::CoreError;
 use std::sync::Arc;
 use tokio::sync::watch;
 
-/// Lee el último valor publicado por el watchdog del cliente (sin avanzar
-/// la versión). Devuelve `None` si no hay cancelación pendiente.
+/// Último valor publicado por el watchdog del cliente, leído sin avanzar
+/// la versión.
 pub(super) fn is_client_disconnected(
     rx: &mut watch::Receiver<Option<CancelReason>>,
 ) -> Option<CancelReason> {
@@ -23,9 +23,7 @@ pub(super) fn is_client_disconnected(
 }
 
 impl UpstreamDispatcher {
-    /// Entrada principal para registrar un fallo. Construye el `trace_id`
-    /// añadiendo `:retry{N}` si `attempt > 1`, y delega a la versión con
-    /// `trace_id`.
+    /// Construye el `trace_id` con sufijo `:retry{N}` cuando `attempt > 1`.
     pub(super) fn record_and_fail(
         &self,
         req: PipelineRequest,
@@ -46,7 +44,6 @@ impl UpstreamDispatcher {
         self.record_and_fail_with_trace_id(req, combo, target, ctx, trace_id)
     }
 
-    /// Variante con `trace_id` ya calculado. Pasa-through al partial.
     pub(super) fn record_and_fail_with_trace_id(
         &self,
         req: PipelineRequest,
@@ -69,10 +66,8 @@ impl UpstreamDispatcher {
             })
     }
 
-    /// Variante partial: reenvía los params al `UsageTracker`.
-    ///
-    /// Visibilidad `pub(crate)`: invocado por `streaming_state.rs`
-    /// (cross-module).
+    /// Reenvía los params al `UsageTracker`. `pub(crate)` porque
+    /// `streaming_state.rs` lo invoca.
     pub(crate) fn record_and_fail_with_trace_id_and_partial(
         &self,
         params: crate::PartialFailureParams<'_>,
@@ -81,8 +76,6 @@ impl UpstreamDispatcher {
             .record_and_fail_with_trace_id_and_partial(params)
     }
 
-    /// Mapea `UpstreamError` → `CoreError` y dispara rotación de proxy si
-    /// aplica. Diferencia `Cancel` (cliente canceló) del resto.
     pub(super) async fn handle_upstream_error(
         &self,
         err: UpstreamError,
@@ -192,9 +185,8 @@ impl UpstreamDispatcher {
         )
     }
 
-    /// Publica una notificación `account_invalid` en el bus, deduplicada
-    /// por `account_invalid:{aid}`. Fire-and-forget: el `JoinHandle` se
-    /// descarta explícitamente para no bloquear el dispatch path.
+    /// Publica una notificación `account_invalid` deduplicada por
+    /// `account_invalid:{aid}`. Fire-and-forget.
     async fn broadcast_account_invalid_notification(
         &self,
         aid: openproxy_types::ids::AccountId,
@@ -230,7 +222,7 @@ impl UpstreamDispatcher {
         .ok();
     }
 
-    /// Publica una notificación `proxy_failed` en el bus cuando un proxy es rotado.
+    /// Publica `proxy_failed` cuando un proxy rota.
     async fn broadcast_proxy_rotated_notification(
         &self,
         provider_id_str: &str,
@@ -264,11 +256,11 @@ impl UpstreamDispatcher {
         .ok();
     }
 
-    /// Maneja respuestas non-2xx: dispara rotación de proxy (por status o
+    /// Maneja respuestas non-2xx: rotación de proxy (por status o
     /// rate-limit), broadcast de cuenta inválida si 401/403, marcado
-    /// `live_limited` si `RESOURCE_EXHAUSTED` en body, y clasificación
-    /// final con `is_hard_skip` para que el circuit breaker no penalice
-    /// errores de forma del request.
+    /// `live_limited` si el body trae `RESOURCE_EXHAUSTED`, y
+    /// clasificación con `is_hard_skip` para que el circuit breaker no
+    /// penalice errores de forma del request.
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn handle_non_2xx_response(
         &self,
@@ -339,11 +331,9 @@ impl UpstreamDispatcher {
         }
 
         let err = if is_rate_limited_status {
-            // GAP-6: if the body says RESOURCE_EXHAUSTED, mark this
-            // (account, model) pair as live-limited for 5 minutes.
-            // Fire-and-forget; we don't want to block the dispatch
-            // path on a SQLite write. The `conn_clone` follows the
-            // existing pattern in `check_and_trigger_proxy_rotation`.
+            // RESOURCE_EXHAUSTED marks this (account, model) pair
+            // live-limited for 5 minutes. Fire-and-forget: the dispatch
+            // path must not block on a SQLite write.
             if status_code == 429
                 && body_str.contains("RESOURCE_EXHAUSTED")
                 && let Some(aid) = target.account_id
@@ -368,8 +358,7 @@ impl UpstreamDispatcher {
                         );
                     }
                 });
-                // Fire-and-forget; drop explícito (AGENTS.md §3.3
-                // fire-and-forget pattern + clippy::let_underscore_future).
+                // Drop explícito del JoinHandle (AGENTS.md §4.3).
                 std::mem::drop(handle);
             }
             CoreError::RateLimited {
@@ -389,9 +378,8 @@ impl UpstreamDispatcher {
                     "MiniMax 2013 error: tool_call/tool_result mismatch."
                 );
             }
-            // GAP-4: classify the body and propagate the result so the
-            // circuit breaker knows not to penalize request-shape errors
-            // (see `error_classification::classify_upstream_error`).
+            // El clasificador marca los errores de forma del request
+            // para que el circuit breaker no los penalice.
             let class =
                 crate::error_classification::classify_upstream_error(status_code, &body_str);
             let is_hard_skip = class.is_hard_skip();

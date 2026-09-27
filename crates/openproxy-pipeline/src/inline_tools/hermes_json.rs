@@ -47,18 +47,15 @@ impl InlineToolParser for HermesJsonParser {
     }
 }
 
-/// Parse a single JSON object into a [`ParsedToolCall`].
 fn parse_single_json_tool_call(val: &Value) -> Option<ParsedToolCall> {
     let obj = val.as_object()?;
 
-    // Standard format: {"name": "...", "arguments": {...}}
     let mut name = obj.get("name").and_then(Value::as_str);
     let mut args_val = obj
         .get("arguments")
         .or_else(|| obj.get("parameters"))
         .or_else(|| obj.get("input"));
 
-    // Nested function format: {"function": {"name": "...", "arguments": ...}}
     if name.is_none()
         && let Some(func_obj) = obj.get("function").and_then(Value::as_object)
     {
@@ -119,7 +116,6 @@ fn parse_single_json_tool_call(val: &Value) -> Option<ParsedToolCall> {
     })
 }
 
-/// Strips markdown code block wrappers (e.g. ```json ... ```) if present.
 fn strip_markdown_codeblock(s: &str) -> &str {
     let trimmed = s.trim();
     if let Some(rest) = trimmed.strip_prefix("```") {

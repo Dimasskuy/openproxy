@@ -1,11 +1,6 @@
-// views/playground/inspector.ts — Response inspector panel + sidebar.
-//
-// Renders the tabbed response inspector (formatted / raw JSON / headers /
-// stream chunks) and the right inspector sidebar (target/auth selector,
-// hyperparameters card). Formatted response content and the metrics bar live
-// in formatted-response.ts and metrics-bar.ts respectively.
-//
-// All reads/writes go through the shared PlaygroundState reference.
+// views/playground/inspector.ts — tabbed response inspector (formatted / raw
+// JSON / headers / stream chunks) plus the right sidebar (target/auth selector,
+// hyperparameters). All reads/writes go through the shared state reference.
 
 import { html, type TemplateResult } from 'lit-html';
 import { t } from '../../i18n/index.js';
@@ -78,12 +73,8 @@ function ensureDefaultModel(st: PlaygroundState): void {
   }
 }
 
-// Re-export ensureDefaultModel for use by index.ts
 export { ensureDefaultModel };
 
-// ==========
-// Response Inspector (tabbed panel embedded inside workspaces)
-// ==========
 
 export function renderResponseInspector(st: PlaygroundState): TemplateResult {
   return html`
@@ -189,9 +180,6 @@ export function renderResponseInspector(st: PlaygroundState): TemplateResult {
   `;
 }
 
-// ==========
-// Inspector Sidebar (right panel: target/auth + hyperparams)
-// ==========
 
 export function renderInspectorSidebar(st: PlaygroundState): TemplateResult {
   const providers = (state.providers as Provider[]) || [];

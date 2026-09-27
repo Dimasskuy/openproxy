@@ -23,10 +23,8 @@ import { readFileSync } from 'node:fs';
  *   never 500. The second test in this file is the dedicated regression.
  */
 
-// `page.request` shares cookies only, not localStorage; the dashboard
-// authenticates with a Bearer token stored in localStorage (see
-// state/auth.ts). Read it from the same storageState.json the browser
-// context is seeded with — single source of truth for test credentials.
+// `page.request` shares cookies, not localStorage, so API probes must send the
+// Bearer token (state/auth.ts) read from the seeded storageState.json.
 const storageStatePath = 'tests/e2e/storageState.json';
 function adminAuthHeaders(): Record<string, string> {
   const storageState = JSON.parse(readFileSync(storageStatePath, 'utf8')) as {
@@ -44,31 +42,23 @@ test.describe('API keys CRUD', () => {
     let keyId: number | undefined;
 
     try {
-      // 1. Navigate and wait for the view to mount.
       await page.goto('/#/keys');
       await expect(page.locator('.keys-table')).toBeVisible();
 
-      // 2. Open the create modal via the real header button.
       await page.getByRole('button', { name: 'Create key' }).click();
       const createDialog = page.locator('.modal-bg').filter({ has: page.locator('form') });
       await expect(createDialog).toBeVisible();
 
-      // 3. Fill label; the form defaults to the valid minimum scope (chat).
       await createDialog.getByLabel('Label').fill(label);
       await expect(createDialog.locator('input[name="scopes"][value="chat"]')).toBeChecked();
 
-      // 4. Submit.
       await createDialog.getByRole('button', { name: 'Create key' }).click();
 
-      // 5. Plaintext modal: shown exactly once, with a Copy button, and the
-      //    prefix — never the full secret — is what the table persists.
       const plaintextCode = page.locator('#plaintext-key');
       await expect(plaintextCode).toBeVisible();
       await expect(page.getByRole('button', { name: 'Copy' })).toBeVisible();
       await expect(page.getByText("This is the only time you'll see this key.")).toBeVisible();
 
-      // Capture every secret-derived value before we close the modal; the
-      // modal removes itself and the plaintext disappears with it.
       const plaintext = (await plaintextCode.textContent()) ?? '';
       expect(plaintext).toBeTruthy();
       const plaintextDialog = page.locator('.modal-bg').filter({ has: plaintextCode });
@@ -77,9 +67,6 @@ test.describe('API keys CRUD', () => {
       expect(prefix).toBeTruthy();
       expect(prefix).not.toBe(plaintext);
 
-      // 6. Close the modal. createKey refreshes state.apiKeys and re-renders,
-      //    so the new row appears WITHOUT a reload (BUG-1 regression); the
-      //    table persists the prefix — never the plaintext secret.
       await page.getByRole('button', { name: "I've saved it" }).click();
       const row = page.locator('tr[data-row-key]').filter({ hasText: label });
       await expect(row).toHaveCount(1);
@@ -89,7 +76,6 @@ test.describe('API keys CRUD', () => {
       keyId = Number(await row.getAttribute('data-row-key'));
       expect(Number.isSafeInteger(keyId)).toBe(true);
 
-      // 7. Edit the label through the edit modal (PATCH via UI).
       await row.getByRole('button', { name: 'Edit' }).click();
       const editDialog = page.locator('.modal-bg').filter({ has: page.locator('form') });
       await expect(editDialog).toBeVisible();
@@ -97,7 +83,6 @@ test.describe('API keys CRUD', () => {
       await editDialog.getByRole('button', { name: 'Save' }).click();
       await expect(editDialog).not.toBeVisible();
 
-      // 8. Persisted state via the admin API: new label, same prefix, no secret.
       const persisted = await page.request.get(`/admin/api/keys/${keyId}`, {
         headers: adminAuthHeaders(),
       });
@@ -117,9 +102,6 @@ test.describe('API keys CRUD', () => {
       });
       expect(persistedBody).not.toHaveProperty('plaintext');
 
-      // 9. Regenerate/revoke have unambiguous UI flows but require the list to
-      //    be fresh; PATCH + DELETE already cover the mutation contract here.
-      // 10. Delete through the UI (confirm dialog) and verify absence.
       const editedRow = page.locator('tr[data-row-key]').filter({ hasText: editedLabel });
       await expect(editedRow).toHaveCount(1);
       await editedRow.getByRole('button', { name: 'Delete' }).click();
@@ -130,14 +112,12 @@ test.describe('API keys CRUD', () => {
       keyId = undefined;
 
       await expect(page.locator('.keys-table')).not.toContainText(editedLabel);
-      // Contract: 404 once deleted (BUG-2 regression).
       const gone = await page.request.get(`/admin/api/keys/${deletedId}`, {
         headers: adminAuthHeaders(),
       });
       expect(gone.status()).toBe(404);
     } finally {
       if (keyId !== undefined) {
-        // Cleanup is API-only and never logs the secret.
         await page.request.delete(`/admin/api/keys/${keyId}`, {
           headers: adminAuthHeaders(),
         });

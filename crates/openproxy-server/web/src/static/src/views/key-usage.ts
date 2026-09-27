@@ -1,16 +1,9 @@
-// views/key-usage.ts — per-key usage recap. Reuses the
-// /keys/:id/usage + /usage/by-day?api_key_id=... endpoints.
-//
-// MIGRATED to lit-html for atomic DOM updates. The view fetches the
-// headline metrics on mount, holds them in module-local state, and
-// asks `requestUpdate()` to re-render via lit-html's diffing. No
-// `innerHTML` is assigned directly.
-//
-// The view shows a KPI summary row (requests / cost / error rate /
-// avg latency / last used), a daily-usage bar+line chart reusing the
-// analytics dailyUsageChart, and a detailed metrics table. The
-// chart's data comes from `/usage/by-day?api_key_id=${id}` so the
-// operator sees the full history of the key at a glance.
+// Per-key usage recap over /keys/:id/usage and
+// /usage/by-day?api_key_id=... . Shows a KPI summary row (requests /
+// cost / error rate / avg latency / last used), a daily-usage chart
+// reusing the analytics dailyUsageChart, and a metrics table. No
+// `innerHTML` is assigned: metrics live in module-local state and
+// `requestUpdate()` drives lit-html's diffing.
 
 import { html, type TemplateResult } from 'lit-html';
 import { unsafeHTML } from 'lit-html/directives/unsafe-html.js';
@@ -19,12 +12,10 @@ import { createView } from "../lib/view-utils.js";
 import { dailyUsageChart } from "../components/charts.js";
 import type { ByDayRow, UsageSummary } from "../lib/types/api.js";
 
-// Shape of the payload from /keys/:id/usage. The server hands back
-// a small headline object (the per-key `UsageSummary` from
-// `core_api_keys::usage_summary`) plus the full `usage::summary`
-// roll-up so the dashboard has access to avg_ttft_ms / avg_total_ms
-// for the latency KPI. We keep both sub-objects optional so a
-// partially populated response doesn't crash the render.
+// Payload from /keys/:id/usage: a small per-key headline object plus the
+// full `usage::summary` roll-up carrying avg_ttft_ms / avg_total_ms for the
+// latency KPI. Both sub-objects stay optional so a partial response does not
+// crash the render.
 interface KeyUsageHead {
   key?: {
     total_rows?: number;
@@ -36,23 +27,16 @@ interface KeyUsageHead {
   summary?: UsageSummary | null;
 }
 
-// ---- Module-local state ----
-// Captured by the render closure. `loadError` is set when the
-// initial fetch fails so the template can swap the loading view
-// for an inline banner (matches the previous innerHTML behaviour).
-// `byDay` carries the daily-usage rows for the chart; it stays
-// `null` until its fetch resolves so the template can show a
-// loading placeholder for the chart independently of the headline
-// metrics.
+// `loadError` swaps the loading view for an inline banner when the
+// headline fetch fails. `byDay` stays null until its fetch resolves so the
+// chart shows its own placeholder independently of the headline metrics.
 let keyId: number = 0;
 let head: KeyUsageHead | null = null;
 let byDay: ByDayRow[] | null = null;
 let loadError: string | null = null;
 
-// Format helpers — keep the table compact and align with the
-// formatting used by the analytics dashboard (cost at 4dp, latency
-// in ms with a `—` fallback for nulls, error rate as a percentage
-// with 1dp).
+// Formatting matches the analytics dashboard: cost at 4dp, latency in
+// ms with a `—` fallback for nulls, error rate as a percentage at 1dp.
 function fmtCost(v: number): string {
   return `$${v.toFixed(4)}`;
 }
@@ -67,9 +51,7 @@ function fmtPct(num: number, denom: number): string {
   return `${((num / denom) * 100).toFixed(1)}%`;
 }
 
-// Render a single KPI tile. The `valueClass` arg lets us colour the
-// error rate red when it's high, mirroring the home dashboard's
-// KPI trend styling.
+// `valueClass` colours a high error rate red, like the home dashboard.
 function renderKpiTile(label: string, value: string, valueClass = ""): TemplateResult {
   return html`<div class="kpi-tile">
     <div class="kpi-label">${label}</div>
@@ -77,11 +59,9 @@ function renderKpiTile(label: string, value: string, valueClass = ""): TemplateR
   </div>`;
 }
 
-// Render the daily-usage chart block. The chart is only rendered
-// when `byDay` is non-null (i.e. the fetch has resolved, even if
-// empty). While the fetch is in-flight we show a `Loading...`
-// placeholder; if the response is an empty array, `dailyUsageChart`
-// renders its own `No data for the selected range.` message.
+// The chart renders only once `byDay` resolves (even if empty); before
+// that a `Loading...` placeholder shows. An empty array lets
+// `dailyUsageChart` render its own "No data for the selected range." message.
 function renderChartBlock(): TemplateResult {
   if (byDay === null) {
     return html`<section class="card chart-card">
@@ -109,12 +89,10 @@ function renderKeyUsage(): TemplateResult {
     `;
   }
 
-  // The `key` sub-object carries the per-key headline numbers
-  // (cheaper query — single row from the api_keys usage_summary).
-  // The `summary` sub-object carries the full usage::summary roll-up
-  // (includes avg_ttft_ms / avg_total_ms / winners / losers / token
-  // counts). Both are optional; we fall back to 0 so the KPI tiles
-  // render "0" rather than crashing on `.toFixed()` of `undefined`.
+  // `key` is the per-key headline row; `summary` is the full roll-up with
+  // avg_ttft_ms / avg_total_ms / winners / losers / token counts. Both fall
+  // back to 0 so the tiles render "0" instead of calling `.toFixed()` on
+  // `undefined`.
   const k = head.key ?? {};
   const s: Partial<UsageSummary> = head.summary ?? {};
   const unique: number = k.unique_requests ?? s.unique_requests ?? 0;

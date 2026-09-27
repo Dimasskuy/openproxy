@@ -1,8 +1,5 @@
-// views/playground/metrics-bar.ts — Response metrics strip.
-//
-// Renders the horizontal metrics row inside the response inspector: status
-// pill, total latency, TTFT, streaming throughput (tokens/sec), and token
-// counts or payload size.
+// views/playground/metrics-bar.ts — response metrics row: status pill, total
+// latency, TTFT, streaming throughput, token counts / payload size.
 
 import { html, type TemplateResult } from 'lit-html';
 import { t } from '../../i18n/index.js';

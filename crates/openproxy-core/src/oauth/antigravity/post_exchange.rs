@@ -1,12 +1,6 @@
-//! Helpers extracted from `AntigravityOAuthProvider::post_exchange`.
-//!
-//! Each helper owns one of the three logical blocks of the
-//! post-exchange pipeline: fetch user email, bootstrap the Cloud
-//! Code `projectId` via `loadCodeAssist` + `onboardUser`, and
-//! persist the resulting metadata + email on the account row.
-//!
-//! Splitting them keeps the trait method in `mod.rs` as a thin
-//! orchestrator and lets each block be reviewed independently.
+//! The three blocks of `AntigravityOAuthProvider::post_exchange`: fetch the user
+//! email, bootstrap the Cloud Code `projectId` via `loadCodeAssist` +
+//! `onboardUser`, and persist the metadata + email on the account row.
 
 use std::sync::Arc;
 
@@ -22,19 +16,15 @@ use super::AntigravityProviderMeta;
 
 /// Fetch the user's email from the Google `userinfo` endpoint.
 ///
-/// Best-effort: returns `None` on any failure (network, non-2xx,
-/// malformed JSON, missing `email` field). Callers must treat the
-/// `None` branch as "we don't know the email" and continue without
-/// raising an error.
+/// Best-effort: `None` on any failure, which callers treat as "email unknown"
+/// rather than an error.
 pub(crate) async fn fetch_user_email(
     upstream: &Arc<UpstreamClient>,
     access_token: &str,
 ) -> Option<String> {
     let user_info_url = "https://www.googleapis.com/oauth2/v1/userinfo?alt=json";
     let mut req = UpstreamRequest::get(user_info_url);
-    // Surface invalid bearer tokens as a soft failure: this helper is
-    // best-effort and any header issue must skip the call without
-    // sending a malformed Authorization header upstream.
+    // a bad bearer must skip the call, not send a malformed header upstream
     if let Err(e) = openproxy_adapters::antigravity_headers::insert_bearer(&mut req, access_token) {
         tracing::debug!(
             access_token_len = access_token.len(),
@@ -56,14 +46,12 @@ pub(crate) async fn fetch_user_email(
     }
 }
 
-/// Bootstrap the Cloud Code `projectId` for this account.
+/// Bootstrap the Cloud Code `projectId`.
 ///
-/// Calls `loadCodeAssist` first. If the user is already on-boarded
-/// the response carries a `projectId` and we're done. Otherwise we
-/// enter the `onboardUser` retry loop: up to 15 attempts with
-/// exponential backoff (50ms → 100ms → ... capped at 2s) until
-/// `onboardUser` returns a `projectId`, errors out, or the loop is
-/// exhausted (in which case we surface an `Internal` error).
+/// `loadCodeAssist` first: an already-onboarded user returns its `projectId`
+/// directly. Otherwise retry `onboardUser` up to 15 times with exponential
+/// backoff (50ms doubling, capped at 2s) until it yields a `projectId`, errors,
+/// or the budget runs out, which surfaces as `Internal`.
 pub(crate) async fn bootstrap_project_id(
     upstream: &Arc<UpstreamClient>,
     access_token: &str,
@@ -82,7 +70,6 @@ pub(crate) async fn bootstrap_project_id(
     {
         Some(pid) => Ok(pid),
         None => {
-            // Retry onboardUser up to 15 times with exponential backoff
             let mut result = None;
             let mut delay = std::time::Duration::from_millis(50);
             for attempt in 0..15 {
@@ -99,7 +86,6 @@ pub(crate) async fn bootstrap_project_id(
                         break;
                     }
                     Ok(None) => {
-                        // Not done yet, wait and retry
                         tokio::time::sleep(delay).await;
                         delay = std::cmp::min(delay * 2, std::time::Duration::from_secs(2));
                     }
@@ -124,17 +110,14 @@ pub(crate) async fn bootstrap_project_id(
 
 /// Persist `project_id` (and optionally `email`) on the account row.
 ///
-/// The write runs entirely inside a `spawn_blocking` task so the SQLite
-/// work never happens on a Tokio worker thread, and the writer lock is
-/// acquired with a bounded `try_writer_for` timeout so a long-running
-/// admin transaction cannot stall this write indefinitely.
+/// The write runs in `spawn_blocking` so SQLite never touches a Tokio worker,
+/// and `try_writer_for` bounds the wait so a long admin transaction cannot stall
+/// it.
 ///
-/// 1. Always: serialize `AntigravityProviderMeta { project_id }` into
-///    `accounts.oauth_provider_specific`. The chat executor reads this
-///    JSON envelope to embed `projectId` in upstream requests.
-/// 2. If `email` is `Some`: also set `accounts.email` and backfill
-///    `accounts.label` when it's currently empty (the COALESCE/NULLIF
-///    combination preserves any user-supplied label).
+/// `oauth_provider_specific` always gets the serialized meta envelope, which the
+/// chat executor reads to embed `projectId` upstream. When `email` is `Some` the
+/// same statement sets `accounts.email` and backfills an empty `label`, keeping
+/// any user-supplied one.
 pub(crate) async fn persist_post_exchange_meta(
     db_pool: &Arc<DbPool>,
     account_id: AccountId,

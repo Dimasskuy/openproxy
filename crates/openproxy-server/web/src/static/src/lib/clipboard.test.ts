@@ -1,9 +1,7 @@
 // lib/clipboard.test.ts — unit tests for copyToClipboard().
-//
-// Covers the three code paths:
-//   1. navigator.clipboard.writeText succeeds → early return
-//   2. clipboard API unavailable or throws → fallback to execCommand
-//   3. Both paths fail → error propagation
+// Covers the three code paths: navigator.clipboard.writeText succeeds (early return); the
+// clipboard API is unavailable or throws (execCommand fallback); and both paths fail (error
+// propagation).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { copyToClipboard } from "./clipboard.js";
@@ -11,18 +9,16 @@ import { copyToClipboard } from "./clipboard.js";
 describe("copyToClipboard", () => {
   // Local stub of document.execCommand because jsdom doesn't expose it.
   let execCommandMock: ReturnType<typeof vi.fn>;
-  // Saved navigator.clipboard so we can restore it after each case.
+  // Saved navigator.clipboard so afterEach can restore it.
   let savedClipboard: PropertyDescriptor | undefined;
 
   beforeEach(() => {
     execCommandMock = vi.fn();
-    // jsdom's Document doesn't have execCommand so vi.spyOn can't wrap
-    // it. Assign directly — clipboard.ts only calls
-    // `document.execCommand("copy")`, so this is sufficient.
+    // jsdom's Document has no execCommand, so vi.spyOn can't wrap it. Assign directly —
+    // clipboard.ts only calls `document.execCommand("copy")`.
     (document as unknown as { execCommand: (cmd: string) => boolean }).execCommand =
       execCommandMock as unknown as (cmd: string) => boolean;
-    // Capture the current navigator.clipboard descriptor so we can
-    // restore it in afterEach.
+    // Capture the current navigator.clipboard descriptor for afterEach.
     savedClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
   });
 

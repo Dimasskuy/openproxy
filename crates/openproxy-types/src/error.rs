@@ -119,18 +119,15 @@ pub enum CoreError {
     #[error("internal: {0}")]
     Internal(String),
 
-    /// LOW fix (#14): the writer lock could not be acquired
-    /// within its timeout budget. Maps to HTTP 503 in
-    /// `http_status()` — a transient service condition, not a
-    /// bug. The caller should retry after a short backoff.
+    /// The writer lock could not be acquired within its timeout budget.
+    /// Maps to HTTP 503: a transient service condition the caller retries
+    /// after a short backoff.
     #[error("service unavailable: {0}")]
     ServiceUnavailable(String),
 
-    /// LOW fix (#12): a generic "not found" for resources that
-    /// don't warrant a dedicated variant. Used by
-    /// `oauth_tickets::mark_consumed` to signal a double-redeem
-    /// attempt (the row exists but the WHERE clause
-    /// `consumed_at IS NULL` no longer matches). Maps to HTTP 404.
+    /// Generic "not found". `oauth_tickets::mark_consumed` uses it for a
+    /// double-redeem attempt, where the row exists but the WHERE clause
+    /// `consumed_at IS NULL` no longer matches. Maps to HTTP 404.
     #[error("{what} not found: {id}")]
     NotFound { what: String, id: String },
 }

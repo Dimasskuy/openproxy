@@ -50,10 +50,8 @@ import { readFileSync } from 'node:fs';
  *   asserts the GET response carries the new strategy after the PATCH.
  */
 
-// `page.request` shares cookies only, not localStorage; the dashboard
-// authenticates with a Bearer token stored in localStorage (see
-// state/auth.ts). Read it from the same storageState.json the browser
-// context is seeded with — single source of truth for test credentials.
+// `page.request` shares cookies, not localStorage, so API probes must send the
+// Bearer token (state/auth.ts) read from the seeded storageState.json.
 const storageStatePath = 'tests/e2e/storageState.json';
 function adminAuthHeaders(): Record<string, string> {
   const storageState = JSON.parse(readFileSync(storageStatePath, 'utf8')) as {
@@ -77,7 +75,6 @@ test.describe('Combos CRUD', () => {
     const newRaceSize = 5;
 
     try {
-      // 1. Navigate to the grid and open the create modal via the real button.
       //    The grid is empty on a fresh seed, so we expect the empty state.
       await page.goto('/#/combos');
       await expect(page.locator('p.empty')).toBeVisible();
@@ -85,20 +82,12 @@ test.describe('Combos CRUD', () => {
       const createDialog = page.locator('#create-combo-modal');
       await expect(createDialog).toBeVisible();
 
-      // 2. Fill the form. Strategy defaults to "priority" in the modal
-      //    so we just assert and submit with the default; race_size is
-      //    set explicitly to a non-default value so the edit test has
-      //    something to change.
       await createDialog.locator('#combo-name').fill(name);
       await expect(createDialog.locator('#combo-strategy')).toHaveValue(createdStrategy);
       await createDialog.locator('#combo-race-size').fill(String(initialRaceSize));
       await createDialog.getByRole('button', { name: 'Create' }).click();
       await expect(createDialog).not.toBeVisible();
 
-      // 3. BUG-C2 regression: the create POST must surface the new card
-      //    in the grid WITHOUT any reload — `createCombo` re-fetches
-      //    GET /combos into `state.combos` before the re-render, so the
-      //    card appears in place, immediately after the modal closes.
       const row = page.locator('tr').filter({ hasText: name });
       await expect(row).toHaveCount(1);
       // The row renders the strategy chip and "race N" in its columns.
@@ -114,8 +103,6 @@ test.describe('Combos CRUD', () => {
       comboId = Number(m![1]);
       expect(Number.isSafeInteger(comboId)).toBe(true);
 
-      // 4. Persisted state via the admin API: the row the server actually
-      //    stored must echo the create form's values verbatim.
       const created = await page.request.get(`/admin/api/combos/${comboId}`, {
         headers: adminAuthHeaders(),
       });
@@ -133,11 +120,6 @@ test.describe('Combos CRUD', () => {
         race_size: initialRaceSize,
       });
 
-      // 5. Edit through the detail view. The strategy <select> and the
-      //    race-size <input> both PATCH on change; race-input uses optimistic
-      //    state mutation (no requestUpdate), strategy uses requestUpdate.
-      //    We PATCH strategy first so a generic PATCH wait does not race it
-      //    with the subsequent race-size PATCH.
       await page.goto(`/#/combos/${comboId}`);
       const strategySelect = page.locator('.page-header .actions select').first();
       await expect(strategySelect).toHaveValue(createdStrategy);
@@ -180,7 +162,6 @@ test.describe('Combos CRUD', () => {
 
       // 5b. Persisted state: both keys are in the PATCH surface now —
       //     `strategy` is validated with the create-time set and written
-      //     by the server (BUG-C3 fix); `race_size` was already applied.
       //     The server-side Combo is the source of truth for the contract.
       const edited = await page.request.get(`/admin/api/combos/${comboId}`, {
         headers: adminAuthHeaders(),
@@ -197,22 +178,16 @@ test.describe('Combos CRUD', () => {
         race_size: newRaceSize,   // PATCH {race_size} is applied.
       });
 
-      // 6. Delete through the UI: danger button in the page header →
-      //    confirm dialog with id="show-confirm-dialog" → confirm.
       await page.locator('.page-header .actions button.danger').click();
       const confirmDialog = page.locator('#show-confirm-dialog');
       await expect(confirmDialog).toBeVisible();
       await expect(confirmDialog).toContainText(name);
       await confirmDialog.getByRole('button', { name: 'Delete' }).click();
 
-      // 7. The router navigates back to #/combos and the row is gone.
       await expect(page).toHaveURL(/#\/combos$/);
       await expect(page.locator('tr').filter({ hasText: name })).toHaveCount(0);
-
-      // 8. Contract: GET for the deleted id answers 404 with the
-      //    not_found envelope the server actually emits.
-      //    See BUG-C1 — the plan called for code:"not_found"; the real
-      //    code is "combo_not_found" (CoreError::ComboNotFound).
+      // BUG-C1: a missing combo answers 404 with code "combo_not_found"
+      // (CoreError::ComboNotFound), not the "not_found" the plan assumed.
       const gone = await page.request.get(`/admin/api/combos/${comboId}`, {
         headers: adminAuthHeaders(),
       });

@@ -2,7 +2,6 @@
 
 use super::stopwords::is_stopword;
 
-/// Calculates Shannon entropy of a byte string in bits per byte (0.0 to 8.0).
 pub fn shannon_entropy(s: &str) -> f64 {
     if s.is_empty() {
         return 0.0;
@@ -235,15 +234,12 @@ pub fn is_valid_ssn(s: &str) -> bool {
     ) else {
         return false;
     };
-    // Area cannot be 000, 666, or >= 900
     if area == 0 || area == 666 || area >= 900 {
         return false;
     }
-    // Group cannot be 00
     if group == 0 {
         return false;
     }
-    // Serial cannot be 0000
     if serial == 0 {
         return false;
     }
@@ -264,7 +260,6 @@ pub fn is_valid_iban(iban: &str) -> bool {
         return false;
     }
 
-    // Rearrange: move first 4 characters (country + check digits) to the end
     let rearranged = [&bytes[4..], &bytes[..4]].concat();
     let mut remainder: u32 = 0;
     for &b in &rearranged {
@@ -319,19 +314,18 @@ fn has_card_iin_prefix(d: &str) -> bool {
     false
 }
 
-/// Validates credit card numbers with the standard Luhn checksum algorithm
-/// combined with ISO/IEC 7812 major brand prefix verification (Visa, Mastercard, Amex, Discover, etc.).
-/// Returns false for non-numeric, wrong length (< 13 or > 19), unrecognized BINs, or failing checksum.
+/// Luhn checksum plus ISO/IEC 7812 major brand prefix verification. False
+/// for non-numeric input, length outside 13..=19, unrecognized IIN/BIN, or a
+/// failing checksum.
 pub fn luhn_check(digits_only: &str) -> bool {
     let len = digits_only.len();
     if !(13..=19).contains(&len) {
         return false;
     }
-    // Reject all-zero sequences like 0000000000000000
     if digits_only.chars().all(|c| c == '0') {
         return false;
     }
-    // Require valid card network IIN/BIN prefix to avoid false-positive masking on snowflake IDs
+    // The IIN/BIN requirement keeps snowflake IDs from being masked as cards.
     if !has_card_iin_prefix(digits_only) {
         return false;
     }

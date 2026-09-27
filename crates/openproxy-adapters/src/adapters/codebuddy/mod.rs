@@ -32,11 +32,9 @@ pub fn apply_codebuddy_spoofing_headers(req: &mut UpstreamRequest) {
     CodeBuddySpoofer.apply_to_request(req);
 }
 
-/// Default NPM registry metadata URL for CodeBuddy CLI package `@tencent-ai/codebuddy-code`.
 pub const NPM_CODEBUDDY_METADATA_URL: &str =
     "https://registry.npmjs.org/@tencent-ai/codebuddy-code/latest";
 
-/// Canonical NPM registry URL for CodeBuddy CLI, configurable via `OPENPROXY_CODEBUDDY_NPM_METADATA_URL`.
 pub fn codebuddy_npm_metadata_url() -> String {
     std::env::var("OPENPROXY_CODEBUDDY_NPM_METADATA_URL")
         .ok()
@@ -44,29 +42,22 @@ pub fn codebuddy_npm_metadata_url() -> String {
         .unwrap_or_else(|| NPM_CODEBUDDY_METADATA_URL.to_string())
 }
 
-/// Returns the current dynamic CodeBuddy version.
-/// Respects `OPENPROXY_CODEBUDDY_VERSION` env var if set.
 pub fn get_codebuddy_version() -> String {
     current_codebuddy_version()
 }
 
-/// Updates the dynamic CodeBuddy version in memory.
 pub fn set_codebuddy_version(version: String) {
     set_dynamic_codebuddy_version(version);
 }
 
-/// Dynamic CodeBuddy User-Agent string.
 pub fn get_codebuddy_ua() -> String {
     current_codebuddy_ua()
 }
 
-/// Updates the dynamic CodeBuddy User-Agent in memory.
 pub fn set_codebuddy_ua(ua: impl Into<String>) {
     set_dynamic_codebuddy_ua(ua);
 }
 
-/// Asynchronously queries npm registry for the latest `@tencent-ai/codebuddy-code` CLI version
-/// and updates the in-memory dynamic header state if changed.
 pub async fn refresh_codebuddy_version(upstream_client: &Arc<UpstreamClient>) -> Option<String> {
     let url = codebuddy_npm_metadata_url();
     let mut req = UpstreamRequest::get(&url);
@@ -120,14 +111,12 @@ pub async fn refresh_codebuddy_version(upstream_client: &Arc<UpstreamClient>) ->
     None
 }
 
-/// Alias for `refresh_codebuddy_version` following the CLI refresh naming convention.
 pub async fn refresh_codebuddy_cli_version(
     upstream_client: &Arc<UpstreamClient>,
 ) -> Option<String> {
     refresh_codebuddy_version(upstream_client).await
 }
 
-/// Adapter for CodeBuddy (<https://www.codebuddy.ai/v2>).
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct CodeBuddyAdapter {
     config: ProviderAdapterConfig,
@@ -212,7 +201,6 @@ impl ProviderAdapter for CodeBuddyAdapter {
         upstream_client: &Arc<UpstreamClient>,
         _api_key: &str,
     ) -> impl std::future::Future<Output = Result<Vec<DiscoveredModel>>> + Send {
-        // Opportunistically trigger a background refresh of the CLI version from npm registry
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             let client_clone = Arc::clone(upstream_client);
             handle.spawn(async move {
@@ -264,9 +252,8 @@ impl ProviderAdapter for CodeBuddyAdapter {
         )
     }
     fn normalize_openai_request(&self, view: &mut openproxy_types::OpenAIRequestView) {
-        // CodeBuddy upstream rejects non-streaming chat requests with error 11101.
-        // Forcing stream = true allows the pipeline unary dispatcher to accumulate
-        // the SSE stream into a unary OpenAIResponse seamlessly for non-streaming clients.
+        // Upstream rejects non-streaming chat with error 11101. Streaming lets the
+        // unary dispatcher accumulate the SSE back into a unary OpenAIResponse.
         view.stream = true;
 
         // CodeBuddy upstream security policy requires first message to be role: "system" (error 11128).
@@ -288,13 +275,11 @@ impl ProviderAdapter for CodeBuddyAdapter {
 
         let mut changed = false;
         if let Some(obj) = val.as_object_mut() {
-            // Guarantee stream: true for CodeBuddy upstream chat completions
             if obj.get("stream") != Some(&serde_json::Value::Bool(true)) {
                 obj.insert("stream".to_string(), serde_json::Value::Bool(true));
                 changed = true;
             }
 
-            // Guarantee first message is system prompt for CodeBuddy security policy (code 11128)
             if let Some(messages) = obj.get_mut("messages").and_then(|m| m.as_array_mut())
                 && (messages.is_empty()
                     || messages[0].get("role").and_then(|r| r.as_str()) != Some("system")
@@ -324,13 +309,12 @@ impl ProviderAdapter for CodeBuddyAdapter {
 pub const DEFAULT_CODEBUDDY_SYSTEM_PROMPT: &str =
     "You are CodeBuddy, a helpful AI coding assistant.";
 
-/// Ensures that `messages` in `OpenAIRequestView` starts with a system prompt message.
+/// Prepends `DEFAULT_CODEBUDDY_SYSTEM_PROMPT` unless message 0 is already
+/// system/developer, in which case an empty one is filled in.
 ///
-/// If message 0 is already system/developer, it is preserved (filling default if empty).
-/// If message 0 is NOT system, `DEFAULT_CODEBUDDY_SYSTEM_PROMPT` is prepended at index 0.
-/// Crucially, later messages in the conversation history are NEVER plucked or reordered,
-/// ensuring that the prefix token sequence across multi-turn requests remains completely
-/// invariant for upstream automatic KV prompt caching.
+/// Later messages are never plucked or reordered: the prefix token sequence
+/// has to stay identical across turns for upstream automatic KV prompt
+/// caching.
 pub fn ensure_codebuddy_system_prompt_in_view(view: &mut openproxy_types::OpenAIRequestView) {
     let messages = view.messages.to_mut();
     if messages.is_empty() {
@@ -392,7 +376,6 @@ pub fn ensure_codebuddy_system_prompt_in_view(view: &mut openproxy_types::OpenAI
     }
 }
 
-/// Ensures that a raw JSON `messages` array starts with a system prompt message.
 pub fn ensure_codebuddy_system_prompt_json(messages: &mut Vec<serde_json::Value>) {
     if messages.is_empty() {
         messages.push(serde_json::json!({
@@ -629,7 +612,7 @@ fn extract_biz_code(val: &serde_json::Value, max_depth: usize) -> Option<u32> {
     if max_depth == 0 {
         return None;
     }
-    // 1. Direct code or errcode at current level (filtering out HTTP status codes < 1000 and JSON-RPC codes)
+    // >= 1000 excludes HTTP status codes and JSON-RPC codes.
     for key in ["code", "errcode"] {
         if let Some(num) = val.get(key).and_then(serde_json::Value::as_i64)
             && (1_000..=(u32::MAX as i64)).contains(&num)
@@ -643,7 +626,7 @@ fn extract_biz_code(val: &serde_json::Value, max_depth: usize) -> Option<u32> {
             return Some(num);
         }
     }
-    // 2. Drill down into data, error, response (handling nested JSON-RPC shells and Axios error envelopes)
+    // Descend into nested JSON-RPC shells and Axios error envelopes.
     for key in ["data", "error", "response"] {
         if let Some(child) = val.get(key)
             && let Some(code) = extract_biz_code(child, max_depth - 1)

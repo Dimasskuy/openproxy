@@ -1,4 +1,4 @@
-// handlers/proxy-handlers.ts — sync, test, delete proxies, open the custom proxy modal.
+// handlers/proxy-handlers.ts — sync, test, delete proxies and open the custom proxy modal.
 
 import { html, render } from 'lit-html';
 import { state } from "../state/index.js";
@@ -217,9 +217,8 @@ export function showAddCustomProxy(): void {
   );
 }
 
-/** Body shape for `POST /admin/proxies`. Mirrors the Rust
- *  `CreateCustomProxyRequest` so consumers can `satisfies`-validate
- *  the builder's inferred return type. */
+/** Body shape for `POST /admin/proxies`, mirroring the Rust `CreateCustomProxyRequest` so
+ *  consumers can `satisfies`-validate the builder's inferred return type. */
 export interface CreateCustomProxyBody {
   host: string;
   port: number;
@@ -227,17 +226,14 @@ export interface CreateCustomProxyBody {
   country_code: string | null;
 }
 
-/** Read the add-custom-proxy form and produce the JSON body sent to
- *  `POST /admin/proxies`.
+/** Read the add-custom-proxy form into the JSON body for `POST /admin/proxies`.
  *
- *  `host` is trimmed by the browser's `required` validation, `port`
- *  is the raw numeric input (server-side `u16` check), `type` is a
- *  `<select>` defaulted to `"http"`, and `country_code` is uppercased
- *  or `null` when blank (the `null` is significant — `""` would
- *  become `Some("")` in Rust).
+ *  `host` is trimmed by the browser's `required` validation, `port` is the raw numeric input
+ *  (checked server-side as `u16`), `type` is a `<select>` defaulted to `"http"`, and
+ *  `country_code` is uppercased or `null` when blank — the `null` is significant, since `""`
+ *  would become `Some("")` in Rust.
  *
- *  Pure (only `form` reads + `Number`/`.toUpperCase()`). Exported
- *  for unit testing in `proxy-handlers.test.ts`. */
+ *  Pure (form reads + `Number`/`.toUpperCase()`); exported for `proxy-handlers.test.ts`. */
 export function buildCustomProxyBodyFromForm(form: HTMLFormElement): CreateCustomProxyBody {
   const f = new FormData(form);
   const countryRaw = f.get("country_code");

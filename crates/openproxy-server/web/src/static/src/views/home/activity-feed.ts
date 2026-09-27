@@ -1,8 +1,5 @@
-// views/home/activity-feed.ts — recent rows list + scroll preservation.
-//
-// Renders the last 20 usage rows in a scrollable list with scroll
-// position preservation across re-renders (new rows prepend at top
-// without scrolling the user away from their position).
+// views/home/activity-feed.ts — last 20 usage rows with scroll
+// preservation across re-renders (new rows prepend without moving the user).
 
 import { html, type TemplateResult } from "lit-html";
 import { ref } from "lit-html/directives/ref.js";
@@ -17,17 +14,11 @@ import {
   formatTokensInOut,
 } from "./kpis.js";
 
-// ==========
-// Scroll state
-// ==========
 
-/** The activity feed scroll container. Captured via `ref` directive so
- *  we can save/restore its scrollTop across lit-html re-renders. */
+/** Activity feed scroll container, captured via `ref` to save/restore scrollTop. */
 let activityFeedEl: HTMLElement | null = null;
 
-/** Saved scroll state for the activity feed. Set in the subscriber
- *  callback (before lit-html render), restored in the post-render
- *  `requestAnimationFrame`. */
+/** Scroll state saved pre-render, restored in the post-render `requestAnimationFrame`. */
 let savedScroll: SavedScroll | null = null;
 
 /** Callback ref that captures the activity feed scroll container. */
@@ -35,9 +26,7 @@ function activityFeedRef(el: Element | undefined): void {
   activityFeedEl = el instanceof HTMLElement ? el : null;
 }
 
-// ==========
 // Row rendering
-// ==========
 
 function formatTime(iso: string): string {
   if (!iso) return "—";
@@ -92,14 +81,10 @@ function renderActivityRow(r: RecentUsageRow): TemplateResult {
   </a>`;
 }
 
-// ==========
 // Feed rendering
-// ==========
 
-/** Activity feed — scrollable list of the last 20 rows. Uses `repeat`
- *  with row id as the key so lit-html reuses DOM nodes (essential for
- *  scroll preservation: existing rows keep their identity, new rows are
- *  inserted at the top). */
+/** Last 20 rows. `repeat` keyed by row id so lit-html reuses DOM nodes —
+ *  required for scroll preservation. */
 export function renderActivityFeed(snapshot: Snapshot | null): TemplateResult {
   const rows: RecentUsageRow[] = snapshot ? snapshot.recentRows : [];
   const body: TemplateResult = rows.length === 0
@@ -123,9 +108,7 @@ export function renderActivityFeed(snapshot: Snapshot | null): TemplateResult {
   </section>`;
 }
 
-// ==========
 // Scroll preservation
-// ==========
 
 /** Save the activity feed scroll state BEFORE a lit-html re-render. */
 export function saveActivityScroll(): void {
@@ -137,10 +120,8 @@ export function saveActivityScroll(): void {
   }
 }
 
-/** Restore the activity feed scroll position after a lit-html re-render.
- *  If the user was at scrollTop=0, leave it (newest row appears at top).
- *  If they'd scrolled down, add the delta in scrollHeight to scrollTop so
- *  their view is pinned to the same content. */
+/** Restore scroll position post-render. At scrollTop=0 leave it (newest row on top);
+ *  otherwise shift scrollTop by the scrollHeight delta to pin the same content. */
 export function restoreActivityScroll(): void {
   if (!activityFeedEl || !savedScroll) return;
   const newScrollHeight: number = activityFeedEl.scrollHeight;

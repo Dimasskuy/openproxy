@@ -15,6 +15,9 @@ use rusqlite::Connection;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+/// Canonical Chat Completions terminator. AGENTS.md 4.5: every completed
+/// stream must end with this frame, so each emission site flushes the
+/// normalizer and PII stage buffers before sending it.
 pub const SSE_DONE_BYTES: bytes::Bytes = bytes::Bytes::from_static(b"data: [DONE]\n\n");
 
 #[derive(Clone)]

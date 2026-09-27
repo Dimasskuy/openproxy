@@ -5,18 +5,12 @@ use openproxy_types::{
 };
 use serde_json::Value;
 
-/// Exhaustive extraction of `cached_tokens` from a Responses API usage value,
-/// aligned with `sse/openai.rs`.
-///
-/// Inspects `prompt_tokens_details` and `input_tokens_details` for:
-/// - `cached_tokens`
-/// - `cache_read_input_tokens`
-/// - `prompt_cache_hit_tokens`
-///
-/// Falls back to root fields on `usage`:
-/// - `prompt_cache_hit_tokens`
-/// - `cached_tokens`
-/// - `cache_read_input_tokens`
+/// `cached_tokens` from a Responses API usage value, kept aligned with
+/// `sse/openai.rs`. The field name varies across upstreams and versions
+/// (`cached_tokens`, `cached_prompt_tokens`, `cache_read_input_tokens`,
+/// `prompt_cache_hit_tokens`), under `prompt_tokens_details`,
+/// `input_tokens_details` or at the root of `usage`, and a `0` there means
+/// "not reported" rather than an empty cache.
 pub fn extract_responses_cached_tokens(usage_val: &Value) -> Option<u32> {
     let extract_from_obj = |obj: &Value| -> Option<u64> {
         let cached = obj
@@ -57,7 +51,6 @@ pub fn extract_responses_cached_tokens(usage_val: &Value) -> Option<u32> {
     chosen.and_then(|count| u32::try_from(count).ok())
 }
 
-/// Translate an upstream OpenAI Responses API JSON response into standard [`OpenAIResponse`].
 pub fn responses_to_openai(val: &Value, fallback_model: &str) -> Result<OpenAIResponse> {
     if let Some(error) = val.get("error")
         && !error.is_null()
@@ -353,7 +346,6 @@ mod tests {
 
     #[test]
     fn test_extract_responses_cached_tokens_variants() {
-        // Details with prompt_cache_hit_tokens
         let u1 = serde_json::json!({
             "prompt_tokens_details": {
                 "prompt_cache_hit_tokens": 128
@@ -361,7 +353,6 @@ mod tests {
         });
         assert_eq!(extract_responses_cached_tokens(&u1), Some(128));
 
-        // Details with cache_read_input_tokens
         let u2 = serde_json::json!({
             "input_tokens_details": {
                 "cache_read_input_tokens": 256
@@ -369,20 +360,17 @@ mod tests {
         });
         assert_eq!(extract_responses_cached_tokens(&u2), Some(256));
 
-        // Root prompt_cache_hit_tokens with cached_tokens: 0
         let u3 = serde_json::json!({
             "prompt_cache_hit_tokens": 5120,
             "cached_tokens": 0
         });
         assert_eq!(extract_responses_cached_tokens(&u3), Some(5120));
 
-        // Root cache_read_input_tokens
         let u4 = serde_json::json!({
             "cache_read_input_tokens": 64
         });
         assert_eq!(extract_responses_cached_tokens(&u4), Some(64));
 
-        // Details with cached_tokens: 0 BUT cache_read_input_tokens: 128
         let u5 = serde_json::json!({
             "prompt_tokens_details": {
                 "cached_tokens": 0,
@@ -391,7 +379,6 @@ mod tests {
         });
         assert_eq!(extract_responses_cached_tokens(&u5), Some(128));
 
-        // Singular input_token_details with cached_tokens
         let u6 = serde_json::json!({
             "input_token_details": {
                 "cached_tokens": 512
@@ -399,7 +386,6 @@ mod tests {
         });
         assert_eq!(extract_responses_cached_tokens(&u6), Some(512));
 
-        // Singular prompt_token_details with cached_prompt_tokens
         let u7 = serde_json::json!({
             "prompt_token_details": {
                 "cached_prompt_tokens": 1024

@@ -34,10 +34,8 @@ import { readFileSync } from 'node:fs';
  * matches the new visual order (double regression: UI + DB).
  */
 
-// `page.request` shares cookies only, not localStorage; the dashboard
-// authenticates with a Bearer token stored in localStorage (see
-// state/auth.ts). Read it from the same storageState.json the browser
-// context is seeded with — single source of truth for test credentials.
+// `page.request` shares cookies, not localStorage, so API probes must send the
+// Bearer token (state/auth.ts) read from the seeded storageState.json.
 const storageStatePath = 'tests/e2e/storageState.json';
 function adminAuthHeaders(): Record<string, string> {
   const storageState = JSON.parse(readFileSync(storageStatePath, 'utf8')) as {
@@ -67,7 +65,6 @@ test.describe('Combo target reorder', () => {
     let providerCreated = false;
 
     try {
-      // ---- Setup: seed provider -> models -> account -> combo -> 3 targets ----
       const providerResp = await page.request.post('/admin/api/providers', {
         headers,
         data: { id: providerId, name: `E2E Reorder ${suffix}`, base_url: baseUrl, auth_type: 'bearer', format: 'openai' },
@@ -119,7 +116,6 @@ test.describe('Combo target reorder', () => {
       }
       const [idA, idB, idC] = targetIds;
 
-      // ---- Action: open the detail view, click "Move Down" on target A ----
       await page.goto(`/#/combos/${comboId}`);
       const rows = page.locator('table.combo-targets-table tbody tr.combo-target-card-row');
       await expect(rows).toHaveCount(3);
@@ -155,7 +151,6 @@ test.describe('Combo target reorder', () => {
       const reorderResp = await reorderPost;
       expect(reorderResp.ok()).toBe(true);
 
-      // ---- Assertion (UI, no reload): rows visibly re-order to B,A,C ----
       await expect(rows).toHaveCount(3);
       // After reorder the server reassigns priority_order 1,2,3
       // (1-indexed — see combos.rs apply_target_priority_chunks), and

@@ -10,13 +10,12 @@ use super::parser::{
 };
 use super::types::{AccumulatedToolCall, AnthropicToolEvent, MAX_ACCUMULATED_BYTES};
 
-/// Provider-agnostic accumulator that the streaming loop in
-/// `pipeline.rs::dispatch_upstream_streaming` owns. Construct only when
+/// Owned by the streaming loop in
+/// `pipeline.rs::dispatch_upstream_streaming`, and only constructed when
 /// `Pipeline::is_recording() == true`.
 pub struct ResponseAccumulator {
-    /// Concatenated `delta.content` extracted incrementally from each
-    /// chunk during `append_openai_raw`. No JSON parsing is done at
-    /// `finish()` — the content is already assembled.
+    /// Concatenated `delta.content`, extracted incrementally during
+    /// `append_openai_raw` so `finish()` does no JSON parsing.
     content: Vec<u8>,
     /// Concatenated reasoning content (o1, deepseek-r1, kimi-k2-thinking
     /// for OpenAI; extended thinking for Anthropic; thought parts for
@@ -26,27 +25,23 @@ pub struct ResponseAccumulator {
     /// `delta.tool_calls[]` on each chunk. For Anthropic, populated via
     /// `update_anthropic_tool_use`.
     tool_calls: Vec<AccumulatedToolCall>,
-    /// Inherited from the existing `usage` local in the loop.
     usage: Option<OpenAIUsage>,
-    /// Inherited from the existing `stop_reason` local.
     stop_reason: Option<String>,
     /// Total bytes currently held in `content` + `reasoning` + tool call arguments.
     total_bytes: usize,
-    /// True if `MAX_ACCUMULATED_BYTES` was reached and further content
-    /// was dropped. Surfaces in the final JSON's `extra` map.
+    /// Set once `MAX_ACCUMULATED_BYTES` is reached, and surfaced in the
+    /// final JSON's `extra` map.
     truncated: bool,
-    /// True when the stream was interrupted (client disconnect, race
-    /// lost, sink error, etc.) before reaching `[DONE]`.
+    /// Set when the stream was interrupted (client disconnect, race lost,
+    /// sink error) before reaching `[DONE]`.
     partial: bool,
-    /// Raw response stream lines (including non-JSON content or error responses)
-    /// captured incrementally up to a max size (e.g. 32 KiB) for debugging.
+    /// Raw stream lines, non-JSON content and error responses included,
+    /// captured up to 32 KiB for debugging.
     raw_response_body: Vec<u8>,
 }
 
 impl ResponseAccumulator {
-    /// Public accessor for the accumulated content text. Used by the
-    /// token estimator to estimate completion tokens when the upstream
-    /// didn't report usage.
+    /// Feeds the token estimator when the upstream reported no usage.
     pub fn content_text(&self) -> std::borrow::Cow<'_, str> {
         String::from_utf8_lossy(&self.content)
     }
@@ -65,8 +60,7 @@ impl ResponseAccumulator {
         }
     }
 
-    /// Append a raw stream line as read from the upstream connection (for debugging
-    /// empty/interrupted streams). Caps at 32 KiB to limit memory overhead.
+    /// Appends an upstream stream line verbatim. Caps at 32 KiB.
     pub fn append_raw_line(&mut self, line: &str) {
         if self.raw_response_body.len() < 32768 {
             let limit = 32768 - self.raw_response_body.len();
@@ -81,7 +75,6 @@ impl ResponseAccumulator {
         }
     }
 
-    /// Mark this accumulator as representing a partial (interrupted) stream.
     pub fn mark_partial(&mut self) {
         self.partial = true;
     }
@@ -91,7 +84,6 @@ impl ResponseAccumulator {
         self.partial
     }
 
-    /// Checks if all accumulated fields (including raw stream logs) are empty.
     pub fn is_completely_empty(&self) -> bool {
         self.content.is_empty()
             && self.reasoning.is_none()
@@ -99,7 +91,6 @@ impl ResponseAccumulator {
             && self.raw_response_body.is_empty()
     }
 
-    /// Public accessor for the accumulated raw response body.
     pub fn raw_response_body(&self) -> std::borrow::Cow<'_, str> {
         String::from_utf8_lossy(&self.raw_response_body)
     }
@@ -140,9 +131,9 @@ impl ResponseAccumulator {
         }
     }
 
-    /// Append an OpenAI-format raw payload string (e.g. the JSON inside
-    /// `data: {...}`). Extracts `delta.content` incrementally using a
-    /// lightweight string scan (~50-100x faster than a full JSON parse).
+    /// Appends the JSON inside a `data: {...}` frame. `delta.content` is
+    /// extracted by a string scan, an order of magnitude cheaper than a
+    /// full JSON parse per chunk.
     pub fn append_openai_raw(&mut self, payload: &str) {
         if self.truncated {
             return;
@@ -151,7 +142,6 @@ impl ResponseAccumulator {
         self.append_delta_tool_calls_if_present(payload);
     }
 
-    /// Append a string to the reasoning accumulator.
     pub fn append_reasoning(&mut self, text: &str) {
         if self.truncated || text.is_empty() {
             return;
@@ -166,19 +156,16 @@ impl ResponseAccumulator {
         self.total_bytes += r.len() - prev_len;
     }
 
-    /// Record the final usage (replaces any prior value).
     pub fn set_usage(&mut self, usage: OpenAIUsage) {
         self.usage = Some(usage);
     }
 
-    /// Record the first non-null stop_reason.
     pub fn set_stop_reason(&mut self, reason: &str) {
         if self.stop_reason.is_none() {
             self.stop_reason = Some(reason.to_string());
         }
     }
 
-    /// Update an OpenAI-format tool call delta at `index`.
     pub fn update_openai_tool_call_delta(
         &mut self,
         index: usize,
@@ -207,12 +194,10 @@ impl ResponseAccumulator {
         }
     }
 
-    /// Append a tool call from OpenAI's `delta.tool_calls[]`.
     pub fn append_openai_tool_call(&mut self, id: Option<&str>, name: &str, arguments: &str) {
         self.update_openai_tool_call_delta(0, id, Some(name), Some(arguments));
     }
 
-    /// Anthropic tool_use event handler.
     pub fn update_anthropic_tool_use(&mut self, event: AnthropicToolEvent) {
         match event {
             AnthropicToolEvent::Open(open) => {
@@ -231,12 +216,10 @@ impl ResponseAccumulator {
         }
     }
 
-    /// True if any content was accumulated.
     pub fn is_empty(&self) -> bool {
         self.content.is_empty() && self.reasoning.is_none() && self.tool_calls.is_empty()
     }
 
-    /// True if `MAX_ACCUMULATED_BYTES` was reached.
     pub fn is_truncated(&self) -> bool {
         self.truncated
     }
@@ -312,7 +295,6 @@ impl ResponseAccumulator {
         choice
     }
 
-    /// Build the final OpenAI-style response JSON value.
     pub fn finish(&self, chunk_id: &str, created: u64, model: &str) -> Value {
         let mut response = Map::new();
         response.insert("id".to_string(), Value::String(chunk_id.to_string()));

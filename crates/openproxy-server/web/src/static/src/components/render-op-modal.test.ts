@@ -1,11 +1,8 @@
-// components/render-op-modal.test.ts — unit tests for the
-// renderOpModal() helper. Validates the DOM shape, ARIA wiring,
-// escape/backdrop/close-button dismissal, focus trap, and the
-// onClose callback without booting a browser (jsdom suffices).
+// components/render-op-modal.test.ts — unit tests for renderOpModal(): DOM shape, ARIA
+// wiring, escape/backdrop/close dismissal, focus trap and the onClose callback (jsdom).
 //
-// We mount each modal into the real document.body so focus events
-// (`document.activeElement`) work, and tear it down in afterEach
-// so tests don't leak DOM between cases.
+// Each modal is mounted into the real document.body so `document.activeElement` works;
+// afterEach tears it down so DOM does not leak between cases.
 
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { html } from "lit-html";
@@ -85,7 +82,7 @@ describe("renderOpModal", () => {
     expect(root?.contains(handle.el)).toBe(true);
     handle.close();
     expect(handle.el.isConnected).toBe(false);
-    // Second call must not throw.
+    // Idempotent: a second call must not throw.
     expect(() => handle.close()).not.toThrow();
   });
 
@@ -150,11 +147,8 @@ describe("renderOpModal", () => {
         <input id="last" type="text" />
       `,
     });
-    // The first auto-focused element is the modal's close button
-    // (it's the first focusable in DOM order, before any body
-    // inputs). Move focus explicitly to our known "last" input
-    // and dispatch Tab — the trap should wrap to the *first*
-    // focusable in the focusable list, which is the close button.
+    // The auto-focused element is the close button (first focusable in DOM order, before any
+    // body input), so focus the known "last" input and Tab — the trap must wrap to the first.
     const firstFocusable = handle.el.querySelector<HTMLElement>(".close-btn");
     const last = handle.el.querySelector<HTMLInputElement>("#last");
     expect(firstFocusable && last).toBeTruthy();
@@ -163,7 +157,7 @@ describe("renderOpModal", () => {
     const ev = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
     window.dispatchEvent(ev);
     expect(document.activeElement).toBe(firstFocusable);
-    // close to avoid leaking DOM
+    // Close so the DOM does not leak.
     handle.close();
   });
 });

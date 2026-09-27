@@ -1,7 +1,6 @@
-// handlers/combo-target-handlers/index.ts — facade re-exporting
-// all combo target CRUD: modal, DnD, selection, bulk actions.
-//
-// Public API is identical to the original combo-target-handlers.ts.
+// handlers/combo-target-handlers/index.ts — facade re-exporting all combo target CRUD (modal,
+// DnD, selection, bulk actions). The public API is identical to the original
+// combo-target-handlers.ts.
 
 export {
   showAddTarget,

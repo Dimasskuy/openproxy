@@ -4,8 +4,6 @@
 //! Se usa desde scripts externos y automatización (el dashboard SPA se
 //! sirve desde el propio binario openproxy-server vía rust-embed, así que
 //! ya no hay un crate `openproxy-web` que lo consuma internamente).
-//!
-
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 //! ## Forma de uso
 //!
@@ -87,8 +85,7 @@ impl Client {
 
     /// Construye un cliente compartiendo un `UpstreamClient` propio.
     ///
-    /// Útil cuando el llamador quiere configurar timeouts, TLS, proxies, o
-    /// reutilizar un pool de conexiones a nivel de aplicación.
+    /// Para timeouts, TLS, proxies o un pool de conexiones a nivel de aplicación.
     pub fn with_client(
         base_url: impl Into<String>,
         http: std::sync::Arc<openproxy_adapters::upstream::UpstreamClient>,
@@ -188,9 +185,7 @@ impl Client {
         parse_unit(resp).await
     }
 
-    // -----------------------------------------------------------------
     // Providers
-    // -----------------------------------------------------------------
 
     /// `POST /admin/providers`. Devuelve el `ProviderId` recién creado.
     pub async fn create_provider(
@@ -201,9 +196,7 @@ impl Client {
         Ok(ProviderId::new(env.id))
     }
 
-    // -----------------------------------------------------------------
     // Accounts
-    // -----------------------------------------------------------------
 
     /// `GET /admin/accounts[?provider_id=...]`.
     pub async fn list_accounts(
@@ -251,9 +244,7 @@ impl Client {
         self.put_json_unit(&path, &input).await
     }
 
-    // -----------------------------------------------------------------
     // Combos
-    // -----------------------------------------------------------------
 
     /// `POST /admin/combos`. Devuelve el `ComboId` recién creado.
     pub async fn create_combo(&self, input: CreateComboInput) -> Result<ComboId, ClientError> {
@@ -283,29 +274,20 @@ impl Client {
         Ok(env.id)
     }
 
-    // -----------------------------------------------------------------
     // Models
-    // -----------------------------------------------------------------
 
     /// `POST /admin/models/:id/refresh`.
     ///
-    /// El parámetro es un `ModelRowId` (no un `ProviderId`) porque la ruta
-    /// del server indexa por fila de la tabla `models`. El nombre de
-    /// parámetro del spec original era "provider", pero el contrato del
-    /// server exige un id numérico; se documenta aquí para no repetir la
-    /// confusión más adelante.
-    ///
-    /// Devuelve el número de filas tocadas (inserts + updates) en la tabla
-    /// `models`, según reporta el server.
+    /// El server indexa por fila de la tabla `models`, así que el parámetro es
+    /// un `ModelRowId` (no un `ProviderId`). Devuelve las filas tocadas
+    /// (inserts + updates) que reporta el server.
     pub async fn refresh_models(&self, model_row_id: ModelRowId) -> Result<usize, ClientError> {
         let path = format!("/admin/models/{}/refresh", model_row_id.0);
         let env: TouchedEnvelope = self.post_json_resp(&path, serde_json::json!({})).await?;
         Ok(env.touched)
     }
 
-    // -----------------------------------------------------------------
     // Usage analytics
-    // -----------------------------------------------------------------
 
     async fn get_analytics<T: serde::de::DeserializeOwned>(
         &self,
@@ -399,11 +381,8 @@ impl_client_crud_methods! {
 
     /// `GET /v1/models` (endpoint público, no `/admin/...`).
     ///
-    /// El server devuelve la lista de modelos en formato OpenAI
-    /// (`{"object": "list", "data": [...]}`). Mantenemos el tipo laxo
-    /// `serde_json::Value` para no atar el cliente a una versión concreta
-    /// del shape; los consumidores que necesiten los campos pueden
-    /// deserializar desde aquí.
+    /// Tipo laxo `serde_json::Value`: el shape exacto de la lista de modelos
+    /// no ata al cliente a una versión concreta del endpoint.
     get list_models("/v1/models") -> serde_json::Value;
 
     /// `DELETE /admin/providers/:id`. Idempotente.
@@ -434,9 +413,7 @@ impl_client_crud_methods! {
     analytics usage_races("/admin/usage/races") -> RaceStats;
 }
 
-// =====================================================================
 // Error type
-// =====================================================================
 
 /// Errores que puede devolver cualquier método del [`Client`].
 #[derive(Debug, thiserror::Error)]
@@ -462,18 +439,16 @@ pub enum ClientError {
     Deserialize(#[from] serde_json::Error),
 }
 
-// =====================================================================
 // Internals
-// =====================================================================
 
 /// Inspecciona el `status` y el body de una respuesta y la entrega a uno
 /// de tres destinos:
 ///
 /// 1. `2xx` y body JSON deserializable a `T` → `Ok(T)`.
 /// 2. `4xx/5xx` con body `{"error": {"code", "message"}}` → mapea el
-///    `code` a [`CoreError`] y lo envuelve en [`ClientError::Api`]. Si el
-///    `code` no se reconoce, devuelve [`ClientError::Status`] con el
-///    código y mensaje crudos.
+///    `code` a [`CoreError`] y lo envuelve en [`ClientError::Api`]. Un
+///    `code` no reconocido devuelve [`ClientError::Status`] con el código
+///    y el mensaje crudos.
 /// 3. `4xx/5xx` con body que no encaja en el sobre → [`ClientError::Status`].
 async fn collect_response_bytes(
     resp: openproxy_adapters::upstream::UpstreamResponse,
@@ -505,11 +480,10 @@ async fn parse_unit(
 
 /// Convierte un body de error HTTP en un [`ClientError`].
 ///
-/// Intenta primero el sobre estándar del server
-/// (`{"error": {"code": "...", "message": "..."}}`). Si lo reconoce,
-/// mapea el `code` a [`CoreError`]; si no, conserva `code` y `message`
-/// en [`ClientError::Status`]. Si el body ni siquiera es JSON, devuelve
-/// [`ClientError::Status`] con el cuerpo crudo.
+/// Reconoce el sobre estándar del server
+/// (`{"error": {"code": "...", "message": "..."}}`) y mapea el `code` a
+/// [`CoreError`]. Un `code` desconocido conserva `code` y `message` en
+/// [`ClientError::Status`]. Un body que no es JSON se reporta truncado.
 fn map_error_body(status: u16, bytes: &[u8]) -> ClientError {
     #[derive(serde::Deserialize)]
     struct Envelope {
@@ -537,9 +511,8 @@ fn map_error_body(status: u16, bytes: &[u8]) -> ClientError {
 }
 
 /// Construye un query string a partir de pares `(clave, valor)`. Las claves
-/// con valor `None` se omiten. Las que sí tienen valor se codifican con
-/// `urlencoded` (mínimo: espacios, `&`, `=`). No se usa
-/// `serde_urlencoded` para no añadir un crate nuevo al workspace.
+/// con valor `None` se omiten. `serde_urlencoded` no se usa para no añadir
+/// un crate al workspace.
 fn build_query(pairs: &[(&str, Option<&str>)]) -> String {
     let mut out = String::new();
     let mut first = true;
@@ -578,11 +551,9 @@ fn usage_filter_query(f: &UsageFilter) -> String {
 
 /// Percent-encoding mínimo para un único valor de query string.
 ///
-/// Cubre los caracteres que pueden aparecer en identificadores, fechas
-/// ISO-8601, y nombres de modelos (`anthropic/claude-sonnet-4`,
-/// `openai/gpt-4o`, etc.). No intenta ser RFC-3986-completo — si el
-/// llamador mete caracteres más exóticos, preferimos aceptar el riesgo
-/// de un 400 limpio del server antes que añadir un crate nuevo.
+/// Cubre lo que aparece en identificadores, fechas ISO-8601 y nombres de
+/// modelos. Fuera de RFC 3986: preferimos un 400 limpio del server antes
+/// que añadir un crate.
 fn urlencoded(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.as_bytes() {
@@ -591,9 +562,8 @@ fn urlencoded(s: &str) -> String {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 out.push(*b as char)
             }
-            // sub-delims y gen-delims que no se rompen en práctica
+            // gen-delims que no se rompen en la práctica
             b':' | b'/' => out.push(*b as char),
-            // todo lo demás se escapa como %XX
             _ => {
                 out.push('%');
                 let hi = (*b >> 4) & 0x0f;

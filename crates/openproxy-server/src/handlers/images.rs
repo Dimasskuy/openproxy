@@ -242,12 +242,11 @@ async fn fetch_remote_image(
         || std::env::var("OPENPROXY_ALLOW_PRIVATE_IMAGES").is_ok_and(|v| v == "true" || v == "1");
 
     if !allow_private {
-        // SSRF guard for a user-supplied URL. `resolve_public_host` both
-        // validates every resolved address AND seeds the upstream client's
-        // shared DNS cache, so the connector below dials the addresses that
-        // were validated here instead of re-resolving (which would reopen a
-        // DNS-rebinding window — especially with
-        // `OPENPROXY_ALLOW_PRIVATE_UPSTREAMS` set for provider upstreams).
+        // SSRF guard for a user-supplied URL. `resolve_public_host` validates every
+        // resolved address AND seeds the upstream client's shared DNS cache, so the
+        // connector dials the addresses validated here instead of re-resolving
+        // (which would reopen a DNS-rebinding window, notably when
+        // `OPENPROXY_ALLOW_PRIVATE_UPSTREAMS` is set for provider upstreams).
         openproxy_adapters::upstream::resolve_public_host(host, port)
             .await
             .map_err(|e| {

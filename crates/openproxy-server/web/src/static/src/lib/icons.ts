@@ -1,5 +1,5 @@
-// lib/icons.ts — Centralized SVG icon helpers for Lit-HTML.
-// Zero dependencies, crisp vector glyphs aligned with design tokens.
+// lib/icons.ts — centralized SVG icon helpers for Lit-HTML. Zero dependencies, crisp vector
+// glyphs aligned with the design tokens.
 
 import { html, type TemplateResult } from "lit-html";
 
@@ -65,8 +65,8 @@ export const icons = {
   navLogs: (cls = "icon"): TemplateResult => html`<svg class="${cls}" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8 H5 L7 3 L9 13 L11 8 H14"/></svg>`,
   navDebugLogs: (cls = "icon"): TemplateResult => html`<svg class="${cls}" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="8" cy="9" rx="3.5" ry="4"/><circle cx="8" cy="4" r="1.2"/><path d="M8 5 V5.5"/><path d="M4.5 7 L2 6 M4.5 9 L1.5 9 M4.5 11 L2.5 12.5"/><path d="M11.5 7 L14 6 M11.5 9 L14.5 9 M11.5 11 L13.5 12.5"/></svg>`,
   navConfig: (cls = "icon"): TemplateResult => html`<svg class="${cls}" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><circle cx="8" cy="8" r="2.5"/><path d="M8 1 V3.5 M8 12.5 V15 M1 8 H3.5 M12.5 8 H15 M3 3 L4.8 4.8 M11.2 11.2 L13 13 M3 13 L4.8 11.2 M11.2 4.8 L13 3"/></svg>`,
-  // Bell-ish glyph. The dot is filled via stroke="currentColor" so
-  // it inherits the active link colour.
+  // Bell-ish glyph; the dot is filled with stroke="currentColor" so it inherits the active link
+  // colour.
   navNotifications: (cls = "icon"): TemplateResult => html`<svg class="${cls}" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12 H13 L11.5 10 V7 a3.5 3.5 0 0 0 -7 0 V10 Z"/><path d="M6.5 12 V12.5 a1.5 1.5 0 0 0 3 0 V12"/></svg>`,
 };
 

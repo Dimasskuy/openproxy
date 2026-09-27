@@ -3,9 +3,7 @@ use super::{
 };
 use openproxy_types::ResultExt;
 
-// =====================================================================
 // Ollama Cloud
-// =====================================================================
 
 declare_openai_adapter!(
     /// Adapter for <https://ollama.com>.

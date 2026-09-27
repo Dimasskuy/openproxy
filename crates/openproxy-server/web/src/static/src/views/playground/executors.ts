@@ -1,16 +1,11 @@
-// views/playground/executors.ts — Image / embedding / audio request executors.
-//
-// Each executor builds the upstream fetch request for its modality, pipes the
-// response back into the shared PlaygroundState (status, headers, raw body,
-// metrics), and throws on non-2xx. The chat executor lives in chat.ts.
-//
+// views/playground/executors.ts — image / embedding / audio / system executors.
+// Each builds the upstream fetch for its modality, pipes the response into the
+// shared state (status, headers, raw body, metrics), and throws on non-2xx.
 // Shared shape: status → headers → text body → parse JSON → throw on error.
+// The chat executor lives in chat.ts.
 
 import type { PlaygroundState } from './shared.js';
 
-// ==========
-// Shared response ingestors
-// ==========
 
 function buildAuthHeaders(
   key: string,
@@ -43,9 +38,6 @@ function safeJsonParse(text: string): unknown {
   }
 }
 
-// ==========
-// Image executor (generation / edit / variation)
-// ==========
 
 export async function executeImageRequest(
   st: PlaygroundState,
@@ -177,9 +169,6 @@ export async function executeImageRequest(
   }
 }
 
-// ==========
-// Embedding executor
-// ==========
 
 export async function executeEmbeddingRequest(
   st: PlaygroundState,
@@ -236,9 +225,6 @@ export async function executeEmbeddingRequest(
   }
 }
 
-// ==========
-// Audio transcription executor
-// ==========
 
 export async function executeAudioRequest(
   st: PlaygroundState,
@@ -279,9 +265,6 @@ export async function executeAudioRequest(
   }
 }
 
-// ==========
-// Decision / System One executor
-// ==========
 
 export async function executeDecisionRequest(
   st: PlaygroundState,

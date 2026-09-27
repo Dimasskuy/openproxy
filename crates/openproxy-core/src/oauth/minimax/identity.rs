@@ -15,7 +15,7 @@ pub struct MiniMaxIdentity {
 }
 
 impl MiniMaxIdentity {
-    /// Returns the best non-empty label for account display: email, then display name, then fallback.
+    /// Best non-empty display label: email, then display name, then fallback.
     pub fn display_label(&self) -> String {
         if let Some(ref em) = self.email
             && !em.trim().is_empty()
@@ -36,7 +36,7 @@ impl MiniMaxIdentity {
     }
 }
 
-/// Resolves user ID, email, and display name from `/v1/api/user/info`.
+/// User ID, email and display name from `/v1/api/user/info`.
 pub async fn resolve_user_identity(
     upstream: &Arc<UpstreamClient>,
     token: &str,
@@ -110,11 +110,11 @@ pub async fn resolve_user_identity(
     }
 }
 
-/// Resolves personal workspace metadata: (op_group_id, token_plan_tier, credit_balance).
+/// Personal workspace metadata: `(op_group_id, token_plan_tier, credit_balance)`.
 ///
-/// Matches upstream `matrix-account-client.ts` 1:1 by inspecting `/matrix/api/v1/user/get_user_extra_info`
-/// for personal workspaces and querying `/matrix/api/v1/commerce/get_membership_info` to extract
-/// `op_credit_summary.total_remaining_amount`.
+/// Mirrors upstream `matrix-account-client.ts`: `/matrix/api/v1/user/get_user_extra_info`
+/// for the personal workspace, then `op_credit_summary.total_remaining_amount` from
+/// `/matrix/api/v1/commerce/get_membership_info`.
 pub async fn resolve_membership_info(
     upstream: &Arc<UpstreamClient>,
     token: &str,
@@ -178,7 +178,7 @@ pub async fn resolve_membership_info(
         (None, None, None, serde_json::json!(0))
     };
 
-    // Upstream fallback / enrichment: query /matrix/api/v1/commerce/get_membership_info
+    // enrichment: query /matrix/api/v1/commerce/get_membership_info
     let commerce_body = serde_json::json!({ "workspace_id": ws_id }).to_string();
     let commerce_req = matrix::build_matrix_post_request(
         region,

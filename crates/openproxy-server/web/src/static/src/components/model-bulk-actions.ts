@@ -1,17 +1,11 @@
-// components/model-bulk-actions.ts — the "N selected" bar that
-// appears above the models table whenever the user has at least
-// one checkbox ticked. The bar re-renders on every model-handler
-// state change (via the parent view's re-render), so it can be a
-// pure function of `state.selectedModels`.
+// components/model-bulk-actions.ts — the "N selected" bar above the models table,
+// shown whenever a checkbox is ticked. Pure function of `state.selectedModels`,
+// re-rendered by the parent view on every model-handler state change.
 //
-// Migrated to lit-html: returns a `TemplateResult` and wires the
-// button click handlers directly via `@click` (no more
-// `data-action` / registry dispatch). The handlers live in
-// `handlers/model-handlers.ts`; importing them creates a module
-// cycle, but the cycle is safe because the imported bindings are
-// only referenced at click time (runtime), never at module
-// top-level. The "0 selected" count is patched in place by
-// `updateBulkBar` in model-handlers.ts (same as before).
+// Clicks wire `@click` directly (no `data-action` registry). The cycle with
+// `handlers/model-handlers.ts` is safe: the bindings are referenced at click time only,
+// never at module top level. The "0 selected" count is patched in place by
+// `updateBulkBar` in model-handlers.ts.
 
 import { html, type TemplateResult } from "lit-html";
 import {

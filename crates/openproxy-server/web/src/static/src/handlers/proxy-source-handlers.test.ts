@@ -1,9 +1,6 @@
-// handlers/proxy-source-handlers.test.ts — unit tests for
-// buildProxySourceBodyFromForm().
-//
-// Scope: pure form→JSON builder shared by `createProxySource` and
-// `updateProxySource`. Trim semantics for `name`/`url`, `priority`
-// falling back to `0`, and checkbox semantics for `active`.
+// handlers/proxy-source-handlers.test.ts — unit tests for buildProxySourceBodyFromForm(), the
+// pure form→JSON builder shared by `createProxySource` and `updateProxySource`. Covers trim
+// semantics for `name`/`url`, `priority` falling back to `0`, and the `active` checkbox.
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { buildProxySourceBodyFromForm } from "./proxy-source-handlers.js";

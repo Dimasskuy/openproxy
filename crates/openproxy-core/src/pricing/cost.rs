@@ -134,10 +134,8 @@ fn build_recent_usage_row(
         created_at: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         connect_ms: input.connect_ms,
         ttft_ms: input.ttft_ms,
-        // PERF: set heavy fields to None for the broadcast row.
-        // The dashboard never receives these fields — they're
-        // fetched on demand via GET /admin/usage/:id. Cloning
-        // them here was pure waste (up to MB of JSON per request).
+        // PERF: the dashboard fetches these on demand via GET /admin/usage/:id,
+        // so cloning them into the broadcast row wasted up to MB of JSON.
         request_body_json: None,
         response_body_json: None,
         request_headers: None,
@@ -448,18 +446,13 @@ mod tests {
         assert!(sanitized.len() <= 2048 + "...[truncated]".len());
     }
 
-    // ---- LOW fix (#13): the live-logs WebSocket calls redact_error_msg
-    // for its terminal event. The DB row and the WS payload must agree
-    // on what secrets are masked. Test the patterns that ACTUALLY
-    // appear in real upstream error bodies — if a future contributor
-    // adds a new secret format to redact, they should also add an
-    // assertion here so the WS publish and the DB row stay in sync.
+    // The live-logs WebSocket terminal event goes through redact_error_msg, so a
+    // new secret format needs an assertion here to keep WS and DB rows in sync.
 
     #[test]
     fn redact_matches_db_row_for_all_common_secret_formats() {
-        // Every secret format below must be masked. The DB row and
-        // the WS payload both go through `redact_error_msg`, so
-        // they are equal iff the same input yields the same output.
+        // DB row and WS payload both go through redact_error_msg, so they agree
+        // iff the same input masks identically.
         let secret_input = "upstream error: sk-abcdefghij1234567890 \
                              x-api-key: topsecret \
                              Authorization: Bearer ya31.aaa.bbb";
@@ -469,7 +462,6 @@ mod tests {
             db_form, ws_form,
             "DB row and WS publish must render the same redacted form"
         );
-        // Each secret pattern must be masked, not echoed.
         assert!(db_form.contains("sk-[REDACTED]"));
         assert!(db_form.contains("x-api-key: [REDACTED]"));
         assert!(db_form.contains("Authorization: Bearer [REDACTED]"));

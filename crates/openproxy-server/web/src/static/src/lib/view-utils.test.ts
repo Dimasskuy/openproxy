@@ -1,10 +1,7 @@
-// lib/view-utils.test.ts — unit tests for the generic createView<T>()
-// overload (Q15 pattern).
-//
-// Tests cover the full lifecycle: loading → success/empty/error, plus
-// the cleanup function. We use the real mountView/requestUpdate from
-// state/reactive.ts (they work in jsdom) and mount into a real
-// container element.
+// lib/view-utils.test.ts — unit tests for the generic createView<T>() overload (Q15 pattern).
+// Covers the full lifecycle (loading → success/empty/error) plus the cleanup function, using the
+// real mountView/requestUpdate from state/reactive.ts (they work in jsdom) and a real container
+// element.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { html } from "lit-html";
@@ -202,7 +199,7 @@ describe("createView (generic overload)", () => {
     await createView({ container, loader, render: renderFn });
     await flushMicrotasks();
 
-    // Non-array data is not empty by default (Array.isArray check fails).
+    // Non-array data is not empty by default (the Array.isArray check fails).
     expect(renderFn).toHaveBeenCalledOnce();
     expect(container.textContent).toContain("rendered");
   });

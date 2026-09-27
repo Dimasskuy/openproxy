@@ -378,35 +378,27 @@ pub async fn try_fetch_upstream_minimax_models(
     parse_minimax_config_ts(&text)
 }
 
-/// Complete pipeline for MiniMax model discovery.
-///
-/// 1. Checks environment JSON override (`OPENPROXY_MINIMAX_MODELS_JSON`).
-/// 2. Fetches and parses dynamic upstream definitions from `MiniMax-AI/minimax-code`.
-/// 3. Falls back to previously cached in-memory dynamic models.
-/// 4. If BYOK (`sk-...`), probes standard OpenAI `/models` endpoint.
-/// 5. Falls back to baseline built-in catalog.
+/// Environment JSON override (`OPENPROXY_MINIMAX_MODELS_JSON`), then upstream
+/// definitions, then this session's cache, then the OpenAI `/models` endpoint for a
+/// BYOK (`sk-...`) key, then the built-in catalog.
 pub async fn fetch_minimax_models_pipeline(
     upstream_client: &Arc<UpstreamClient>,
     api_key: &str,
 ) -> Result<Vec<DiscoveredModel>> {
-    // 1. In-memory / environment overrides
     if let Some(env_models) = load_env_minimax_models() {
         return Ok(env_models);
     }
 
-    // 2. Discover dynamically from upstream repository config
     if let Some(upstream_models) = try_fetch_upstream_minimax_models(upstream_client).await {
         let merged = merge_minimax_models(minimax_builtin_models(), upstream_models);
         set_dynamic_minimax_models(merged.clone());
         return Ok(merged);
     }
 
-    // 3. Fallback to cached dynamic models if previously fetched in this session
     if let Some(cached) = current_dynamic_minimax_models() {
         return Ok(cached);
     }
 
-    // 4. If BYOK (sk-...), try standard API endpoint
     let trimmed = api_key.trim();
     if trimmed.starts_with("sk-")
         && let Ok(models) = crate::adapters::fetch_openai_models(
@@ -422,6 +414,5 @@ pub async fn fetch_minimax_models_pipeline(
         return Ok(merge_minimax_models(minimax_builtin_models(), models));
     }
 
-    // 5. Baseline fallback: built-in models
     Ok(minimax_builtin_models())
 }

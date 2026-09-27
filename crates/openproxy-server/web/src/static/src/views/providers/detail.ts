@@ -1,19 +1,7 @@
-// views/providers/detail.ts — provider detail view orchestrator.
-//
-// Split out of the former detail.ts monolith (FU1). This file now
-// owns only the top-level `renderProviderDetail()` export and the
-// detail-header sub-section (rename, edit endpoint, sync models,
-// toggle active, delete). Every other section is delegated:
-//
-//   OAuth / connections → ./oauth.ts
-//   Models section      → ./models.ts
-//   Per-row models      → ./models-row.ts
-//   Bulk actions        → ./models-bulk.ts
-//   Custom model form   → ./custom-model.ts
-//   UI-state accessors  → ./shared.ts
-//
-// `renderProviderDetail` remains the sole public entry point and the
-// symbol imported by index.ts — no external contract changes.
+// views/providers/detail.ts — `renderProviderDetail()`, the provider detail view.
+// Owns the detail header (rename, endpoint, sync, toggle, delete); OAuth and
+// connections live in oauth.ts, models in models.ts / models-row.ts /
+// models-bulk.ts / custom-model.ts, UI state in shared.ts.
 
 import { html, type TemplateResult } from 'lit-html';
 import { state } from '../../state/index.js';
@@ -39,9 +27,6 @@ import {
 import { renderConnectionsSection } from './oauth.js';
 import { renderModelsSection } from './models.js';
 
-// ================================
-//  Detail header handlers
-// ================================
 
 async function onRenameProvider(
   providerId: string,
@@ -213,9 +198,6 @@ async function onConfirmDeleteProvider(providerId: string): Promise<void> {
   }
 }
 
-// ================================
-//  Detail header render
-// ================================
 
 function renderDetailHeader(provider: Provider): TemplateResult {
   const isDeletable = provider.metadata?.deletable ?? true;
@@ -258,9 +240,6 @@ function renderDetailHeader(provider: Provider): TemplateResult {
   `;
 }
 
-// ================================
-//  Top-level detail template
-// ================================
 
 export function renderProviderDetail(): TemplateResult {
   if (loadError) {

@@ -11,9 +11,7 @@ use std::sync::LazyLock;
 static REGION_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| openproxy_types::static_regex!(r"[a-z]{2}-[a-z]+-[0-9]"));
 
-// =====================================================================
 // Kiro AI (AWS CodeWhisperer)
-// =====================================================================
 
 /// Adapter for Kiro AI (AWS CodeWhisperer).
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -711,9 +709,9 @@ fn build_kiro_request(openai: &OpenAIRequest, profile_arn: Option<&str>) -> Kiro
     }
 }
 
-/// Split the OpenAI messages into the (history, current_user_message)
-/// pair. Kiro's `currentMessage` is always a single user turn, so
-/// we keep the most recent user message out of the history list.
+/// Split the OpenAI messages into `(history, current_user_message)`. Kiro's
+/// `currentMessage` holds a single user turn, so the most recent user message
+/// stays out of the history list.
 fn split_history(req: &OpenAIRequest) -> (Vec<&OpenAIMessage>, Option<&OpenAIMessage>) {
     if req.messages.is_empty() {
         return (Vec::new(), None);

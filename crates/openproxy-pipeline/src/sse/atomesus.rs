@@ -92,9 +92,8 @@ mod tests {
 
     #[test]
     fn atomesus_malformed_json_returns_error() {
-        // Regression (P3-1): malformed JSON must surface as
-        // CoreError::Parse instead of being silently swallowed as
-        // Ok(None), matching every other provider parser.
+        // Malformed JSON surfaces as CoreError::Parse, matching every
+        // other provider parser.
         let result = parse_atomesus_sse_line("data: {not valid json}", "cmpl_1", 100, "atomesus");
         assert!(result.is_err(), "malformed JSON should produce an error");
     }

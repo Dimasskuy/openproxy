@@ -1,6 +1,5 @@
-// state/ws.ts — WebSocket lifecycle for the live-logs view. The
-// singleton guard and the reconnect backoff live here; the
-// message routing is in views/logs.js.
+// Live-logs WebSocket lifecycle: singleton guard, reconnect backoff. Message
+// routing lives in views/logs.js.
 
 import { state } from "./index.js";
 import { LOGS_WS_RECONNECT_DELAYS } from "../lib/constants.js";
@@ -25,28 +24,24 @@ export function subscribeLogsStatus(fn: (status: LogsStatus) => void): () => voi
 /** Base URL of the live-logs WebSocket (no credentials). */
 export function logsWsUrl(): string {
   const scheme: "ws:" | "wss:" = location.protocol === "https:" ? "wss:" : "ws:";
-  // Post-F0 single-binary merge: the live-logs WebSocket is served
-  // directly by the openproxy server at `/admin/ws`.
+  // Served by the openproxy server itself at `/admin/ws`.
   return `${scheme}//${location.host}/admin/ws`;
 }
 
-/** Full WebSocket URL carrying a single-use handshake ticket.
+/** WebSocket URL carrying a single-use handshake ticket.
  *
- *  SECURITY: the manage-scope API key is NEVER placed in the URL.
- *  Browsers cannot set headers on `new WebSocket()`, and anything in the
- *  query string ends up verbatim in every reverse-proxy access log. The
- *  server instead mints a 30-second, single-use ticket bound to our key
- *  (`POST /admin/api/ws-ticket`, sent with the normal Bearer header) and
- *  the upgrade redeems it via `?ticket=`. A logged ticket is dead by the
- *  time anyone can read the log. */
+ *  The manage-scope API key never goes in the URL: `new WebSocket()` cannot
+ *  set headers, and query strings land verbatim in reverse-proxy access logs.
+ *  The server mints a 30-second ticket bound to the key
+ *  (`POST /admin/api/ws-ticket`, normal Bearer header) and the upgrade
+ *  redeems it via `?ticket=`. */
 export function logsWsUrlWithTicket(ticket: string): string {
   return `${logsWsUrl()}?ticket=${encodeURIComponent(ticket)}`;
 }
 
 interface WsTicketResponse { ticket?: unknown }
 
-/** Ask the server for a fresh handshake ticket. Returns null on any
- *  failure (network, 401, malformed body) so the caller can schedule a
+/** Fetch a handshake ticket. Null on any failure so the caller schedules a
  *  reconnect instead of throwing. */
 async function fetchWsTicket(): Promise<string | null> {
   try {
@@ -90,9 +85,7 @@ function scheduleLogsReconnect(): void {
   state.logs.reconnectTimer = setTimeout(connectLogsWebSocket, delay);
 }
 
-/** Type guard for StageEvent. The server emits a JSON object that
- *  matches this shape; anything else is ignored. Exported so
- *  views/logs.js (G4) can reuse it. */
+/** Type guard for StageEvent. Anything off-shape is ignored. */
 export function isStageEvent(x: unknown): x is StageEvent {
   if (typeof x !== "object" || x === null) return false;
   const o: Record<string, unknown> = x as Record<string, unknown>;
@@ -114,13 +107,9 @@ export function setMessageHandler(fn: ((event: MessageEvent) => void) | null): v
   messageHandler = fn;
 }
 
-// True while a ticket request is in flight. Guards against a second
-// `connectLogsWebSocket()` call opening a duplicate socket before the
-// first one has even been constructed.
+// Guards against a second connect opening a socket before the first exists.
 let ticketInFlight = false;
-// Monotonic counter so a ticket resolved after `disconnectLogsWebSocket()`
-// (or after a newer connect attempt) is discarded instead of opening a
-// stale socket.
+// A ticket resolving after a disconnect or newer attempt is discarded.
 let connectGeneration = 0;
 
 export function connectLogsWebSocket(): void {
@@ -152,13 +141,9 @@ export function connectLogsWebSocket(): void {
 
 function openLogsWebSocket(url: string): void {
   const ws: WebSocket = new WebSocket(url);
-  // Heartbeat: send a ping every 15s. The server responds with a
-  // pong. If we don't receive a pong within 30s (2 intervals), we
-  // consider the connection dead and force-close it. This detects
-  // half-open TCP connections (common when the network changes,
-  // laptop sleeps/wakes, or a proxy silently drops the WS) that
-  // would otherwise leave the dashboard "connected" but receiving
-  // no events — the exact "deja de sincronizarse" symptom.
+  // Ping every 15s; force-close after 30s without traffic. Detects half-open
+  // TCP (network change, laptop sleep, a proxy dropping the WS), which would
+  // otherwise leave the dashboard "connected" and silent.
   let lastPong: number = Date.now();
   const heartbeatHandle: ReturnType<typeof setInterval> = setInterval(() => {
     if (state.logs.ws !== ws) {
@@ -169,9 +154,7 @@ function openLogsWebSocket(url: string): void {
       clearInterval(heartbeatHandle);
       return;
     }
-    // If we haven't received a pong in 30s, the connection is
-    // probably half-open. Force-close it; the close handler will
-    // trigger a reconnect.
+    // No traffic for 30s: the close handler drives the reconnect.
     if (Date.now() - lastPong > 30_000) {
       console.warn("[openproxy] live-logs WS heartbeat timeout — no pong in 30s, forcing reconnect");
       try { ws.close(); } catch (_e: unknown) { /* already closed */ }
@@ -198,16 +181,11 @@ function openLogsWebSocket(url: string): void {
   });
   ws.addEventListener("message", (event: MessageEvent) => {
     if (state.logs.ws !== ws) return;
-    // Track pong responses for the heartbeat. Any message from the
-    // server means the connection is alive — not just pongs.
+    // Any inbound message counts as liveness, not just a pong.
     lastPong = Date.now();
     if (typeof messageHandler === "function") {
-      // CRITICAL: wrap the entire handler in try/catch. Without this,
-      // a single malformed WS message (e.g. an unexpected null field
-      // in a usage row) would throw out of `messageHandler`, leave
-      // `state.logs` in an inconsistent mid-update state, and any
-      // subsequent WS messages would be queued behind the broken
-      // listener invocation.
+      // A throw out of the handler would leave `state.logs` mid-update and
+      // queue every later message behind the broken listener.
       try {
         messageHandler(event);
       } catch (err) {
@@ -217,19 +195,12 @@ function openLogsWebSocket(url: string): void {
         console.error("[openproxy] live-logs WS message handler threw:", err, "message snippet:", snippet);
       }
     }
-    // F2: fan the parsed envelope out to ws-bus subscribers. The
-    // logs handler above has already updated `state.logs` (e.g.
-    // `lastSeenId` from a `row` envelope), so subscribers see a
-    // consistent snapshot. The bus is independent of the logs view
-    // — subscribers for `notification` (F4 tray), `row` (F5 live-
-    // store), etc. register via `subscribeWs` in `state/ws-bus.ts`.
+    // Fan the parsed envelope out to ws-bus subscribers. They see a
+    // consistent snapshot: the logs handler has already applied its own
+    // update (e.g. `lastSeenId` from a `row` envelope).
     //
-    // We re-parse the JSON here (the logs handler parses its own
-    // copy). The duplicate parse is a few KB per message — negligible
-    // — and decoupling the two paths is worth it (the logs handler
-    // can stay focused on logs without having to forward the parsed
-    // object back to the bus). Malformed JSON is silently skipped:
-    // the logs handler already showed a toast for it.
+    // The re-parse duplicates the logs handler's work, a few KB per message,
+    // which buys a bus path independent of the logs view.
     if (typeof event.data === "string") {
       try {
         const parsed: unknown = JSON.parse(event.data);
@@ -240,8 +211,7 @@ function openLogsWebSocket(url: string): void {
         ) {
           const envelope = parsed as { type: unknown };
           if (typeof envelope.type === "string") {
-            // dispatchWs is wrapped in try/catch internally per
-            // subscriber, so it never throws.
+            // dispatchWs catches per subscriber, so it never throws.
             dispatchWs(parsed as WsEnvelope);
           }
         }

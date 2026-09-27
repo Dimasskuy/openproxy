@@ -13,17 +13,11 @@ use tokio_rustls::client::TlsStream as ClientTlsStream;
 
 use super::phases::UpstreamPhase;
 
-/// The connection type returned by the connector. Plain HTTP keeps a
-/// `TokioIo<TcpStream>`; HTTPS wraps it in `TokioIo<ClientTlsStream<TcpStream>>`.
-/// Both variants satisfy hyper-util's `Connect` blanket impl bounds
-/// (`Read + Write + Connection + Unpin + Send + 'static`).
 pub enum PhasedConnection {
     Plain(TokioIo<TcpStream>),
-    /// The `bool` is `true` when ALPN negotiated `h2` (HTTP/2), `false`
-    /// when the server picked `http/1.1` (or ALPN was not offered).
-    /// `connected()` reads this flag to tell hyper-util whether to use
-    /// the HTTP/2 or HTTP/1.1 protocol parser — getting this wrong
-    /// produces `invalid HTTP version parsed` errors at 6ms.
+    /// `true` when ALPN negotiated `h2`. `connected()` hands this to
+    /// hyper-util to pick the HTTP/2 or HTTP/1.1 parser; a wrong answer surfaces
+    /// as `invalid HTTP version parsed` once the request reaches the body.
     Tls {
         io: Box<TokioIo<ClientTlsStream<TcpStream>>>,
         negotiated_h2: bool,
@@ -73,8 +67,6 @@ impl Write for PhasedConnection {
     }
 }
 
-/// HTTP connection metadata. Reports the negotiated ALPN protocol
-/// so hyper-util can select HTTP/2 or HTTP/1.1 as appropriate.
 impl HyperConnection for PhasedConnection {
     fn connected(&self) -> hyper_util::client::legacy::connect::Connected {
         match self {
@@ -90,9 +82,8 @@ impl HyperConnection for PhasedConnection {
     }
 }
 
-/// A process-wide `TlsConnector` configured with webpki roots. The
-/// rustls `ClientConfig` is cheap to clone (internally `Arc`) and is
-/// shared across every HTTPS request.
+/// Process-wide `TlsConnector` with webpki roots. `ClientConfig` is an `Arc`
+/// internally, so the clone per request is cheap.
 pub(crate) fn tls_connector() -> TlsConnector {
     static CONFIG: std::sync::LazyLock<Arc<rustls::ClientConfig>> =
         std::sync::LazyLock::new(|| {
@@ -107,10 +98,9 @@ pub(crate) fn tls_connector() -> TlsConnector {
     TlsConnector::from(Arc::clone(&CONFIG))
 }
 
-/// Per-phase timeouts carried by a `PhasedConnector`. All values are
-/// "max duration" for the corresponding phase; the connector enforces
-/// them with `tokio::time::timeout` and reports the stalled phase on
-/// expiry.
+/// Per-phase timeouts carried by a `PhasedConnector`. Each value is a max
+/// duration enforced with `tokio::time::timeout`, which reports the stalled
+/// phase on expiry.
 #[derive(Debug, Clone, Copy)]
 pub struct PhasedTimeouts {
     pub dns: Duration,
@@ -119,7 +109,6 @@ pub struct PhasedTimeouts {
 }
 
 impl PhasedTimeouts {
-    /// Build from the `ResolvedTimeouts` of a `TimeoutProfile`.
     pub fn from_resolved(t: &super::profile::ResolvedTimeouts) -> Self {
         Self {
             dns: Duration::from_millis(t.dns_ms),
@@ -130,8 +119,7 @@ impl PhasedTimeouts {
 }
 
 impl Default for PhasedTimeouts {
-    /// Conservative defaults: 5s for each phase (matches the
-    /// `SYSTEM_DEFAULTS` in `profile.rs`).
+    /// 5s per phase, matching `SYSTEM_DEFAULTS` in `profile.rs`.
     fn default() -> Self {
         Self {
             dns: Duration::from_secs(5),
@@ -141,12 +129,9 @@ impl Default for PhasedTimeouts {
     }
 }
 
-/// Errors surfaced by `PhasedConnector::call`. Implements
-/// `std::error::Error + Send + Sync` (the trait bounds the hyper-util
-/// `Connect` blanket impl demands) and carries a `phase` so the upper
-/// layer (`client::call_inner`) can attribute a timeout to the right
-/// step. Downcasting `Box<dyn Error + Send + Sync>` to this type
-/// recovers the phase.
+/// Errors from `PhasedConnector::call`. Carries a `phase` so `client::call_inner`
+/// can attribute a timeout to the right step; downcast
+/// `Box<dyn Error + Send + Sync>` to recover it.
 #[derive(Debug)]
 pub struct PhasedConnectorError {
     pub phase: UpstreamPhase,
@@ -155,12 +140,8 @@ pub struct PhasedConnectorError {
 
 #[derive(Debug)]
 pub enum PhasedErrorKind {
-    /// The corresponding phase exceeded its deadline.
     Timeout,
-    /// The connector rejected the URI (unsupported scheme, missing
-    /// host, etc.).
     InvalidUri(String),
-    /// Lower-level I/O failure (DNS resolution, TCP, TLS).
     Io(io::Error),
 }
 

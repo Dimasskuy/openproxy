@@ -54,10 +54,10 @@ fn backoff_seconds_zero_failures() {
 
 #[test]
 fn backoff_seconds_exponential_growth() {
-    assert_eq!(backoff_seconds(1), 60); // 60 * 2^0
-    assert_eq!(backoff_seconds(2), 120); // 60 * 2^1
-    assert_eq!(backoff_seconds(3), 240); // 60 * 2^2
-    assert_eq!(backoff_seconds(4), 480); // 60 * 2^3
+    assert_eq!(backoff_seconds(1), 60);
+    assert_eq!(backoff_seconds(2), 120);
+    assert_eq!(backoff_seconds(3), 240);
+    assert_eq!(backoff_seconds(4), 480);
 }
 
 #[test]
@@ -68,14 +68,12 @@ fn backoff_seconds_caps_at_max() {
 
 #[test]
 fn refresh_lead_seconds_rotating_providers() {
-    // Auth0-backed rotating token providers: 5 minutes
     assert_eq!(refresh_lead_seconds("kiro"), 300);
     assert_eq!(refresh_lead_seconds("antigravity"), 300);
 }
 
 #[test]
 fn refresh_lead_seconds_non_rotating_providers() {
-    // Non-rotating providers: 15 minutes (default)
     assert_eq!(refresh_lead_seconds("google"), 900);
     assert_eq!(refresh_lead_seconds("github"), 900);
     assert_eq!(refresh_lead_seconds("iflow"), 900);
@@ -121,7 +119,6 @@ fn builtin_registry_registers_aliases() {
 fn builtin_registry_all_providers_contract() {
     let reg = OAuthProviderRegistry::builtin();
 
-    // 1. Antigravity
     let ag = reg.get("antigravity").expect("antigravity registered");
     assert_eq!(ag.name(), "antigravity");
     assert_eq!(ag.flow(), OAuthFlow::AuthorizationCode);
@@ -130,17 +127,14 @@ fn builtin_registry_all_providers_contract() {
         .expect("antigravity-cli alias registered");
     assert_eq!(ag_cli.name(), "antigravity");
 
-    // 2. Cline
     let cline = reg.get("cline").expect("cline registered");
     assert_eq!(cline.name(), "cline");
     assert_eq!(cline.flow(), OAuthFlow::AuthorizationCode);
 
-    // 3. Codex
     let codex = reg.get("codex").expect("codex registered");
     assert_eq!(codex.name(), "codex");
     assert_eq!(codex.flow(), OAuthFlow::DeviceCode);
 
-    // 4. MiniMax
     let minimax = reg.get("minimax").expect("minimax registered");
     assert_eq!(minimax.name(), "minimax");
     assert_eq!(minimax.flow(), OAuthFlow::DeviceCode);
@@ -151,12 +145,10 @@ fn builtin_registry_all_providers_contract() {
     let mm_cn = reg.get("minimax-cn").expect("minimax-cn alias registered");
     assert_eq!(mm_cn.name(), "minimax");
 
-    // 5. Kiro
     let kiro = reg.get("kiro").expect("kiro registered");
     assert_eq!(kiro.name(), "kiro");
     assert_eq!(kiro.flow(), OAuthFlow::DeviceCode);
 
-    // 6. Zai
     let zai = reg.get("zai").expect("zai registered");
     assert_eq!(zai.name(), "zai");
     assert_eq!(zai.flow(), OAuthFlow::AuthorizationCode);
@@ -165,7 +157,6 @@ fn builtin_registry_all_providers_contract() {
     let z_ai = reg.get("z.ai").expect("z.ai alias registered");
     assert_eq!(z_ai.name(), "zai");
 
-    // 7. CodeBuddy
     let cb = reg.get("codebuddy").expect("codebuddy registered");
     assert_eq!(cb.name(), "codebuddy");
     assert_eq!(cb.flow(), OAuthFlow::DeviceCode);
@@ -178,7 +169,6 @@ fn builtin_registry_all_providers_contract() {
         .expect("@tencent-ai/codebuddy-code alias registered");
     assert_eq!(cb_npm.name(), "codebuddy");
 
-    // Unknown provider
     assert!(reg.get("nonexistent-provider").is_none());
 }
 

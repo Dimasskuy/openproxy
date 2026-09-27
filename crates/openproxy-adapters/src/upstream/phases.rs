@@ -1,25 +1,19 @@
 //! Pipeline phases that an `UpstreamClient::call` advances through.
 //!
-//! Each phase is modelled explicitly so the caller (or a unit test) can
-//! race the per-phase timeout against the I/O and attribute a timeout
-//! to a specific phase. This is the central piece of the migration off
-//! hyper (which only exposes a single `connect_timeout`).
+//! Each phase is modelled explicitly so a timeout can be raced against the I/O
+//! and attributed to one step, which hyper's single `connect_timeout` cannot do.
 
 use std::fmt;
 use std::time::{Duration, Instant};
 
 /// A single step in the request pipeline.
 ///
-/// The order is significant: phases are advanced in declaration order
-/// (DNS, Dial, Tls, Write, Headers, Body). The total budget
-/// (`total_ms`) is an OUTERMOST ceiling: when the call has burned
-/// through every per-phase budget, the timeout is reported as the
-/// phase whose budget was being waited on at that instant (typically
-/// `Headers` or `Body`). The total budget is the absolute hard cap
-/// and is enforced as a `tokio::time::timeout` whose label is
-/// `UpstreamPhase::Headers` for the dispatch future and
-/// `UpstreamPhase::Body` for the body stream. This was the existing
-/// behavior of the soft-accumulation version, kept verbatim.
+/// The order is significant: phases advance in declaration order. The total
+/// budget (`total_ms`) is an OUTERMOST ceiling, so a call that burns every
+/// per-phase budget reports the phase it was waiting on at that instant,
+/// typically `Headers` or `Body`. The total budget is enforced as a
+/// `tokio::time::timeout` labeled `UpstreamPhase::Headers` for the dispatch
+/// future and `UpstreamPhase::Body` for the body stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum UpstreamPhase {
@@ -37,11 +31,10 @@ pub enum UpstreamPhase {
     /// Reading the response body, chunk-by-chunk. Each chunk is bounded
     /// by `body_chunk_ms`; the total body is bounded by `total_ms`.
     Body = 5,
-    /// The total request deadline (`total_ms`) fired while reading the
-    /// body. This is distinct from `Body` (which means the per-chunk
-    /// gap / `idle_chunk_ms` fired). The pipeline maps `Body` →
-    /// `idle_chunk` and `Total` → `total` so the error message
-    /// correctly identifies which timer killed the request.
+    /// `total_ms` fired while reading the body. Distinct from `Body`, which
+    /// means the per-chunk `idle_chunk_ms` gap fired. The pipeline maps
+    /// `Body` → `idle_chunk` and `Total` → `total` so the error names the timer
+    /// that killed the request.
     Total = 6,
 }
 
@@ -140,57 +133,30 @@ impl fmt::Display for UpstreamPhase {
 /// Each phase races its I/O future against a `sleep_until` for its own
 /// deadline; `total_deadline` is checked at every step.
 ///
-/// # Structural note: which deadlines are actually enforced?
+/// Which layer enforces each deadline:
 ///
-/// Bug 2b/2c fix: as of this revision, EACH phase has its own real
-/// enforcement — no more `min(headers, write, dial, tls, total)`
-/// soft-accumulation. The breakdown is:
-///
-/// - `dns_deadline` is **enforced** by the `PhasedConnector` (see
-///   `connector.rs`) with a real `tokio::time::timeout` around
-///   `tokio::net::lookup_host`. A stalled DNS lookup surfaces as
-///   `PhasedConnectorError { phase: Dns, Timeout }` and the client
-///   downcasts the boxed error to attribute the timeout correctly.
-///   This field stays on the struct for completeness and so the
-///   full deadline table is observable in a single debug print.
-///
-/// - `dial_deadline` and `tls_deadline` are **enforced** by the
-///   `PhasedConnector` the same way. A stalled TCP connect surfaces
-///   as `PhasedConnectorError { phase: Dial, Timeout }`; a stalled
-///   TLS handshake surfaces as `PhasedConnectorError { phase: Tls,
-///   Timeout }`.
-///
-/// - `write_deadline` is **enforced** by the OUTER nested
-///   `tokio::time::timeout` in `UpstreamClient::call_inner`. The
-///   `legacy::Client::request` future is wrapped in a race against
-///   `write_deadline` and the timeout is attributed to `Write`.
-///   (The body upload happens before hyper can start reading the
-///   response, so the write phase is naturally bounded by this
-///   outer race — the previous "soft-accumulation" version credited
-///   the timeout to `Headers` instead, which violated the contract.)
-///
-/// - `headers_deadline` is **enforced** by the INNER nested
-///   `tokio::time::timeout` in `UpstreamClient::call_inner`. It only
-///   fires if the dispatch future is still in flight AFTER
-///   `write_deadline` resolved (i.e. the body uploaded on time and
-///   the server is now slow to respond). A `Timeout(Headers)` from
-///   this inner race is the canonical "server is slow" attribution.
-///
-/// - `body_chunk_deadline` is **NOT** a deadline relative to `start`;
-///   it lives in the body stream and is recomputed inside
-///   `UpstreamBodyStream::next_chunk` as `last_chunk_at + body_chunk_ms`.
-///   The instant stored in this field is therefore used as the
-///   "implicit TTFT anchor" for the first chunk only; subsequent
-///   chunks honor the gap. The field is kept on the struct so the
-///   total budget and a debug-print of all deadlines stay consistent
-///   with the `ResolvedTimeouts` they came from.
-///
-/// - `total_deadline` is the OUTERMOST nested
-///   `tokio::time::timeout` in `UpstreamClient::call_inner`. It is
-///   the absolute ceiling; a stalled call that has burned through
-///   every per-phase budget surfaces as `Timeout(Headers)` (the
-///   closest existing phase boundary the dispatch future was
-///   waiting on — `UpstreamPhase` does not have a `Total` variant).
+/// - `dns_deadline`, `dial_deadline`, `tls_deadline` are enforced by
+///   `PhasedConnector` (see `connector.rs`) with a real
+///   `tokio::time::timeout` per phase. A stall surfaces as
+///   `PhasedConnectorError { phase, Timeout }`, which the client recovers by
+///   downcasting the boxed error. The fields stay on the struct so the full
+///   deadline table is observable in one debug print.
+/// - `write_deadline` is enforced by the OUTER nested `tokio::time::timeout`
+///   in `UpstreamClient::call_inner`, which races the
+///   `legacy::Client::request` future and attributes the timeout to `Write`.
+///   The body upload happens before hyper reads the response, so the write
+///   phase is bounded by that outer race.
+/// - `headers_deadline` is enforced by the INNER nested timeout. It fires only
+///   if the dispatch future is still in flight after `write_deadline`
+///   resolved, which is the canonical "server is slow" attribution.
+/// - `body_chunk_deadline` is not a deadline relative to `start`: the body
+///   stream recomputes it inside `UpstreamBodyStream::next_chunk` as
+///   `last_chunk_at + body_chunk_ms`, so the stored instant anchors the first
+///   chunk only.
+/// - `total_deadline` is the OUTERMOST nested timeout and the absolute
+///   ceiling. A call that burns through every per-phase budget surfaces as
+///   `Timeout(Headers)`, the phase boundary the dispatch future was waiting
+///   on.
 #[derive(Debug, Clone, Copy)]
 pub struct ResolvedPhaseDeadlines {
     pub start: Instant,

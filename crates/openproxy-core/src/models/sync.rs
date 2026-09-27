@@ -7,7 +7,7 @@ use std::time::Duration;
 pub struct SyncDiff<'a> {
     pub discovered_set: std::collections::HashSet<&'a str>,
     pub new_models: Vec<&'a DiscoveredModel>,
-    // Store the owned data here so we don't have to clone it into deleted_models
+    // owned here so `deleted_models` needs no clone
     pub existing_rows: Vec<(String, i64, Option<String>)>,
 }
 
@@ -278,10 +278,8 @@ pub fn generate_events(
         return Ok(events);
     }
 
-    // W1 global gate: when notifications are disabled, skip every INSERT
-    // in this transaction and return no events (callers then broadcast
-    // nothing). The `notifications` table exists but we must not write
-    // rows while the master switch is off.
+    // gate off: write no notification rows inside this transaction and return no
+    // events, so the caller broadcasts nothing
     if !crate::notifications::insert_many_enabled() {
         return Ok(events);
     }

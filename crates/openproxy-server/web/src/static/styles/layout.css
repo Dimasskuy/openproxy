@@ -1,9 +1,3 @@
-/* ============================================
-   LAYOUT — #app shell, sidebar, main, page header
-   ------------------------------------------
-   Page-frame: 1px solid var(--color-frame-ink) on #app
-   ============================================ */
-
 #app {
   display: grid;
   grid-template-columns: var(--layout-sidebar-w) 1fr;
@@ -16,8 +10,8 @@
   color: var(--color-text);
 }
 
-/* When the user has collapsed the sidebar, swap the wide column
-   for the narrow one. The body class is toggled by renderSidebar()
+/* Collapsed sidebar swaps the wide column for the narrow one.
+   The body class is toggled by renderSidebar()
    in components/sidebar.js based on state.ui.sidebarCollapsed. */
 body.sidebar-collapsed #app {
   grid-template-columns: var(--layout-sidebar-w-collapsed) 1fr;
@@ -77,7 +71,7 @@ body.sidebar-collapsed #app {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Collapsed sidebar: hide health text, show just the colored dot */
+/* Collapsed: colored dot only */
 body.sidebar-collapsed .sidebar .health {
   font-size: 0;
   padding: var(--space-1);
@@ -97,15 +91,11 @@ body.sidebar-collapsed .sidebar .health #health-status > *:not(.health-dot) {
 #health-status.error   { color: var(--color-error); }
 #health-status.loading { color: var(--color-warn); }
 
-/* ----- Collapsed sidebar ----- */
-/* The browser's user-agent [hidden] rule already does display:none,
-   but we restate it explicitly so the collapse is robust even if a
-   host stylesheet later overrides `[hidden]`. */
+/* The UA [hidden] rule already hides this; restating it keeps the
+   collapse working if a host stylesheet overrides [hidden]. */
 .nav-label[hidden] { display: none; }
 
-/* Each nav <a> shows a single-character icon + a label span. When
-   the sidebar is collapsed, the label span is hidden and the link
-   is left as a centered icon. */
+/* Collapsed: label span hidden, link left as a centered icon. */
 .sidebar nav a {
   display: flex;
   align-items: center;
@@ -114,16 +104,11 @@ body.sidebar-collapsed .sidebar .health #health-status > *:not(.health-dot) {
 }
 body.sidebar-collapsed .sidebar nav a { justify-content: center; }
 
-/* The brand reads "OpenProxy" when expanded and just "OP" when
-   collapsed. We render both spans in the HTML and toggle the
-   label one with the same [hidden] pattern as the nav links. */
+/* Both brand spans render; [hidden] toggles the collapsed one. */
 body.sidebar-collapsed .sidebar .brand { text-align: center; }
 
-/* The collapse toggle sits at the bottom of the sidebar, just
-   above the absolutely-positioned theme toggle. It's a plain
-   full-width button that uses the same surface palette as the
-   theme toggle but anchors to the flex flow rather than the
-   corner. */
+/* Anchors to the flex flow, unlike the absolutely positioned
+   theme toggle above it. */
 .sidebar-toggle {
   background: var(--color-surface);
   border: var(--border-w) var(--border-style) var(--color-border);
@@ -143,7 +128,6 @@ body.sidebar-collapsed .sidebar .brand { text-align: center; }
 }
 body.sidebar-collapsed .sidebar-toggle { text-align: center; }
 
-/* Sidebar footer: theme toggle above collapse toggle */
 .sidebar-footer {
   display: flex;
   flex-direction: column-reverse;
@@ -153,8 +137,8 @@ body.sidebar-collapsed .sidebar-toggle { text-align: center; }
 body.sidebar-collapsed .sidebar-footer { align-items: center; }
 body.sidebar-collapsed .sidebar-footer #theme-toggle-slot { display: flex; justify-content: center; }
 
-/* Arrow direction handled by JS (toggleLabel in sidebar.ts).
-   Do NOT add ::after content — it duplicates the arrow. */
+/* Arrow direction comes from JS (toggleLabel in sidebar.ts).
+   No ::after content: it would duplicate the arrow. */
 
 
 
@@ -210,19 +194,14 @@ section.card {
   gap: var(--space-2);
 }
 
-/* Desktop defaults for drawer/mobile utilities */
+/* Desktop defaults for the drawer/mobile utilities */
 .mobile-only { display: none !important; }
 .desktop-only { display: inherit; }
 .sidebar-drawer { display: contents; }
 
-/* ============================================
-   RESPONSIVE — mobile base.
-   ------------------------------------------
-   Two breakpoints only: 768px (tablet / mobile) and
-   480px (small mobile). Desktop is the default
-   block above; everything below this section is
-   progressive overrides.
-   ============================================ */
+/* RESPONSIVE — mobile base. Breakpoints: 768px (tablet / mobile)
+   and 480px (small mobile). Everything below is a progressive
+   override of the desktop defaults above. */
 
 @media (max-width: 768px) {
   .mobile-only { display: inherit !important; }
@@ -443,27 +422,18 @@ section.card {
 }
 
 @media (max-width: 640px) {
-  /* Tighter main padding for small mobile. */
   main { padding: var(--space-3) var(--space-2); }
 
-  /* Smaller page header on small screens. */
   .page-header h2 { font-size: 1.1rem; }
 
-  /* Pre/code: a touch smaller so JSON blobs in modals
-     don't push the viewport sideways. */
+  /* Smaller so JSON blobs in modals do not push the viewport sideways. */
   pre, code { font-size: 0.8rem; }
 }
 
-/* ============================================
-   LOGIN PAGE — DASHBOARD-FIX (Bug 2 / Step 2d)
-   ------------------------------------------
-   The login view is the only screen mounted
-   without an admin token. We hide the sidebar
-   (its nav links would bounce back to #/login
-   via the auth gate anyway) and centre the
-   login card in the available space.
-   The body class is toggled by `state/router.ts::navigate()`.
-   ============================================ */
+/* LOGIN PAGE — the only screen mounted without an admin token, so
+   the sidebar is hidden (its links would bounce to #/login through the
+   auth gate anyway) and the card is centred. The body class is toggled
+   by `state/router.ts::navigate()`. */
 body.on-login-page #app {
   grid-template-columns: 1fr;
 }
@@ -508,11 +478,8 @@ body.on-login-page .sidebar { display: none; }
   font-size: var(--fs-sm);
 }
 
-/* Sidebar logout button (DASHBOARD-FIX Bug 2/Step 2f). Sits in
-   the sidebar footer under the collapse toggle + theme toggle.
-   Uses the same surface palette as the toggle for visual
-   consistency; the danger colour is reserved for hover to signal
-   that the action ends the session. */
+/* Sidebar logout button. Danger colour is reserved for hover so the
+   muted default does not read as a destructive action. */
 .sidebar-logout {
   background: var(--color-surface);
   border: var(--border-w) var(--border-style) var(--color-border);

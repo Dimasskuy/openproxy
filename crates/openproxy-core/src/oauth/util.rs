@@ -3,8 +3,8 @@
 use crate::error::{CoreError, Result};
 use openproxy_types::oauth::TokenResponse;
 
-/// Resolves OAuth base URLs and endpoint paths dynamically with support for
-/// environment variable overrides and test mocks.
+/// OAuth base URLs and endpoint paths, with environment variable overrides and
+/// test mocks.
 #[derive(Clone, Debug)]
 pub struct OAuthEndpointResolver {
     env_var: &'static str,
@@ -45,7 +45,7 @@ impl OAuthEndpointResolver {
     }
 }
 
-/// Verifies HTTP status code for an OAuth response, returning a typed `CoreError` on failure.
+/// Check an OAuth response status, mapping a non-success code to `CoreError`.
 pub fn check_oauth_status(status: http::StatusCode, provider: &str, body: &[u8]) -> Result<()> {
     if !status.is_success() {
         return Err(CoreError::upstream_error(
@@ -59,9 +59,8 @@ pub fn check_oauth_status(status: http::StatusCode, provider: &str, body: &[u8])
     Ok(())
 }
 
-/// Robustly extracts the user's email or display name from an OAuth `TokenResponse`.
-/// Inspects `id_token` first, then falls back to decoding the `access_token` JWT payload
-/// (stripping `Bearer ` or `workos:` prefixes if present).
+/// Best available email or display name from a `TokenResponse`: `id_token` first,
+/// then the `access_token` JWT payload (minus any `Bearer ` / `workos:` prefix).
 pub fn extract_email_from_token(token: &TokenResponse) -> Option<String> {
     let extract = |claims: &serde_json::Value| -> Option<String> {
         claims
@@ -94,7 +93,7 @@ pub fn extract_email_from_token(token: &TokenResponse) -> Option<String> {
     extract(&claims)
 }
 
-/// Extract a named parameter from a URL query string without external dependencies.
+/// One named parameter from a URL query string.
 pub fn extract_query_param(query: &str, param: &str) -> Option<String> {
     for part in query.split('&') {
         if let Some((k, v)) = part.split_once('=')
@@ -106,12 +105,9 @@ pub fn extract_query_param(query: &str, param: &str) -> Option<String> {
     None
 }
 
-/// Robustly extracts the authorization `code` and optional `state` from user input across all OAuth providers.
-/// Handles:
-/// 1. Raw code: `"code-12345"`
-/// 2. Fragment format: `"code-12345#state-67890"`
-/// 3. Standard HTTP/HTTPS callback URL: `"http://127.0.0.1:8787/oauth/callback?code=abc&state=xyz"`
-/// 4. Custom desktop protocol URL: `"zcode://oauth/callback?code=abc&state=xyz"`, `"cline://..."`, `"cursor://..."`
+/// Extract the authorization `code` and optional `state` from whatever the user
+/// pasted: a raw code (`"code-12345"`), a `#`-joined fragment, an HTTP callback
+/// URL, a custom desktop protocol URL, or an `apiKey` parameter.
 pub fn parse_oauth_callback_input(input: &str) -> (String, Option<String>) {
     let trimmed = input.trim();
     if let Some((_, query)) = trimmed.split_once('?') {
@@ -148,30 +144,30 @@ mod tests {
 
     #[test]
     fn test_parse_oauth_callback_input_formats() {
-        // 1. Raw code
+        // raw code
         let (c1, s1) = parse_oauth_callback_input("code-raw-123");
         assert_eq!(c1, "code-raw-123");
         assert_eq!(s1, None);
 
-        // 2. Hash fragment
+        // hash fragment
         let (c2, s2) = parse_oauth_callback_input("code-frag#state-frag");
         assert_eq!(c2, "code-frag");
         assert_eq!(s2.as_deref(), Some("state-frag"));
 
-        // 3. Full HTTP callback URL
+        // full HTTP callback URL
         let (c3, s3) = parse_oauth_callback_input(
             "https://zcode.z.ai/app/oauth/login?redirect=zcode%3A%2F%2Foauth%2Fcallback&code=code-xyz&state=state-abc",
         );
         assert_eq!(c3, "code-xyz");
         assert_eq!(s3.as_deref(), Some("state-abc"));
 
-        // 4. Custom desktop protocol URI
+        // custom desktop protocol URI
         let (c4, s4) =
             parse_oauth_callback_input("zcode://oauth/callback?code=code-proto&state=state-proto");
         assert_eq!(c4, "code-proto");
         assert_eq!(s4.as_deref(), Some("state-proto"));
 
-        // 5. Alternate apiKey param
+        // alternate apiKey param
         let (c5, s5) = parse_oauth_callback_input("https://example.com/callback?apiKey=key-999");
         assert_eq!(c5, "key-999");
         assert_eq!(s5, None);

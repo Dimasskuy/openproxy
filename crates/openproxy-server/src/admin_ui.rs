@@ -1,27 +1,23 @@
 //! Dashboard SPA embedded in the server binary.
 //!
-//! The frontend is built by `pnpm build` in `crates/openproxy-server/web/`
-//! and emits to `crates/openproxy-server/web/src/static/dist/`. We embed
-//! the whole `crates/openproxy-server/web/src/static/` tree at compile
-//! time via `rust-embed`, so the server binary is self-contained and
-//! ships both the API and the dashboard on the same port.
+//! The frontend is built by `pnpm build` in `crates/openproxy-server/web/` into
+//! `web/src/static/dist/`; `rust-embed` embeds the whole `web/src/static/` tree
+//! at compile time, so the binary ships API + dashboard on one port.
 //!
-//! Routes mounted at `/admin/*` (NOT `/admin/api/*` or `/admin/ws` —
-//! those are the API and WS, served by other handlers). See
-//! `router.rs::build_router` for the nesting structure:
+//! Routes mounted at `/admin/*` (not `/admin/api/*` or `/admin/ws` — those are
+//! served by other handlers; see `router.rs::build_router` for the nesting):
 //!
 //! - `GET /admin`            → SPA shell (`index_html`)
 //! - `GET /admin/`           → SPA shell (`index_html`)
 //! - `GET /admin/callback.html` → OAuth callback page (`callback_html`)
-//! - `GET /admin/dist/*`     → embedded built bundle (this module)
-//! - `GET /admin/styles/*`   → embedded CSS (this module)
-//! - `GET /admin/fonts/*`    → embedded fonts (this module)
-//! - any other `/admin/*`    → SPA fallback to `index.html` (this module)
+//! - `GET /admin/dist/*`     → embedded built bundle
+//! - `GET /admin/styles/*`   → embedded CSS
+//! - `GET /admin/fonts/*`    → embedded fonts
+//! - any other `/admin/*`    → SPA fallback to `index.html`
 //!
-//! `index.html` and `callback.html` are pulled in via `include_str!`
-//! (rather than `RustEmbed::get`) because they're the SPA entry points
-//! and we want them as `&'static str` so `Html<&'static str>` can be
-//! returned without an owned-buffer hop.
+//! `index.html` and `callback.html` use `include_str!` rather than
+//! `RustEmbed::get` so the handler returns `Html<&'static str>` with no owned
+//! buffer.
 
 use axum::{
     body::Body,
@@ -32,56 +28,41 @@ use axum::{
 use mime_guess::from_path;
 use rust_embed::RustEmbed;
 
-/// Embedded copy of `crates/openproxy-server/web/src/static/`.
+/// Embedded copy of `crates/openproxy-server/web/src/static/`. The `#[folder]`
+/// path resolves relative to this crate's `Cargo.toml`; the whole tree (not
+/// just `dist/`) is embedded so `index.html` can reference `/admin/dist/app.js`,
+/// `/admin/styles/index.css` and `/admin/fonts/...` from one namespace.
 ///
-/// `rust-embed` resolves the `#[folder]` path relative to this crate's
-/// `Cargo.toml`, so `web/src/static/` points at
-/// `crates/openproxy-server/web/src/static/`. We embed the whole tree
-/// (not just `dist/`) so the SPA's `index.html` can reference
-/// `/admin/dist/app.js`, `/admin/styles/index.css`, and
-/// `/admin/fonts/...` from a single embedded namespace.
-///
-/// `dist/` is the esbuild output — it's produced by `pnpm build` and
-/// is in the frontend's `.gitignore`, so a fresh checkout has no
-/// `dist/` directory. `rust-embed` happily embeds the rest of the tree
-/// (HTML, CSS, fonts, i18n JSON) without it; a real release build runs
-/// `pnpm build` before `cargo build` (see `Dockerfile` and
-/// `.github/workflows/ci.yml`) so the binary ships with the full
-/// dashboard bundle.
+/// `dist/` is esbuild output produced by `pnpm build` and gitignored, so a fresh
+/// checkout has none; `rust-embed` still embeds the rest (HTML, CSS, fonts,
+/// i18n JSON). Release builds run `pnpm build` before `cargo build` (see
+/// `Dockerfile`, `.github/workflows/ci.yml`) to ship the full bundle.
 #[derive(RustEmbed)]
 #[folder = "web/src/static/"]
 struct DashboardAssets;
 
-/// Embedded copy of `crates/openproxy-server/web/src/static/src/i18n/`
-/// — the per-language JSON string packs consumed by the frontend's
-/// `i18n/index.ts` `loadLang()` helper.
+/// Embedded per-language JSON string packs consumed by the frontend's
+/// `i18n/index.ts` `loadLang()`, served by [`serve_i18n`]. Folder path is
+/// relative to this crate's `Cargo.toml` (same convention as [`DashboardAssets`]).
 ///
-/// Served at `/admin/i18n/{lang}.json` by [`serve_i18n`]. The folder
-/// path is relative to this crate's `Cargo.toml` (same convention as
-/// [`DashboardAssets`]).
-///
-/// Only files present at compile time are exposed; if a future
-/// translation is added as `es.json`, it must land in
-/// `crates/openproxy-server/web/src/static/src/i18n/` before the server
-/// is rebuilt — `rust-embed` bakes the tree into the binary. We do NOT
-/// serve from disk at runtime, so operators can't drop new language
-/// packs into a running server; that's intentional (the dashboard
-/// string contract is part of the binary, not a runtime config).
+/// Only files present at compile time exist: a new `es.json` must land in
+/// `web/src/static/src/i18n/` before rebuilding. Serving from disk at runtime is
+/// deliberately not supported — the dashboard string contract is part of the
+/// binary, not runtime config.
 #[derive(RustEmbed)]
 #[folder = "web/src/static/src/i18n/"]
 struct I18nAssets;
 
-/// Serve the SPA shell. The HTML is `include_str!`-embedded so the
-/// handler returns `Html<&'static str>` with no allocation.
+/// Serve the SPA shell. `include_str!` keeps this allocation-free
+/// (`Html<&'static str>`).
 pub async fn index_html() -> Response {
     let mut headers = axum::http::HeaderMap::new();
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     (headers, Html(include_str!("../web/src/static/index.html"))).into_response()
 }
 
-/// Serve the OAuth callback page (a tiny static HTML file that grabs
-/// the `code` query param and `postMessage`s it back to the opener
-/// window). Same `include_str!` strategy as `index_html`.
+/// Serve the OAuth callback page (static HTML that grabs the `code` query param
+/// and `postMessage`s it back to the opener). Same `include_str!` as `index_html`.
 pub async fn callback_html() -> Html<&'static str> {
     Html(include_str!("../web/src/static/callback.html"))
 }
@@ -98,10 +79,8 @@ pub async fn callback_html() -> Html<&'static str> {
 /// are validated using SHA-256 ETags and HTTP 304 Not Modified responses.
 pub async fn serve_asset(uri: Uri, req_headers: axum::http::HeaderMap) -> Response {
     let raw = uri.path();
-    // Strip the `/admin/` prefix (or `/admin` with no trailing slash).
-    // `strip_prefix("/admin/")` covers `/admin/dist/app.js` →
-    // `dist/app.js`; the fallback handles `/admin` (no slash) by
-    // returning the SPA shell.
+    // `/admin/dist/app.js` → `dist/app.js`; a bare `/admin` (no slash) becomes
+    // the empty path and falls through to the SPA shell below.
     let path = raw
         .strip_prefix("/admin")
         .unwrap_or(raw)
@@ -112,9 +91,8 @@ pub async fn serve_asset(uri: Uri, req_headers: axum::http::HeaderMap) -> Respon
     }
 
     let Some(file) = DashboardAssets::get(path) else {
-        // SPA fallback: unknown `/admin/*` paths (e.g. client-side
-        // routes like `/admin/combos/42/edit`) get the SPA shell so the
-        // hash-router can take over.
+        // SPA fallback for unknown `/admin/*` paths (e.g. client-side routes
+        // like `/admin/combos/42/edit`): the hash-router takes over.
         return index_html().await;
     };
 
@@ -159,45 +137,30 @@ pub async fn serve_asset(uri: Uri, req_headers: axum::http::HeaderMap) -> Respon
 
 /// `GET /admin/i18n/{lang}` — serve a language pack.
 ///
-/// The frontend's `i18n/index.ts::loadLang()` calls this at boot (before
-/// the first render) to pull the user's language strings, fetching the
-/// URL `/admin/i18n/en.json`. The route is registered as `/i18n/{lang}`
-/// (NOT `/i18n/{lang}.json` — axum 0.8 rejects literal-suffix path
-/// params, see `router.rs`), so the captured `lang` value can be either
-/// `en` or `en.json` depending on the caller. We strip the optional
-/// `.json` extension before lookup so both URLs work.
+/// `i18n/index.ts::loadLang()` calls this at boot with `/admin/i18n/en.json`.
+/// The route is registered as `/i18n/{lang}` (axum 0.8 rejects literal-suffix
+/// path params, see `router.rs`), so the captured value may be `en` or
+/// `en.json`; the optional `.json` is stripped so both work.
 ///
-/// The response is the raw JSON file as embedded by [`I18nAssets`]; we
-/// set `Content-Type: application/json; charset=utf-8` and
-/// `Cache-Control: public, max-age=86400` (24h) because:
+/// Response is the raw embedded JSON with `Content-Type: application/json;
+/// charset=utf-8` and `Cache-Control: public, max-age=86400`: the pack is
+/// content-addressed in the binary, so a server upgrade also re-ships
+/// `app.js` (no-cache, [`serve_asset`]). 24h is long enough to keep the boot
+/// path off the network on same-day reloads and short enough to refresh after
+/// an upgrade; the frontend's `force-cache` makes repeat hits free.
 ///
-///   - The pack is content-addressed in the binary: a server upgrade
-///     ships a new binary, and the SPA's `app.js` is also re-fetched
-///     (no-cache, see [`serve_asset`]). The 24h ceiling is short
-///     enough that the next day the browser will pick up a refreshed
-///     pack after a server upgrade, and long enough to keep the boot
-///     path off the network on subsequent same-day reloads.
+/// `404 language not found` when no matching `.json` is embedded — the
+/// frontend's `loadLang` then falls back to `en`.
 ///
-///   - `force-cache` on the fetch side (frontend) makes the browser
-///     cache hit immediate, so the second-boot path is one round-trip
-///     cheaper.
-///
-/// Returns `404 language not found` if `lang` doesn't have a matching
-/// `.json` in the embedded tree. The frontend's `loadLang` falls back
-/// to `en` in that case.
-///
-/// Path-traversal safety: axum's `Path<String>` extractor captures a
-/// single path segment for `{lang}` (no `/`), so `..` and `/` are not
-/// reachable here. We additionally validate `lang` against
-/// `[a-zA-Z0-9_-]+` after stripping `.json` — a future `pt-BR` code
-/// is the most exotic shape we'd ship, and this guard keeps the
-/// lookup table closed.
+/// Path traversal: `Path<String>` captures a single segment (no `/`), so `..`
+/// and `/` are unreachable. `lang` is still validated against
+/// `[a-zA-Z0-9_-]+` after stripping `.json` — `pt-BR` is the most exotic shape
+/// we would ship, and the guard keeps the lookup table closed.
 pub async fn serve_i18n(lang: Path<String>) -> Response {
     let lang = lang.0.strip_suffix(".json").unwrap_or(&lang.0);
-    // Allow letters, digits, hyphen, underscore — covers every ISO 639-1
-    // code plus regional variants (`pt-BR`, `zh-Hans`). Reject anything
-    // else so the embedded-tree lookup can never be probed with a
-    // crafted path.
+    // Letters, digits, hyphen, underscore: every ISO 639-1 code plus regional
+    // variants (`pt-BR`, `zh-Hans`). Anything else is rejected so the
+    // embedded-tree lookup cannot be probed with a crafted path.
     if !lang
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')

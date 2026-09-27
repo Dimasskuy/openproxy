@@ -60,17 +60,14 @@ pub async fn execute_image_generation(
 ) -> Result<ImageGenerationResponse> {
     let started = Instant::now();
 
-    // 1. Resolve routing plan.
     let routing_plan = routing::resolve_routing(db_pool, &req.model).await?;
 
-    // 2. Resolve image targets.
     let targets = resolve_image_targets(db_pool, routing_plan, &req.model, api_key_id, started)?;
 
     let request_id = RequestId::new();
     let mut last_error = None;
     let mut attempt = 0;
 
-    // 3. Multi-target dispatch loop.
     for target in &targets {
         attempt += 1;
         let trace_id = format!("{request_id}:{attempt}");
@@ -81,7 +78,6 @@ pub async fn execute_image_generation(
 
         crate::guarded_unary_target!(check: db_pool, circuit_breaker, target);
 
-        // Publish live log in-flight stage event
         openproxy_types::emit_stage_event!(
             request_id: request_id,
             trace_id: trace_id,
@@ -92,7 +88,6 @@ pub async fn execute_image_generation(
             endpoint_kind: openproxy_types::EndpointKind::Image,
         );
 
-        // Adapter resolution.
         let Some(adapter) = adapters
             .iter()
             .find(|a| a.id() == &target.provider)
@@ -106,7 +101,6 @@ pub async fn execute_image_generation(
         };
         let upstream_url = adapter.build_image_url();
 
-        // Credentials decryption via master key.
         let api_key =
             match resolve_api_key(db_pool, master_key, target.account_id, &target.provider) {
                 Ok(k) => k,
@@ -116,7 +110,6 @@ pub async fn execute_image_generation(
                 }
             };
 
-        // Dispatch upstream.
         let effective_upstream_model = if target.provider.as_str() == "horde" {
             let horde_models: Vec<&str> = targets
                 .iter()
@@ -223,7 +216,6 @@ pub async fn execute_image_generation(
             continue;
         }
 
-        // Parse upstream response into standard ImageGenerationResponse.
         let parsed_response: ImageGenerationResponse = if target.provider.as_str() == "horde"
             || status_code == 202
         {
@@ -278,7 +270,6 @@ pub async fn execute_image_generation(
             circuit_breaker.record_success(CircuitBreakerKey::Account(account_id));
         }
 
-        // Publish live log completed event
         openproxy_types::emit_stage_event!(
             request_id: request_id,
             trace_id: trace_id,
@@ -290,7 +281,6 @@ pub async fn execute_image_generation(
             endpoint_kind: openproxy_types::EndpointKind::Image,
         );
 
-        // Record usage row in openproxy-db.
         let total_ms = started.elapsed().as_millis() as u64;
         record_unary_usage(
             db_pool,

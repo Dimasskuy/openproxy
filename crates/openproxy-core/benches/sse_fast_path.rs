@@ -2,29 +2,20 @@
 
 //! Benchmark for the SSE chunk-forwarding hot path.
 //!
-//! Simulates the inner loop of `Pipeline::dispatch_upstream_streaming`
-//! for the OpenAI fast path (content-only chunks, no `usage` /
-//! `finish_reason`) and measures CPU time per chunk for two strategies:
+//! Inner loop of `Pipeline::dispatch_upstream_streaming` on the OpenAI fast path
+//! (content-only chunks, no `usage` / `finish_reason`), measured per chunk for two
+//! strategies:
 //!
-//!   1. **OLD**: always allocate a fresh `BytesMut` per chunk and copy
-//!      `data: ` + payload + `\n\n` into it (the pre-optimization
-//!      behavior).
-//!   2. **NEW**: reuse the original `line_bytes` BytesMut and append
-//!      just `\n\n` in-place (the post-optimization behavior).
+//!   1. OLD: allocate a fresh `BytesMut` per chunk and copy `data: ` + payload + `\n\n`
+//!   2. NEW: reuse `line_bytes` and append `\n\n` in place
 //!
-//! Run with:
-//!   cargo bench -p openproxy-core --bench sse_fast_path
-//!
-//! Or for a quick numeric readout:
-//!   cargo test -p openproxy-core --bench sse_fast_path --release -- --nocapture
+//! Run with `cargo bench -p openproxy-core --bench sse_fast_path`.
 
 use bytes::{Bytes, BytesMut};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-/// A realistic OpenAI streaming chunk: small content delta, no usage,
-/// no finish_reason. This is the shape that hits the fast path >99%
-/// of the time during a streaming response.
+/// OpenAI chunks: small content delta, no usage, no finish_reason (the >99% fast-path shape).
 const SAMPLE_CHUNKS: &[&str] = &[
     r#"data: {"id":"chatcmpl-X","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}"#,
     r#"data: {"id":"chatcmpl-X","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":", "},"finish_reason":null}]}"#,
@@ -38,11 +29,9 @@ const SAMPLE_CHUNKS: &[&str] = &[
     r#"data: {"id":"chatcmpl-X","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"?"},"finish_reason":null}]}"#,
 ];
 
-/// Mimic the OLD per-chunk allocation path:
-/// allocate a fresh BytesMut, copy `data: ` + payload + `\n\n`, freeze.
+/// OLD path: fresh BytesMut holding `data: ` + payload + `\n\n`.
 fn old_reframe(line_bytes: &BytesMut) -> Bytes {
-    // Simulate the str conversion + strip_prefix + trim_start that the
-    // real code does (cheap pointer arithmetic, but exercises the borrow).
+    // mirrors the real str conversion + strip_prefix + trim_start
     let line = std::str::from_utf8(line_bytes).unwrap();
     let json_payload = line.strip_prefix("data:").unwrap().trim_start();
     let mut sse_frame = BytesMut::with_capacity(json_payload.len() + 16);
@@ -52,32 +41,23 @@ fn old_reframe(line_bytes: &BytesMut) -> Bytes {
     sse_frame.freeze()
 }
 
-/// Mimic the NEW in-place reframe:
-/// reuse the line_bytes BytesMut, append `\n\n`, freeze.
+/// NEW path: reuse `line_bytes`, append `\n\n`, freeze.
 fn new_reframe(mut line_bytes: BytesMut) -> Bytes {
     line_bytes.extend_from_slice(b"\n\n");
     line_bytes.freeze()
 }
 
-/// Build a `BytesMut` that simulates the real `buffer.split_to(pos)`
-/// behavior: the returned BytesMut has the line's bytes at the start,
-/// but ALSO has spare capacity (because `split_to` preserves the
-/// parent buffer's capacity, and the parent is `BytesMut::with_capacity(8192)`).
-/// This is critical for the NEW path: `extend_from_slice(b"\n\n")`
-/// only avoids a realloc when there's spare capacity.
+/// `split_to(pos)` returns a BytesMut holding the line bytes with the parent's spare
+/// capacity; without that spare capacity `extend_from_slice(b"\n\n")` in the NEW path
+/// would realloc.
 fn make_line_with_spare_capacity(chunk: &str) -> BytesMut {
     let mut buf = BytesMut::with_capacity(8192);
     buf.extend_from_slice(chunk.as_bytes());
-    // In the real code, `split_to(pos)` would return a BytesMut
-    // pointing at the first `pos` bytes, with the parent's capacity.
-    // We simulate this by returning `buf` directly (it has the line
-    // bytes + 8192 - chunk.len() bytes of spare capacity).
+    // the parent capacity gives 8192 - chunk.len() bytes of spare capacity
     buf
 }
 
-/// Simulate the line scanner: for each sample chunk, build a BytesMut
-/// containing `data: <payload>` (without the trailing newline, as
-/// `split_to(pos)` would produce), then run the reframe function.
+/// Build a `data: <payload>` BytesMut per sample chunk, without the trailing newline.
 fn bench_old(c: &mut Criterion) {
     let mut group = c.benchmark_group("openai_fast_path_reframe");
     group.throughput(criterion::Throughput::Elements(SAMPLE_CHUNKS.len() as u64));
@@ -85,8 +65,7 @@ fn bench_old(c: &mut Criterion) {
         b.iter(|| {
             let mut total: u64 = 0;
             for chunk in SAMPLE_CHUNKS {
-                // Simulate the line scanner: `buffer.split_to(pos)` returns
-                // a BytesMut with the line bytes + spare capacity.
+                // `split_to(pos)` yields line bytes plus spare capacity
                 let line_bytes = make_line_with_spare_capacity(chunk);
                 let frame = old_reframe(&line_bytes);
                 total += frame.len() as u64;
@@ -108,13 +87,11 @@ fn bench_old(c: &mut Criterion) {
     group.finish();
 }
 
-/// Also benchmark the Gemini probe-struct parse vs the old Value-based
-/// parse, to quantify the input-side improvement.
+/// Gemini probe-struct parse against the old Value-based parse.
 fn bench_gemini_parse(c: &mut Criterion) {
     use openproxy_pipeline::sse::parse_gemini_sse_line;
 
-    // Valid Gemini chunks (note: `]}` closes parts array + content object
-    // BEFORE the `,` that separates candidates array elements).
+    // `]}` closes the parts array and content object before the candidates separator comma
     const GEMINI_CHUNKS: &[&str] = &[
         r#"data: {"candidates":[{"content":{"parts":[{"text":"Hello"}],"role":"model"}}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":1,"totalTokenCount":11}}"#,
         r#"data: {"candidates":[{"content":{"parts":[{"text":", "}],"role":"model"}}]}"#,

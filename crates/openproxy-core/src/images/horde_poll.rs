@@ -70,7 +70,7 @@ pub(crate) async fn poll_horde_image_generation(
         &openproxy_types::ModelId::new(""),
     );
 
-    // If there are non-Horde fallback targets available, failover after 45s; otherwise wait up to 120s
+    // Con targets fallback no-Horde hace failover a los 45s; si no, espera hasta 120s
     let timeout = if ctx.has_alternatives {
         std::time::Duration::from_secs(45)
     } else {
@@ -108,7 +108,6 @@ pub(crate) async fn poll_horde_image_generation(
         let check: HordeCheckResponse = serde_json::from_slice(&body)
             .map_err(|e| CoreError::Parse(format!("horde check parse error: {e}")))?;
 
-        // Emit in-flight stage event to live logs
         openproxy_types::emit_stage_event!(
             request_id: ctx.request_id,
             trace_id: ctx.trace_id,
@@ -139,7 +138,6 @@ pub(crate) async fn poll_horde_image_generation(
         });
     }
 
-    // Fetch final status and images
     let mut req = UpstreamRequest::get(&status_url);
     for (k, v) in &auth_headers {
         if let (Ok(name), Ok(val)) = (

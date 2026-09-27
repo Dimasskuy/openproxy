@@ -1,25 +1,19 @@
 // lib/view-utils.ts — shared view lifecycle helpers.
 //
-// Two patterns are supported:
+// Two patterns:
+// 1. GENERIC (Q15): createView<T>({ loader, render, … }) handles the full loading →
+//    success/empty/error lifecycle with optional post-load hooks and cleanup. Suits one-shot
+//    data-fetching views (combos, config, keys, proxies, …).
+// 2. LEGACY: createView(renderFn, loadData, setError?) — positional-args form kept for
+//    backward compatibility; keys, key-usage, proxy-sources, proxies, playground and config
+//    still call it unchanged.
 //
-// 1. GENERIC (Q15): createView<T>({ loader, render, ... }) — handles
-//    the full lifecycle: loading → success/empty/error, with optional
-//    post-load hooks and cleanup. Suitable for one-shot data-fetching
-//    views (combos, config, keys, proxies, etc.).
-//
-// 2. LEGACY: createView(renderFn, loadData, setError?) — positional-
-//    args form retained for backward compatibility. Existing callers
-//    (keys, key-usage, proxy-sources, proxies, playground, config)
-//    continue to use this form unchanged.
-//
-// Views with complex lifecycle (polling loops, WebSocket subscriptions,
-// chart instances, multi-phase background refresh) should NOT use
-// createView — handle them manually. Candidates for future migration
-// once their lifecycle is simplified:
-//   - debug-logs.ts — chained-setTimeout polling with epoch-based
-//     cancellation; receives a container param instead of #main
-//   - notifications.ts — WS subscriptions, cursor pagination, DnD
-//     overlay lifecycle
+// Views with a complex lifecycle (polling loops, WebSocket subscriptions, chart instances,
+// multi-phase background refresh) must NOT use createView — handle them manually. Future
+// migration candidates, once their lifecycle is simplified:
+//   - debug-logs.ts — chained-setTimeout polling with epoch-based cancellation; takes a
+//     container param instead of #main
+//   - notifications.ts — WS subscriptions, cursor pagination, DnD overlay lifecycle
 //   - analytics.ts — multi-fetch, uPlot chart create/destroy cycle
 //   - providers.ts — dual-mode (grid + detail), background refresh
 //   - home.ts — live-store WebSocket, uPlot sparklines + charts
@@ -31,23 +25,22 @@ import { mountView, requestUpdate } from "../state/reactive.js";
 /**
  * Options for the generic `createView<T>` overload (Q15).
  *
- * Handles the full loading → success/empty/error lifecycle.
- * Returns a cleanup function that tears down the lit-html container
- * and runs any custom cleanup provided via options.
+ * Handles the full loading → success/empty/error lifecycle. Returns a cleanup function that
+ * tears down the lit-html container and runs any custom cleanup.
  *
  * @template T — The data type returned by the loader.
  */
 export interface ViewFactoryOptions<T> {
   /** Container to mount into. Defaults to `document.getElementById("main")`. */
   container?: HTMLElement | null;
-  /** Async data loader. Called after the loading skeleton is shown. */
+  /** Async data loader, called after the loading skeleton is shown. */
   loader: () => Promise<T>;
   /** Render function called with the loaded data on success. */
   render: (data: T) => TemplateResult;
   /** Shown while the loader is in flight. Default: `<div class="loading">Loading...</div>`. */
   loading?: () => TemplateResult;
-  /** Returns true if data should trigger the empty phase.
-   *  Default: `Array.isArray(data) && data.length === 0`. */
+  /** Whether data should trigger the empty phase. Default: `Array.isArray(data) &&
+   *  data.length === 0`. */
   empty?: (data: T) => boolean;
   /** Template for the empty state. */
   emptyMessage?: () => TemplateResult;
@@ -69,10 +62,9 @@ const DEFAULT_ERROR = (err: unknown): TemplateResult =>
 /**
  * Generic view lifecycle factory (Q15).
  *
- * Mounts a loading skeleton immediately, runs the async loader, then
- * transitions to the success, empty, or error phase. Returns a cleanup
- * function that tears down the lit-html container and runs any custom
- * cleanup provided via options.
+ * Mounts a loading skeleton immediately, runs the async loader, then transitions to the
+ * success, empty or error phase. Returns a cleanup function that tears down the lit-html
+ * container and runs any custom cleanup.
  */
 export async function createView<T>(
   options: ViewFactoryOptions<T>,
@@ -81,12 +73,10 @@ export async function createView<T>(
 /**
  * Legacy positional-args overload (backward compatible).
  *
- * Mounts `renderFn` immediately (user sees loading skeleton).
- * Awaits `loadData()` which should populate module-local state.
- * Calls `requestUpdate()` to re-render with the fetched data.
- * If `loadData()` throws, `setError(msg)` is called with the error
- * message so the re-render shows the error state.
- * Returns the cleanup function that tears down the lit-html container.
+ * Mounts `renderFn` immediately (the user sees the loading skeleton), awaits `loadData()`
+ * (which should populate module-local state), then calls `requestUpdate()` to re-render with
+ * the fetched data. If `loadData()` throws, `setError(msg)` receives the error message so the
+ * re-render shows the error state. Returns the cleanup function that tears down the container.
  */
 export async function createView(
   renderFn: () => TemplateResult,
@@ -99,7 +89,7 @@ export async function createView<T>(
   loadData?: () => Promise<void>,
   setError?: (msg: string) => void,
 ): Promise<(() => void) | void> {
-  // --- Generic pattern (options object) ---
+  // ── Generic pattern (options object) ─────────────────────────────────────
   if (typeof optionsOrRenderFn !== "function") {
     const opts = optionsOrRenderFn;
     const container = opts.container ?? document.getElementById("main");
@@ -146,7 +136,8 @@ export async function createView<T>(
     };
   }
 
-  // --- Legacy pattern (positional args) ---
+  // ── Legacy pattern (positional args) ─────────────────────────────────────
+
   const renderFn = optionsOrRenderFn;
   const main = document.getElementById("main");
   if (!main) return () => {};

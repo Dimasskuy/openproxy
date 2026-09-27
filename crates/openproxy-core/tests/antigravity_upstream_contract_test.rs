@@ -23,13 +23,11 @@ use openproxy_types::{ModelId, TargetFormat};
 
 #[test]
 fn test_antigravity_golden_contract_spec_parity() {
-    // 1. Version and engine constants parity
     assert_eq!(KNOWN_STABLE_VERSION, "4.3.0");
     assert_eq!(KNOWN_STABLE_ELECTRON, "39.2.3");
     assert_eq!(KNOWN_STABLE_CHROME, "132.0.6834.160");
     assert_eq!(current_version(), "4.3.0");
 
-    // 2. OAuth client credentials and endpoints parity
     assert_eq!(
         CLIENT_ID.as_str(),
         format!(
@@ -46,7 +44,6 @@ fn test_antigravity_golden_contract_spec_parity() {
     assert!(SCOPES.contains(&"openid"));
     assert!(SCOPES.contains(&"https://www.googleapis.com/auth/cloud-platform"));
 
-    // 3. User-Agent strings parity
     let oauth_ua = oauth_user_agent();
     assert_eq!(oauth_ua, "vscode/1.X.X (Antigravity/4.3.0)");
 
@@ -64,7 +61,6 @@ fn test_antigravity_golden_contract_spec_parity() {
     assert!(ua.contains("Chrome/132.0.6834.160"));
     assert!(ua.contains("Electron/39.2.3"));
 
-    // 4. Client identity headers parity
     assert_eq!(find_hdr("x-client-name"), Some("antigravity"));
     assert_eq!(find_hdr("x-client-version"), Some("4.3.0"));
 
@@ -85,14 +81,14 @@ fn test_antigravity_golden_contract_spec_parity() {
         "x-vscode-sessionid must be valid UUID v4: {session_id}"
     );
 
-    // 5. Explicitly omitted conflicting headers (anti-contradiction)
+    // x-goog-api-client must NOT be sent: breaks the client fingerprint
     assert_eq!(
         find_hdr("x-goog-api-client"),
         None,
         "x-goog-api-client must NOT be sent (violates client fingerprint)"
     );
 
-    // 6. Project header scoping: omitted when project is None / placeholder
+    // x-goog-user-project omitted when project is None / placeholder
     assert_eq!(find_hdr("x-goog-user-project"), None);
 
     let mut hm = http::HeaderMap::new();
@@ -106,7 +102,6 @@ fn test_antigravity_golden_contract_spec_parity() {
     inject_antigravity_headers(&mut hm_placeholder, Some("test-project"));
     assert!(hm_placeholder.get("x-goog-user-project").is_none());
 
-    // 7. Request wrapping envelope parity
     let adapter = openproxy_adapters::AntigravityAdapter::new();
     let target = openproxy_types::context::ResolvedTarget {
         target: openproxy_types::combos::ComboTarget {
@@ -190,7 +185,8 @@ fn test_antigravity_golden_contract_spec_parity() {
     );
     assert!(val.get("requestId").is_some());
 
-    // Verify thought signature normalization, purging of snake_case, and sentinel injection
+    // snake_case thought_signature is rejected by the Google API: normalize to
+    // camelCase and inject the sentinel on functionCall parts
     let req_contents = &val["request"]["contents"];
     let turn1_parts = &req_contents[1]["parts"];
     assert_eq!(
@@ -206,7 +202,7 @@ fn test_antigravity_golden_contract_spec_parity() {
         "functionCall part must have sentinel signature"
     );
 
-    // Verify turn 3: functionCall with NO preceding thought part must have placeholder thought injected
+    // functionCall with no preceding thought part gets a placeholder thought block
     let turn3_parts = &req_contents[3]["parts"];
     assert_eq!(
         turn3_parts.as_array().unwrap().len(),
@@ -224,7 +220,7 @@ fn test_antigravity_golden_contract_spec_parity() {
         "skip_thought_signature_validator"
     );
 
-    // Verify Gemini 3.8 Flash (from agy CLI) mapping to physical agent
+    // gemini-3.8-flash (agy CLI) maps to the physical gemini-3-flash-agent
     let flash_wrapped = adapter
         .wrap_request_body(
             bytes::Bytes::from(serde_json::to_vec(&inner_req).unwrap()),
@@ -246,7 +242,6 @@ async fn test_antigravity_remote_upstream_live_contract_parity() {
     let client = UpstreamClient::new();
     let cancel = CancellationToken::new();
 
-    // 1. Probe constants.rs in upstream Antigravity-Manager
     let constants_url = format!("{raw_base}/src-tauri/src/constants.rs");
     let req = UpstreamRequest::get(&constants_url);
 
@@ -271,7 +266,6 @@ async fn test_antigravity_remote_upstream_live_contract_parity() {
     let constants_bytes = resp.collect().await.expect("read constants body");
     let constants_ts = String::from_utf8_lossy(&constants_bytes);
 
-    // Verify upstream stable version, electron, and chrome
     assert!(
         constants_ts.contains(&format!("\"{KNOWN_STABLE_VERSION}\"")),
         "Upstream constants.rs diverged from KNOWN_STABLE_VERSION = {KNOWN_STABLE_VERSION}"
@@ -289,7 +283,6 @@ async fn test_antigravity_remote_upstream_live_contract_parity() {
         "Upstream constants.rs diverged from official Google Cloud Run update URL"
     );
 
-    // 2. Probe upstream client.rs for egress header injection
     let client_url = format!("{raw_base}/src-tauri/src/proxy/upstream/client.rs");
     let resp = client
         .call(
@@ -317,13 +310,12 @@ async fn test_antigravity_remote_upstream_live_contract_parity() {
         );
     }
 
-    // Verify upstream explicitly documents removing x-goog-api-client
+    // upstream documents removing x-goog-api-client
     assert!(
         client_ts.contains("x-goog-api-client"),
         "Upstream client.rs must document / reference x-goog-api-client handling"
     );
 
-    // 3. Probe upstream oauth.rs for Google OAuth credentials parity
     let oauth_url = format!("{raw_base}/src-tauri/src/modules/oauth.rs");
     let resp = client
         .call(
@@ -345,7 +337,6 @@ async fn test_antigravity_remote_upstream_live_contract_parity() {
         "Upstream oauth.rs CLIENT_SECRET diverged from OpenProxy"
     );
 
-    // 4. Probe upstream thinking_store.rs for chat request thought signature contracts
     let thinking_url = format!("{raw_base}/src-tauri/src/proxy/thinking_store.rs");
     let resp = client
         .call(

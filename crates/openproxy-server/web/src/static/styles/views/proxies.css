@@ -1,4 +1,4 @@
-/* ----- Free Proxies view ----- */
+/* Free proxies view */
 .latency-low {
   color: var(--color-success);
   font-weight: bold;
@@ -36,7 +36,6 @@
 }
 
 
-/* Proxy sources view */
 .proxy-source-list {
   display: flex;
   flex-direction: column;
@@ -75,11 +74,8 @@
 
 
 @media (max-width: 768px) {
-  /* ==========================================================================
-     Free Proxies — Dell 1996 Native Mobile Specification (<= 768px)
-     ========================================================================== */
+  /* Free proxies native mobile cards */
 
-  /* 1. Header y Controles de Sincronización */
   .page-header {
     padding: 8px 10px;
     margin-bottom: 6px;
@@ -105,7 +101,6 @@
     white-space: nowrap;
   }
 
-  /* 2. KPIs 2x2 Mini-Card Grid */
   .kpi-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -153,7 +148,6 @@
     color: var(--color-error, #f87171);
   }
 
-  /* 3. Filtros y Búsqueda */
   .filter-bar {
     display: flex;
     flex-direction: column;
@@ -194,7 +188,6 @@
     box-sizing: border-box;
   }
 
-  /* 5. Paginación en 1 Línea */
   .pagination {
     display: flex;
     align-items: center;
@@ -212,11 +205,7 @@
     border-radius: 0;
   }
 
-  /* ==========================================================================
-     Proxy Sources — Dell 1996 Native Mobile Specification (<= 768px)
-     ========================================================================== */
 
-  /* Contenedor de Tarjetas */
   table.proxy-sources-table,
   .proxy-sources-table tbody {
     display: flex;
@@ -231,7 +220,6 @@
     display: none;
   }
 
-  /* Tarjeta de Proxy Source */
   tr.proxy-source-card-row {
     display: flex;
     flex-direction: column;
@@ -265,7 +253,6 @@
     background: transparent;
   }
 
-  /* Línea 1: Drag + Nombre + Prioridad + Reordenación + Switch */
   .s-card-line-1 {
     display: flex;
     align-items: center;
@@ -332,7 +319,6 @@
     cursor: pointer;
   }
 
-  /* Línea 2: URL truncada limpia */
   .s-card-line-2 {
     display: flex;
     align-items: center;
@@ -355,7 +341,6 @@
     width: 100%;
   }
 
-  /* Línea 3: Stats Badges & Timestamp */
   .s-card-line-3 {
     display: flex;
     align-items: center;
@@ -396,7 +381,6 @@
     font-size: var(--fs-2xs);
   }
 
-  /* Línea 4: Acciones */
   .s-card-line-4 {
     display: grid;
     grid-template-columns: 1fr 1fr 34px;

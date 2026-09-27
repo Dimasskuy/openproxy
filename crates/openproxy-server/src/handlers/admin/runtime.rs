@@ -11,13 +11,12 @@ pub struct RuntimeConfigResponse {
     pub retries: RetriesConfig,
     pub circuit_breaker: CircuitBreakerConfig,
     pub racing: RacingConfig,
-    /// Lifetime in seconds for recorded request/response bodies and
-    /// headers. `0` means bodies are pruned immediately on the next
-    /// prune tick.
+    /// Lifetime in seconds for recorded request/response bodies and headers.
+    /// `0` prunes bodies on the next tick.
     pub recording_ttl_secs: i64,
     pub compression: openproxy_compression::CompressionMode,
-    /// When true, idle_chunk timeouts are treated as retryable
-    /// (pipeline falls through to the next target).
+    /// When true, idle_chunk timeouts are retryable (pipeline falls through to
+    /// the next target).
     pub idle_chunk_retryable: bool,
     pub quota_protection: openproxy_types::config::QuotaProtectionConfig,
     pub pii: openproxy_types::config::PiiConfig,
@@ -25,8 +24,8 @@ pub struct RuntimeConfigResponse {
     pub pii_reversible: bool,
     pub pii_redact_logs: bool,
     pub pii_entities: Vec<openproxy_types::config::PiiEntity>,
-    /// When false, notification inserts and broadcasts are globally
-    /// suppressed (W1). Default true.
+    /// When false, notification inserts and broadcasts are globally suppressed.
+    /// Default true.
     pub notifications_enabled: bool,
 }
 
@@ -283,11 +282,10 @@ pub async fn get_vacuum_status(
     Ok(Json(s.vacuum_status()))
 }
 
-/// Snapshot of the background boot-time backfill status. The
-/// dashboard polls this endpoint so it can render a "warming up" /
-/// "backfilling" banner while the slow `backfill_usage_pricing`
-/// full-table scan runs on the `BackfillService` worker instead of
-/// blocking the listener socket at boot.
+/// Snapshot of the boot-time backfill status. The dashboard polls this to render a
+/// "warming up" / "backfilling" banner while the `backfill_usage_pricing`
+/// full-table scan runs on the `BackfillService` worker instead of blocking the
+/// listener socket at boot.
 pub async fn get_backfill_status(
     State(s): State<AppState>,
 ) -> Result<Json<crate::state::BackfillStatus>, ApiError> {
@@ -327,10 +325,9 @@ runtime_config_put!(
 
 // PUT /admin/api/config/notifications-enabled
 //
-// Toggle the global notifications master switch (W1). When disabled,
-// notification inserts and broadcasts are suppressed everywhere; when
-// re-enabled, generation resumes. Persisted under the
-// `notifications_enabled` key in `app_config`; the live flag is flipped
+// Global notifications master switch. When disabled, notification inserts and
+// broadcasts are suppressed everywhere; re-enabling resumes generation. Persisted
+// under the `notifications_enabled` key in `app_config`; the live flag flips
 // immediately so subsequent requests are gated without a restart.
 runtime_config_put!(
     put_notifications_enabled(Json(body)) -> enabled {

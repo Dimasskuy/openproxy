@@ -137,7 +137,6 @@ pub fn parse_responses_sse_stream_line(
             let tc_index = match existing_idx {
                 Some(idx) => idx,
                 None => {
-                    // Guard: prevent unbounded tool_calls vector growth
                     if state.tool_calls.len() >= MAX_RESPONSES_TOOL_CALLS {
                         tracing::warn!(
                             count = state.tool_calls.len(),
@@ -190,7 +189,6 @@ pub fn parse_responses_sse_stream_line(
             && let Some(args) = func.get_mut("arguments")
             && let Some(args_str) = args.as_str()
         {
-            // Guard: prevent unbounded arguments accumulation
             if args_str.len().saturating_add(delta.len()) > MAX_RESPONSES_TOOL_CALL_ARGS_BYTES {
                 tracing::warn!(
                     current_len = args_str.len(),
@@ -448,14 +446,12 @@ mod tests {
     #[test]
     fn responses_done_carries_persisted_usage_from_prior_event() {
         let mut state = ResponsesSseState::default();
-        // First event carries usage
         let line1 = r#"data: {"type":"response.output_item.done","usage":{"input_tokens":100,"output_tokens":25}}"#;
         let _ = parse_responses_sse_stream_line(line1, "chatcmpl_1", 123, "muse-spark", &mut state)
             .expect("parse");
 
         assert_eq!(state.usage.as_ref().map(|u| u.completion_tokens), Some(25));
 
-        // Terminal done sentinel carries persisted usage
         let line_done = "data: [DONE]";
         let chunk =
             parse_responses_sse_stream_line(line_done, "chatcmpl_1", 123, "muse-spark", &mut state)
@@ -485,7 +481,6 @@ mod tests {
             Some("get_weather")
         );
 
-        // Delta event only contains item_id, not call_id
         let line_delta = r#"data: {"type":"response.function_call_arguments.delta","item_id":"fc_001","delta":"{\"city\":\"Madrid\"}"}"#;
         let chunk_delta =
             parse_responses_sse_stream_line(line_delta, "c1", 123, "muse-spark", &mut state)
@@ -506,17 +501,14 @@ mod tests {
     #[test]
     fn responses_parallel_tool_calls_interleaved() {
         let mut state = ResponsesSseState::default();
-        // Add tool 0
         let l1 = r#"data: {"type":"response.output_item.added","item":{"id":"fc_1","call_id":"call_1","type":"function_call","name":"tool_a","arguments":""}}"#;
         let _ = parse_responses_sse_stream_line(l1, "c1", 123, "muse-spark", &mut state)
             .expect("parse");
 
-        // Add tool 1
         let l2 = r#"data: {"type":"response.output_item.added","item":{"id":"fc_2","call_id":"call_2","type":"function_call","name":"tool_b","arguments":""}}"#;
         let _ = parse_responses_sse_stream_line(l2, "c1", 123, "muse-spark", &mut state)
             .expect("parse");
 
-        // Delta for tool 1 arrives first
         let l3 = r#"data: {"type":"response.function_call_arguments.delta","item_id":"fc_2","delta":"arg_b"}"#;
         let chunk_b = parse_responses_sse_stream_line(l3, "c1", 123, "muse-spark", &mut state)
             .expect("parse")
@@ -526,7 +518,6 @@ mod tests {
             Some(1)
         );
 
-        // Delta for tool 0 arrives second
         let l4 = r#"data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","delta":"arg_a"}"#;
         let chunk_a = parse_responses_sse_stream_line(l4, "c1", 123, "muse-spark", &mut state)
             .expect("parse")
@@ -544,7 +535,6 @@ mod tests {
         let _ = parse_responses_sse_stream_line(l1, "c1", 123, "muse-spark", &mut state)
             .expect("parse");
 
-        // Upstream sends arguments.done directly without prior deltas
         let l2 = r#"data: {"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{\"param\":\"val\"}"}"#;
         let chunk = parse_responses_sse_stream_line(l2, "c1", 123, "muse-spark", &mut state)
             .expect("parse")
@@ -559,7 +549,6 @@ mod tests {
             Some("{\"param\":\"val\"}")
         );
 
-        // Subsequent done with same arguments returns None (no duplicate delta)
         let l3 = r#"data: {"type":"response.output_item.done","item":{"id":"fc_1","call_id":"call_1","type":"function_call","arguments":"{\"param\":\"val\"}"}}"#;
         let chunk_done = parse_responses_sse_stream_line(l3, "c1", 123, "muse-spark", &mut state)
             .expect("parse");
@@ -607,7 +596,6 @@ mod tests {
     #[test]
     fn test_responses_sse_exhaustive_cached_tokens() {
         let mut state = ResponsesSseState::default();
-        // 1. prompt_cache_hit_tokens in root with cached_tokens: 0
         let line1 = r#"data: {"type":"response.completed","response":{"usage":{"input_tokens":100,"output_tokens":20,"prompt_cache_hit_tokens":512,"cached_tokens":0}}}"#;
         let chunk1 = parse_responses_sse_stream_line(line1, "c1", 123, "gpt-4o", &mut state)
             .expect("parse")
@@ -620,7 +608,6 @@ mod tests {
             Some(512)
         );
 
-        // 2. cache_read_input_tokens in input_tokens_details
         let mut state2 = ResponsesSseState::default();
         let line2 = r#"data: {"type":"response.completed","response":{"usage":{"input_tokens":100,"output_tokens":20,"input_tokens_details":{"cache_read_input_tokens":256}}}}"#;
         let chunk2 = parse_responses_sse_stream_line(line2, "c1", 123, "gpt-4o", &mut state2)
@@ -634,7 +621,6 @@ mod tests {
             Some(256)
         );
 
-        // 3. prompt_tokens_details with cached_tokens: 0 and cache_read_input_tokens: 128
         let mut state3 = ResponsesSseState::default();
         let line3 = r#"data: {"type":"response.completed","response":{"usage":{"input_tokens":100,"output_tokens":20,"prompt_tokens_details":{"cached_tokens":0,"cache_read_input_tokens":128}}}}"#;
         let chunk3 = parse_responses_sse_stream_line(line3, "c1", 123, "gpt-4o", &mut state3)

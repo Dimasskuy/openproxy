@@ -1,26 +1,19 @@
-// @see tsconfig.test.json for type settings.
+// tests/e2e/live-logs-retry.spec.ts — @see tsconfig.test.json for types.
 //
-// Regression test for the user-reported bug (second occurrence):
-//   "When the first request times out while connecting to upstream,
-//    a new entry is created for the retry — good — but the previous
-//    entry's 'Connecting' phase gets *reset* as if a new attempt
-//    started, when it should already be 'Failed (timeout)'."
+// Regression test (second occurrence of the same user report): when the first
+// attempt times out while connecting upstream, the retry creates a new entry
+// (good) but the previous entry's "Connecting" phase gets reset as if a new
+// attempt had started, when it should already read "Failed (timeout)".
 //
-// The first fix (commit 465d93b) keyed the stage map by `trace_id`
-// to isolate per-attempt phase, which the backend already provides
-// (see `UsageInput.trace_id` in `crates/openproxy-core/src/usage.rs`).
+// The first fix keyed the stage map by `trace_id` to isolate per-attempt phase;
+// the backend already provides it (`UsageInput.trace_id` in
+// crates/openproxy-core/src/usage.rs).
 //
-// This test injects a synthetic `connecting` stage event with
-// `trace_id=tr-old`, then a fresh `started` event with
-// `trace_id=tr-new` for the same `request_id`, and asserts:
-//   1. The DOM renders two distinct rows (one per `trace_id`).
-//   2. The old row's phase label stays as "connecting to upstream"
-//      (i18n key `stage.connecting` via `getStageLabel` in
-//      `lib/constants.ts`), even after the new attempt's `started`
-//      event has been processed.
-//   3. The new row's phase label is "processing payload"
-//      (i18n key `stage.started` via `getStageLabel` in
-//      `lib/constants.ts`).
+// Injects a synthetic `connecting` event with `trace_id=tr-old`, then a fresh
+// `started` event with `trace_id=tr-new` for the same `request_id`, and asserts
+// the first entry keeps "Failed (timeout)" (i18n `stage.connecting`) and the new
+// one shows "Started" (i18n `stage.started`) after the second event is processed.
+// Both labels resolve via `getStageLabel` in `lib/constants.ts`.
 //
 // Pre-fix behaviour (keying the stage map by `request_id`) would
 // overwrite the `connecting` stage of the old attempt with the
@@ -246,12 +239,10 @@ test('Live Logs retry: previous attempt keeps its own stage (no cross-attempt bl
   const snap = await snapshotAfterRetry(page, eventOld, eventNew);
   expect(snap.stateExposed).toBe(true);
 
-  // 1. The DOM renders the two rows separately (different
   //    `data-trace-id` attributes).
   expect(snap.renderedTraceIds).toContain('tr-old');
   expect(snap.renderedTraceIds).toContain('tr-new');
 
-  // 2. The old row's phase label stays as "connecting to
   //    upstream" (i18n key `stage.connecting`, resolved by
   //    `getStageLabel` in `lib/constants.ts`). Pre-fix behaviour
   //    would have overwritten it with "processing payload" (the
@@ -261,7 +252,6 @@ test('Live Logs retry: previous attempt keeps its own stage (no cross-attempt bl
   const newPhase = (snap.newPhaseInDom ?? '').toLowerCase();
   expect(oldPhase).toContain('connecting');
   expect(oldPhase).not.toContain('processing');
-  // 3. The new row's phase label is "processing payload"
   //    (i18n key `stage.started`, resolved by `getStageLabel` in
   //    `lib/constants.ts`).
   expect(newPhase).toContain('processing');

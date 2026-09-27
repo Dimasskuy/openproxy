@@ -78,15 +78,16 @@ async fn run_server(state: openproxy_server::state::AppState) -> anyhow::Result<
 }
 
 fn main() -> anyhow::Result<()> {
-    // 0. Programmatic allocator configuration: Tune mimalloc options before
-    // initializing telemetry, Tokio runtime, or database connections.
+    // 0. Programmatic allocator configuration: tune mimalloc before telemetry,
+    //    the Tokio runtime, or any DB connection exists.
     configure_allocator();
 
-    // 1. Install rustls crypto provider. `ring` is pure-Rust and
-    // transitively available; `aws-lc-rs` is also pulled in by
-    // `UpstreamClient`. `install_default` is idempotent — a second call in
-    // the same process is a no-op, so it's safe even if a future
-    // test harness re-instruments startup.
+    // 1. rustls crypto provider. Mandatory since rustls 0.23: without it the
+    //    first upstream TLS handshake panics with `Could not automatically
+    //    determine the process-level CryptoProvider`. `ring` is pure-Rust and
+    //    transitively available; `aws-lc-rs` is also pulled in by
+    //    `UpstreamClient`. `install_default` is idempotent, so a second call in
+    //    the same process is a no-op.
     openproxy_core::install_rustls_crypto_provider();
 
     let runtime = tokio::runtime::Builder::new_multi_thread()

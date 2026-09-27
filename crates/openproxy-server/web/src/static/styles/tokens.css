@@ -1,22 +1,7 @@
-/* ============================================
-   TOKENS — primitives + semantic (light)
-   ------------------------------------------
-   Reference palette: Dell 1996 web design system
-   (spec §4 of the refactor).
-   - Hard 1px borders, generous whitespace
-   - Saturated accent tints (Dell red, yellow sticker,
-     purple stripe) over a near-white canvas
-   - Typography: Ubuntu (local TTF) with system fallbacks
-   - Two themes: light (default) and dark.
-   ============================================ */
 
-/* Ubuntu is loaded from /admin/fonts/Ubuntu-Regular.ttf and
-   /admin/fonts/Ubuntu-Bold.ttf (Ubuntu Font Licence 1.0 — see
-   fonts/Ubuntu-LICENCE.txt). The `/admin/` prefix is required because
-   the server only serves static assets under `/admin/*` (see
-   `admin_ui::serve_asset`); a bare `/fonts/...` URL hits the SPA
-   fallback and returns HTML, which the browser rejects as a font → 404.
-   (DASHBOARD-FIX: Bug 1.) */
+/* The `/admin/` prefix is required: the server only serves static
+   assets under `/admin/*`, and a bare `/fonts/...` URL hits the SPA
+   fallback, returning HTML the browser rejects as a font. */
 @font-face {
   font-family: "Ubuntu";
   font-style: normal;
@@ -33,20 +18,18 @@
 }
 
 :root {
-  /* ----- Primitives: Dell brand palette (spec §4.1) ----- */
+  /* Dell brand palette */
   --c-dell-red:      #e91d2a;
   --c-yellow-sticker:#fcc20f;
   --c-purple-stripe: #6a26a4;
 
-  /* Surface */
   --c-frame-ink:     #000000;
   --c-canvas:        #ffffff;
 
-  /* Text */
   --c-ink:           #000000;
   --c-link:          #0000ee;
 
-  /* 8 ribbon-card tints (Dell 1996 catalog) */
+  /* 8 ribbon-card tints */
   --c-tint-olive:      #8e8a25;
   --c-tint-sage:       #b3bd95;
   --c-tint-salmon:     #d77a7a;
@@ -56,7 +39,7 @@
   --c-tint-steel:      #a5b8c0;
   --c-tint-periwinkle: #8c9ae0;
 
-  /* ----- Semantic (light = default, spec §4.2) ----- */
+  /* Semantic, light default */
   --color-bg:           #f5f7fa;
   --color-surface:      var(--c-canvas);
   --color-surface-2:    #f0f3f7;
@@ -76,10 +59,8 @@
   --color-primary-hover:#c91825;
   --color-primary-fg:   var(--c-canvas);
 
-  /* Soft surfaces for primary / semantic states */
   --color-primary-soft: #f6dada;   /* hover/active bg */
 
-  /* Success/Warn/Error/Info (spec §4.2) */
   --color-success:      #4d7c2a;   /* sage darkened for AA */
   --color-success-soft: #d8e2c8;
   --color-warn:         #a86a00;   /* peach dark */
@@ -90,7 +71,7 @@
   --color-info:         #2b5a78;   /* sky dark */
   --color-info-soft:    #cfdde5;
 
-  /* Status pills (log row) — spec-aligned aliases */
+  /* Status pills (log row) */
   --color-status-ok:        var(--color-success);
   --color-status-ok-soft:   var(--color-success-soft);
   --color-status-err:       var(--color-error);
@@ -100,26 +81,24 @@
   --color-status-lost:      #5a5a5a;
   --color-status-lost-soft: #e6e6e6;
 
-  /* Bright status colors for charts, status tracks, and dots */
   --color-status-ok-bright:    #22c55e;
   --color-status-warn-bright:  #f59e0b;
   --color-status-err-bright:   #ef4444;
   --color-status-other-bright: #94a3b8;
 
-  /* Phase pills (log rows) — kept for views.css */
+  /* Phase pills (log rows), consumed by views.css */
   --color-phase-soft:       #ece9e2;
   --color-phase-text:       #1a1a1a;
 
-  /* Log row header (sticky) — kept for views.css */
+  /* Log row header (sticky), consumed by views.css */
   --color-log-header-bg:    var(--color-surface-2);
   --color-log-header-fg:    var(--color-text-muted);
 
-  /* Scrollbar */
   --color-scrollbar-thumb:       #cfd7e3;
   --color-scrollbar-thumb-hover: #a5b0bf;
   --color-scrollbar-track:       transparent;
 
-  /* ----- Chart & Badge colors ----- */
+  /* Chart & badge colors */
   --chart-green:        #10b981;  /* emerald-500 */
   --chart-green-dark:   #3a7a2a;  /* custom */
   --chart-blue-light:   #38bdf8;  /* sky-400 */
@@ -141,7 +120,6 @@
   --chart-tint-lavender:#e8e0f0;  /* light lavender */
   --chart-tint-gold:    #f0e8d0;  /* light gold */
 
-  /* ----- Spacing ----- */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -151,7 +129,6 @@
   --space-8: 2rem;
   --space-10: 2.5rem;
 
-  /* ----- Typography (spec §4.4) ----- */
   --font-display: "Ubuntu", "Arial Black", "Helvetica Black", Helvetica, sans-serif;
   --font-sans:    "Ubuntu", Helvetica, "Arial Bold", Arial, sans-serif;
   --font-serif:   "Times New Roman", Times, serif;
@@ -169,19 +146,16 @@
   --lh-tight: 1.2;
   --lh-base:  1.45;
 
-  /* ----- Radius — soft, premium feel ----- */
   --radius-0:    0;
   --radius-pill: 9999px;
   --radius-sm:   4px;
   --radius-md:   6px;
   --radius-lg:   10px;
 
-  /* ----- Borders — subtle, not harsh ----- */
   --border-w:     1px;
   --border-w-2:   2px;
   --border-style: solid;
 
-  /* ----- Transitions — smooth & tactile spring ----- */
   --t-fast:   120ms ease;
   --t-base:   200ms ease;
   --t-spring: 150ms cubic-bezier(0.32, 0.72, 0, 1);
@@ -193,12 +167,10 @@
   --shadow-subtle:   var(--shadow-sm);
   --shadow-elevated: var(--shadow-md);
 
-  /* ----- Layout ----- */
   --layout-sidebar-w:          200px;
   --layout-sidebar-w-collapsed: 56px;
   --layout-max-w:              1280px;
 
-  /* ----- Z layers ----- */
   --z-sidebar:  10;
   --z-header:   20;
   --z-dropdown: 100;

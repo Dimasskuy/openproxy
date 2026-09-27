@@ -1,19 +1,8 @@
-// views/playground/index.ts — Playground orchestrator & dispatcher.
-//
-// Owns the single PlaygroundState instance and all cross-cutting lifecycle:
-//   - `mountPlayground()` (public entry point, imported by router.ts)
-//   - `renderPlayground()` (top-level template + per-modality dispatch)
-//   - Keyboard shortcut handler + mount/unmount wiring
-//
-// Heavy sub-modules:
-//   - `./dispatcher.ts` — request execution dispatcher
-//   - `./executors.ts` — image / embedding / audio fetch executors
-//   - `./studio-header.ts` — status badge, modality selector, quick actions
-//   - `./inspector.ts` — response inspector panel + right sidebar
-//   - `./formatted-response.ts` + `./metrics-bar.ts` — inspector sub-views
-//
-// Renders workspaces from chat.ts / image.ts / inspector.ts and passes the
-// shared mutable PlaygroundState to each.
+// views/playground/index.ts — orchestrator. Owns the single PlaygroundState
+// instance, the cross-cutting lifecycle (`mountPlayground`, imported by
+// router.ts, and `renderPlayground`), the Ctrl+Enter shortcut, and the
+// per-modality workspace dispatch. Executors live in executors.ts / chat.ts;
+// inspector sub-views in formatted-response.ts and metrics-bar.ts.
 
 import { html, type TemplateResult } from 'lit-html';
 import { state } from '../../state/index.js';
@@ -41,19 +30,12 @@ import {
 export type { ModalityType } from './shared.js';
 export type { ResponseTab, ChatMessage, RequestMetrics, StreamChunkItem } from './shared.js';
 
-// ==========
-// Shared module-local state (mutable, passed by reference to sub-modules)
-// ==========
 
 const stateInternal: PlaygroundState = createInitialPlaygroundState();
 bindPlaygroundState(stateInternal);
 
-// The router imports `mountPlayground`; expose the state shape for tests.
 export { stateInternal as playgroundState };
 
-// ==========
-// Embedding & Audio workspaces (small, kept in orchestrator)
-// ==========
 
 function renderEmbeddingWorkspace(st: PlaygroundState): TemplateResult {
   return html`
@@ -219,9 +201,6 @@ function renderDecisionWorkspace(st: PlaygroundState): TemplateResult {
   `;
 }
 
-// ==========
-// Main Playground View
-// ==========
 
 function renderPlayground(): TemplateResult {
   const st = stateInternal;
@@ -265,9 +244,7 @@ function renderPlayground(): TemplateResult {
   `;
 }
 
-// ==========
-// Global keyboard shortcut: Ctrl+Enter (or Cmd+Enter) runs the request.
-// ==========
+// Ctrl+Enter (or Cmd+Enter) runs the request.
 
 function handleGlobalKeydown(e: KeyboardEvent): void {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -287,9 +264,6 @@ function handleRunShortcut(): void {
   }
 }
 
-// ==========
-// Mount function (public entry point — imported by router.ts)
-// ==========
 
 export async function mountPlayground(): Promise<(() => void) | void> {
   stateInternal.loadError = null;

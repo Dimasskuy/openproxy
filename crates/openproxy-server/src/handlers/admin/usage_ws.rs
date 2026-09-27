@@ -55,9 +55,8 @@ fn check_cswsh_origin(headers: &HeaderMap) -> Result<(), (StatusCode, &'static s
         return Ok(());
     };
 
-    // Prefer the `Host` the request actually arrived with. A trusted
-    // reverse proxy rewrites `Host` to the public name; `X-Forwarded-Host`
-    // is only consulted as a fallback because any client can set it.
+    // A `Host` header can be rewritten to the public name by a trusted reverse
+    // proxy, and any client can set `X-Forwarded-Host`, so that header is a fallback.
     let host = headers
         .get("host")
         .or_else(|| headers.get("x-forwarded-host"))
@@ -94,10 +93,10 @@ pub async fn usage_stream(
     }
 }
 
-/// `POST /admin/api/ws-ticket` — mint a single-use ticket for the
-/// `/admin/ws` handshake. Runs behind `admin_auth_middleware`, so the
-/// caller already proved possession of a `manage` key; the ticket is
-/// bound to that key and re-validated when redeemed.
+/// `POST /admin/api/ws-ticket` — mint a single-use ticket for the `/admin/ws`
+/// handshake. Runs behind `admin_auth_middleware`, so the caller already proved
+/// possession of a `manage` key; the ticket is bound to that key and
+/// re-validated when redeemed.
 pub async fn issue_ws_ticket(
     State(s): State<AppState>,
     identity: Option<axum::Extension<super::auth::AdminIdentity>>,
@@ -107,8 +106,8 @@ pub async fn issue_ws_ticket(
         .and_then(|axum::Extension(id)| id.key.as_ref())
         .map(|k| k.id)
         .ok_or_else(|| {
-            // Dev bypass (no key) has no identity to bind a ticket to; the
-            // bypassed WS handshake does not need one either.
+            // Dev bypass has no identity to bind a ticket to; the bypassed WS
+            // handshake needs none either.
             super::ApiError(super::CoreError::Auth(
                 "ws tickets require an authenticated api key".into(),
             ))

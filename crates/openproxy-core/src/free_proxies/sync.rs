@@ -15,7 +15,7 @@ pub async fn fetch_custom_proxy_source(
 ) -> crate::error::Result<Vec<ScrapedProxy>> {
     use openproxy_adapters::upstream::{TimeoutProfile, UpstreamRequest, is_private_or_reserved};
 
-    // SSRF Mitigation
+    // Mitigación SSRF
     let uri: axum::http::Uri = url.parse().map_err(|e| {
         crate::error::CoreError::Internal(format!("Invalid URL for custom proxy source: {e}"))
     })?;
@@ -145,7 +145,6 @@ pub async fn sync_all_providers(db_pool: Arc<DbPool>) -> crate::error::Result<Sy
     let pool_for_sources = Arc::clone(&db_pool);
     let sources_res = tokio::task::spawn_blocking(move || -> crate::error::Result<_> {
         let w = pool_for_sources.writer();
-        // Ensure built-in sources exist
         for def in BUILTIN_PROXY_SOURCES {
             let _ = w.execute(
                 "INSERT OR IGNORE INTO proxy_sources (id, name, url, active, is_builtin) VALUES (?1, ?2, ?3, 1, 1)",

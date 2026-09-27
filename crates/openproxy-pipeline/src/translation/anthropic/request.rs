@@ -248,13 +248,11 @@ fn build_anthropic_conversation(
     (system, conversation)
 }
 
-/// Translate a single OpenAI-shaped tool definition to Anthropic shape.
+/// OpenAI `{"type":"function","function":{...,"parameters":{...}}}` becomes
+/// Anthropic `{"name":...,"description":...,"input_schema":{...}}`.
 ///
-/// OpenAI: `{"type":"function","function":{"name":"X","description":"Y","parameters":{...}}}`
-/// Anthropic: `{"name":"X","description":"Y","input_schema":{...}}`
-///
-/// Returns `None` when the tool has no `name` or no `function` block —
-/// MiniMax rejects tools with empty names with `(2013)`.
+/// The `function` and `name` fields are required: MiniMax rejects a tool with an
+/// empty name with `(2013)`.
 fn translate_openai_tool_to_anthropic(tool: &serde_json::Value) -> Option<serde_json::Value> {
     let function = tool.get("function")?;
     let name = function.get("name").and_then(|v| v.as_str())?;
@@ -262,9 +260,7 @@ fn translate_openai_tool_to_anthropic(tool: &serde_json::Value) -> Option<serde_
         return None;
     }
     let description = function.get("description").and_then(|v| v.as_str());
-    // `parameters` (OpenAI) → `input_schema` (Anthropic). Default to
-    // an empty object when absent — Anthropic requires `input_schema`
-    // to be present and a valid JSON schema object.
+    // Anthropic requires input_schema to be a present, valid schema object.
     let input_schema = function.get("parameters").cloned().unwrap_or(json!({}));
     Some(json!({
         "name": name,
@@ -273,18 +269,11 @@ fn translate_openai_tool_to_anthropic(tool: &serde_json::Value) -> Option<serde_
     }))
 }
 
-/// Translate OpenAI `tool_choice` to Anthropic `tool_choice`.
-///
-/// OpenAI shapes:
-///   - `"auto"` / `"none"` / `"required"` (string)
-///   - `{"type":"function","function":{"name":"X"}}` (object)
-///   - `{"type":"auto"}` / `{"type":"none"}` (object form of the strings)
-///
-/// Anthropic shapes:
-///   - `{"type":"auto"}` (let model decide)
-///   - `{"type":"none"}` (don't use tools)
-///   - `{"type":"any"}` (force a tool call — OpenAI's "required")
-///   - `{"type":"tool","name":"X"}` (force a specific tool)
+/// Anthropic `tool_choice`: `auto` (model decides), `none`, `any` (OpenAI's
+/// `required`), or `{"type":"tool","name":"X"}` to force one tool. The
+/// OpenAI source is a string (`"auto"` / `"none"` / `"required"`), a
+/// `{"type":"function","function":{"name":"X"}}` object, or the object form
+/// of those strings.
 ///
 fn translate_string_tool_choice(s: &str) -> Option<serde_json::Value> {
     match s {
@@ -310,8 +299,8 @@ fn translate_object_tool_choice(
     translate_string_tool_choice(choice_type)
 }
 
-/// Returns `None` for unrecognized shapes (which means the field is
-/// omitted from the Anthropic request, defaulting to `auto` upstream).
+/// `None` for unrecognized shapes, which omits the field so upstream
+/// defaults to `auto`.
 fn translate_openai_tool_choice_to_anthropic(tc: &serde_json::Value) -> Option<serde_json::Value> {
     match tc {
         serde_json::Value::String(s) => translate_string_tool_choice(s),

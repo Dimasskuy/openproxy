@@ -195,7 +195,6 @@ fn test_system_prompt_guidelines_and_concepts_not_redacted_as_person() {
 fn test_person_placeholder_clean_names_and_reverse_deanonymization() {
     let mut session = PiiSession::new(true);
 
-    // 1. First entity maps to "Alex Vance" directly without "(P1)" suffix
     let p1 = session.get_or_create_placeholder(PiiEntity::Person, "Miguel");
     assert_eq!(p1, "Alex Vance");
     assert_eq!(
@@ -207,7 +206,6 @@ fn test_person_placeholder_clean_names_and_reverse_deanonymization() {
         Some(&"Miguel".to_string())
     );
 
-    // 2. Second entity maps to "David Chen" without "(P2)" suffix
     let p2 = session.get_or_create_placeholder(PiiEntity::Person, "Carlos");
     assert_eq!(p2, "David Chen");
     assert_eq!(
@@ -219,12 +217,11 @@ fn test_person_placeholder_clean_names_and_reverse_deanonymization() {
         Some(&"Carlos".to_string())
     );
 
-    // 3. Bidirectional restoration: reverse de-anonymization back to original
     let text = "Hello Alex Vance and David Chen, nice to meet you.";
     let restored = session.restore_text(text);
     assert_eq!(restored, "Hello Miguel and Carlos, nice to meet you.");
 
-    // 4. If original name is "Alex Vance", avoid collision and select next synthetic name
+    // The original already reads as a synthetic name, so the next one is picked.
     let mut session2 = PiiSession::new(true);
     let p_alex = session2.get_or_create_placeholder(PiiEntity::Person, "Alex Vance");
     assert_ne!(p_alex, "Alex Vance");
@@ -239,23 +236,19 @@ fn test_person_placeholder_clean_names_and_reverse_deanonymization() {
 fn test_person_restoration_handles_first_name_only_and_casing_variations() {
     let mut session = PiiSession::new(true);
 
-    // "Miguel" maps to "Alex Vance"
     let p = session.get_or_create_placeholder(PiiEntity::Person, "Miguel");
     assert_eq!(p, "Alex Vance");
 
-    // 1. LLM addresses user by first name only: "Hola Alex!" -> "Hola Miguel!"
     assert_eq!(
         session.restore_text("¡Hola Alex! ¿Cómo puedo ayudarte hoy?"),
         "¡Hola Miguel! ¿Cómo puedo ayudarte hoy?"
     );
 
-    // 2. LLM addresses user by full synthetic name: "Hola Alex Vance!" -> "Hola Miguel!"
     assert_eq!(
         session.restore_text("¡Hola Alex Vance! ¿Cómo puedo ayudarte hoy?"),
         "¡Hola Miguel! ¿Cómo puedo ayudarte hoy?"
     );
 
-    // 3. Case-insensitive matching: "hola alex" or "ALEX"
     assert_eq!(
         session.restore_text("hola alex, bienvenido."),
         "hola Miguel, bienvenido."
@@ -265,7 +258,6 @@ fn test_person_restoration_handles_first_name_only_and_casing_variations() {
         "Miguel es el usuario."
     );
 
-    // 4. Last name reference: "Estimado Sr. Vance" -> "Estimado Sr. Miguel"
     assert_eq!(
         session.restore_text("Estimado Sr. Vance"),
         "Estimado Sr. Miguel"
@@ -279,19 +271,16 @@ fn test_multi_word_person_name_restores_first_last_and_full() {
     let p = session.get_or_create_placeholder(PiiEntity::Person, "Miguel Hernández");
     assert_eq!(p, "Alex Vance");
 
-    // Full name restoration
     assert_eq!(
         session.restore_text("Bienvenido Alex Vance a la plataforma."),
         "Bienvenido Miguel Hernández a la plataforma."
     );
 
-    // First name only restoration
     assert_eq!(
         session.restore_text("Hola Alex, un gusto."),
         "Hola Miguel, un gusto."
     );
 
-    // Last name only restoration
     assert_eq!(
         session.restore_text("Sr. Vance, su solicitud fue procesada."),
         "Sr. Hernández, su solicitud fue procesada."

@@ -1,12 +1,4 @@
-/* ============================================
-   THEMES — light / dark
-   ------------------------------------------
-   Per spec §4.3: dark inverts canvas <-> frame-ink,
-   desaturates the tints ~30% for AA contrast.
-   Light is the default; dark via [data-theme="dark"].
-   ============================================ */
 
-/* ---------- Light (explicit) ---------- */
 :root[data-theme="light"] {
   --color-bg:           #f5f7fa;
   --color-surface:      var(--c-canvas);
@@ -63,7 +55,6 @@
   --color-scrollbar-track:       transparent;
 }
 
-/* ---------- Dark ---------- */
 :root[data-theme="dark"] {
   --color-bg:           #151413;     /* warm dark ash */
   --color-surface:      #1c1b1a;     /* warm ash surface */
@@ -119,8 +110,7 @@
   --color-scrollbar-thumb-hover: #54504a;
   --color-scrollbar-track:       transparent;
 
-  /* Chart & Badge colors — dark: more saturated / lighter for
-     contrast against the warm dark canvas. */
+  /* Chart colors lifted for contrast against the warm dark canvas. */
   --chart-green:        #34d399;  /* emerald-400 */
   --chart-green-dark:   #6fcf6f;  /* custom lifted */
   --chart-blue-light:   #7dd3fc;  /* sky-300 */
@@ -142,17 +132,13 @@
   --chart-tint-lavender:#28242e;  /* dark lavender surface */
   --chart-tint-gold:    #2e2a1c;  /* dark gold surface */
 
-  /* Dark mode lifts shadow opacity so elevated surfaces
-     stay legible against the warm dark canvas. */
+  /* Lifted shadow opacity so elevated surfaces stay legible. */
   --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.45);
   --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.55);
 }
 
-/* ---------- prefers-color-scheme fallback ----------
-   Used only when there is NO explicit data-theme on
-   <html>. state/theme.js always sets data-theme after
-   bootstrap, so these rules are only a first-paint
-   safety net. */
+/* First-paint safety net only: state/theme.js always sets data-theme
+   after bootstrap, so this block applies to the no-attribute case. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     --color-bg:           #151413;

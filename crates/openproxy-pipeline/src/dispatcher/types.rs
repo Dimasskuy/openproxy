@@ -12,8 +12,7 @@ use std::time::Instant;
 use crate::PipelineRequest;
 
 /// Context de un único intento de dispatch, compartido entre las rutas
-/// streaming y no-streaming. Permanece en memoria solo durante la vida del
-/// intento (no se persiste).
+/// streaming y no-streaming. Vive solo en memoria durante el intento.
 pub(crate) struct DispatchContext<'a> {
     pub(crate) attempt: u8,
     pub(crate) race_size: u8,
@@ -50,9 +49,8 @@ impl<'a> DispatchContext<'a> {
     }
 }
 
-/// Contexto ampliado para fallos dentro del loop SSE streaming. Acepta
-/// referencias mutables al accumulator (`acc`) para marcar la respuesta como
-/// parcial antes de devolver el `PipelineResult`.
+/// Fallos dentro del loop SSE streaming. El `acc` mutable marca la
+/// respuesta como parcial antes de devolver el `PipelineResult`.
 pub(crate) struct StreamFailureContext<'a> {
     pub(crate) req: PipelineRequest,
     pub(crate) combo: &'a openproxy_types::combos::Combo,
@@ -72,8 +70,7 @@ pub(crate) struct StreamFailureContext<'a> {
     pub(crate) proxy_status: Option<String>,
 }
 
-/// Parámetros del entry-point `dispatch_upstream` (rama no-streaming
-/// principal). Reune 13 campos para evitar `too_many_arguments`.
+/// 13 campos para evitar `too_many_arguments`.
 pub(crate) struct DispatchParams<'a> {
     pub target: &'a openproxy_types::combos::ComboTarget,
     pub combo: &'a openproxy_types::combos::Combo,
@@ -90,7 +87,6 @@ pub(crate) struct DispatchParams<'a> {
     pub trace_id: String,
 }
 
-/// Argumentos empaquetados para `record_non_streaming_success` tras un 2xx.
 pub(crate) struct NonStreamingSuccessArgs {
     pub status_code: u16,
     pub connect_and_send_ms: u64,
@@ -100,7 +96,6 @@ pub(crate) struct NonStreamingSuccessArgs {
     pub openai_response: crate::translation::OpenAIResponse,
 }
 
-/// Parámetros del entry-point `dispatch_upstream_streaming`. Contiene el
 /// `UpstreamRequest` ya construido por `setup_upstream_request_and_context`.
 pub(crate) struct StreamDispatchParams<'a> {
     pub target: &'a openproxy_types::combos::ComboTarget,
@@ -116,8 +111,7 @@ pub(crate) struct StreamDispatchParams<'a> {
     pub upstream_request: UpstreamRequest,
 }
 
-/// Argumentos para `handle_streaming_non_2xx` cuando la respuesta inicial
-/// no es 2xx pero el body ya está disponible.
+/// Respuesta inicial non-2xx con el body ya disponible.
 pub(crate) struct StreamingNon2xxArgs<'a> {
     pub response: openproxy_adapters::upstream::UpstreamResponse,
     pub status_code: u16,
@@ -128,8 +122,7 @@ pub(crate) struct StreamingNon2xxArgs<'a> {
     pub connect_and_send_ms: u64,
 }
 
-/// Argumentos finales para `record_streaming_success` tras consumir el
-/// stream completo.
+/// Tras consumir el stream completo.
 pub(crate) struct StreamingSuccessArgs<'a> {
     pub state: crate::streaming_state::StreamingState,
     pub chunk_id: &'a str,

@@ -4,9 +4,7 @@ use super::{
     build_discovered_model_full, build_discovered_model_with, upstream_get_json,
 };
 
-// =====================================================================
 // Custom (user-defined) adapter
-// =====================================================================
 
 /// Generic adapter for user-created providers stored in the DB.
 ///

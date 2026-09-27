@@ -1,23 +1,20 @@
-// lib/markdown.ts — Markdown + LaTeX renderer — lib pura sin dependencias de UI.
+// lib/markdown.ts — Markdown + LaTeX renderer, pure and UI-dependency-free.
 //
-// Self-contained pipeline: escapes HTML, extracts fenced code blocks and
-// inline math placeholders, parses Markdown structural blocks (tables,
-// blockquotes, lists, headings, HR), and substitutes LaTeX fragments with
-// HTML spans. Produces a string of HTML that the caller may render via
+// Self-contained pipeline: escape HTML, extract fenced code blocks and inline math placeholders,
+// parse the structural blocks (tables, blockquotes, lists, headings, HR), substitute LaTeX
+// fragments with HTML spans, and return a string the caller renders through
 // `lit-html/directives/unsafe-html.js`.
 //
-// Security contract: EVERY byte of `rawText` is HTML-escaped before it is
-// interpolated into markup. Fenced/inline code is escaped at extraction,
-// math content is escaped BEFORE `formatLatexMath` wraps it (the LaTeX
-// transforms only emit their own markup, so escaping first does not break
-// the render), and the remaining prose is escaped in step 5. Link targets
-// are restricted to an allowlist of URL schemes (`isSafeLinkHref`).
+// Security contract: EVERY byte of `rawText` is HTML-escaped before it is interpolated into
+// markup. Fenced/inline code is escaped at extraction, math content is escaped BEFORE
+// `formatLatexMath` wraps it (the LaTeX transforms only emit their own markup, so escaping first
+// does not break the render), and the remaining prose is escaped in step 5. Link targets are
+// restricted to an allowlist of URL schemes (`isSafeLinkHref`).
 //
-// The rendered string carries no inline event handlers (CSP forbids them):
-// the fenced-code Copy button is a plain `<button class="md-copy-btn"
-// data-code=...>` that `views/playground/shared.ts` handles through a
-// delegated `click` listener. This module itself does not import anything
-// from `views/` or `state/`.
+// The rendered string carries no inline event handlers (CSP forbids them): the fenced-code Copy
+// button is a plain `<button class="md-copy-btn" data-code=…>` that
+// `views/playground/shared.ts` handles through a delegated `click` listener. This module imports
+// nothing from `views/` or `state/`.
 
 const LATEX_SYMBOL_PAIRS: [string, string][] = [
   ['\\longleftrightarrow', '⟷'],
@@ -138,14 +135,13 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;');
 }
 
-/** URL schemes a Markdown link may point to. Anything else
- *  (`javascript:`, `data:`, `vbscript:`, `file:`, …) is rendered as
- *  plain text instead of an anchor. */
+/** URL schemes a Markdown link may point to. Anything else (`javascript:`, `data:`,
+ *  `vbscript:`, `file:`, …) renders as plain text instead of an anchor. */
 const SAFE_LINK_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:']);
 
-/** Validate an (already HTML-escaped) Markdown link target. Relative
- *  URLs are allowed; absolute URLs must use an allowlisted scheme. The
- *  fixed base keeps this lib free of `location` so it also runs in node. */
+/** Validate an already HTML-escaped Markdown link target: relative URLs are allowed, absolute
+ *  URLs must use an allowlisted scheme. The fixed base keeps this lib free of `location` so it
+ *  also runs in node. */
 export function isSafeLinkHref(escapedHref: string): boolean {
   const candidate = escapedHref.replace(/&amp;/g, '&');
   try {
@@ -188,10 +184,10 @@ function parseSqrt(str: string): string {
 }
 
 function parseScripts(str: string): string {
-  // Superscripts with braces and single character
+  // Superscripts with braces or a single character.
   str = str.replace(/\^{([^{}]+)}/g, '<sup>$1</sup>');
   str = str.replace(/\^([a-zA-Z0-9+\-α-ωΑ-Ω])/g, '<sup>$1</sup>');
-  // Subscripts with braces and single character
+  // Subscripts with braces or a single character.
   str = str.replace(/_{([^{}]+)}/g, '<sub>$1</sub>');
   str = str.replace(/_([a-zA-Z0-9+\-α-ωΑ-Ω])/g, '<sub>$1</sub>');
   return str;
@@ -361,41 +357,39 @@ export function renderMarkdownAndMath(rawText: string): string {
   const placeholders: Map<string, string> = new Map();
   let placeholderCounter = 0;
 
-  // Placeholder ids are delimited by Unicode private-use characters and
-  // contain only letters/digits, so none of the Markdown passes below
-  // (emphasis `_`/`*`, tables `|`, lists, headings, …) can rewrite them
-  // before step 13 restores the real markup.
+  // Placeholder ids are delimited by Unicode private-use characters and contain only
+  // letters/digits, so no later Markdown pass (emphasis `_`/`*`, tables `|`, lists, headings, …)
+  // can rewrite them before step 13 restores the real markup.
   const createPlaceholder = (content: string, prefix = 'PH'): string => {
     const id = `${PH_OPEN}${prefix}${placeholderCounter++}x${Math.random().toString(36).substring(2, 7)}${PH_CLOSE}`;
     placeholders.set(id, content);
     return id;
   };
 
-  // Step 1: Pre-process Code Blocks (preserve raw formatting)
+  // Step 1: pre-process code blocks (preserve raw formatting).
   let text = rawText;
   text = text.replace(/```([a-zA-Z0-9_\-#+.]*)\n?([\s\S]*?)(?:```|$)/g, (_match, lang, code) => {
     const cleanLang = (lang || '').trim().toLowerCase();
     const cleanCode = code.replace(/\n$/, '');
     const escapedCode = escapeHtml(cleanCode);
     const encodedForCopy = encodeURIComponent(cleanCode);
-    // No inline `onclick`: CSP (`script-src 'self'`) blocks inline handlers.
-    // `views/playground/shared.ts` installs a delegated click listener on
-    // `button.md-copy-btn` that reads `data-code`.
+    // No inline `onclick`: CSP (`script-src 'self'`) blocks inline handlers. A delegated click
+    // listener on `button.md-copy-btn` in `views/playground/shared.ts` reads `data-code`.
     const codeBlockHtml = `<div class="md-code-block"><div class="md-code-header"><span class="md-code-lang">${escapeHtml(cleanLang || 'code')}</span><button class="md-copy-btn" type="button" data-code="${escapeHtml(encodedForCopy)}">Copy</button></div><pre><code class="language-${escapeHtml(cleanLang || 'plaintext')}">${escapedCode}</code></pre></div>`;
     return createPlaceholder(codeBlockHtml, 'CODE');
   });
 
-  // Step 2: Pre-process Display Math ($$...$$ and \[...\])
-  // SECURITY: math content is escaped BEFORE the LaTeX transforms run. The
-  // transforms only emit their own markup around the (escaped) content, so
-  // model output like `$$<img onerror=…>$$` can never reach `innerHTML` raw.
+  // Step 2: pre-process display math ($$...$$ and \[...\]).
+  // SECURITY: math content is escaped BEFORE the LaTeX transforms run. The transforms only emit
+  // their own markup around the (escaped) content, so model output like `$$<img onerror=…>$$`
+  // can never reach `innerHTML` raw.
   text = text.replace(/(?:\$\$|\\\[)([\s\S]*?)(?:\$\$|\\\]|$)/g, (_match, mathContent) => {
     if (!mathContent.trim()) return '';
     const formatted = formatLatexMath(escapeHtml(mathContent), true);
     return createPlaceholder(formatted, 'MATHDISP');
   });
 
-  // Step 3: Pre-process Inline Math ($...$ and \(...\))
+  // Step 3: pre-process inline math ($...$ and \(...\))
   text = text.replace(/\$([^\$\s](?:[^\$]*?[^\$\s])?)\$/g, (_match, mathContent) => {
     if (/^\d+(?:\.\d+)?$/.test(mathContent.trim())) {
       return `$${mathContent}$`;
@@ -408,47 +402,47 @@ export function renderMarkdownAndMath(rawText: string): string {
     return createPlaceholder(formatted, 'MATHINL');
   });
 
-  // Step 4: Pre-process Inline Code (`code`)
+  // Step 4: pre-process inline code (`code`)
   text = text.replace(/`([^`]+)`/g, (_match, codeContent) => {
     const escaped = escapeHtml(codeContent);
     return createPlaceholder(`<code class="md-inline-code">${escaped}</code>`, 'INLINECODE');
   });
 
-  // Step 5: Escape remaining text to guarantee HTML safety
+  // Step 5: escape the remaining text to guarantee HTML safety.
   text = escapeHtml(text);
 
-  // Step 6: Parse Markdown Tables
+  // Step 6: parse Markdown tables.
   text = parseMarkdownTables(text);
 
-  // Step 7: Parse Headings
+  // Step 7: parse headings.
   text = text.replace(/^#### (.*$)/gm, '<h4 class="md-h4">$1</h4>');
   text = text.replace(/^### (.*$)/gm, '<h3 class="md-h3">$1</h3>');
   text = text.replace(/^## (.*$)/gm, '<h2 class="md-h2">$1</h2>');
   text = text.replace(/^# (.*$)/gm, '<h1 class="md-h1">$1</h1>');
 
-  // Step 8: Parse Blockquotes
+  // Step 8: parse blockquotes.
   text = parseMarkdownBlockquotes(text);
 
-  // Step 9: Parse Horizontal Rules
+  // Step 9: parse horizontal rules.
   text = text.replace(/^(?:---|\*\*\*|___)\s*$/gm, '<hr class="md-hr" />');
 
-  // Step 10: Parse Lists
+  // Step 10: parse lists.
   text = parseMarkdownLists(text);
 
-  // Step 11: Parse Inline Markdown (Bold, Italic, Strikethrough, Links)
+  // Step 11: parse inline Markdown (bold, italic, strikethrough, links).
   text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   text = text.replace(/__(.*?)__/g, '<strong>$1</strong>');
   text = text.replace(/(^|[^\*])\*([^\*]+)\*([^\*]|$)/g, '$1<em>$2</em>$3');
   text = text.replace(/(^|[^_])_([^_]+)_([^_]|$)/g, '$1<em>$2</em>$3');
   text = text.replace(/~~(.*?)~~/g, '<del>$1</del>');
-  // Links: only allowlisted URL schemes become anchors (see
-  // `isSafeLinkHref`). Rejected targets stay as the escaped literal text.
+  // Links: only allowlisted URL schemes become anchors (see `isSafeLinkHref`); rejected
+  // targets stay as escaped literal text.
   text = text.replace(/\[([^\]]+)\]\(([^)"]+)\)/g, (match: string, label: string, href: string) => {
     if (!isSafeLinkHref(href)) return match;
     return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="md-link">${label}</a>`;
   });
 
-  // Step 12: Paragraphs and Line Breaks
+  // Step 12: paragraphs and line breaks.
   const blocks = text.split(/\n\n+/);
   const formattedBlocks = blocks.map((block) => {
     const trimmed = block.trim();
@@ -474,7 +468,7 @@ export function renderMarkdownAndMath(rawText: string): string {
 
   let result = formattedBlocks.filter(Boolean).join('\n');
 
-  // Step 13: Restore all Placeholders
+  // Step 13: restore all placeholders.
   for (const [id, originalHtml] of placeholders.entries()) {
     result = result.split(id).join(originalHtml);
   }

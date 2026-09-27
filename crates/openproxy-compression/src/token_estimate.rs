@@ -1,46 +1,28 @@
-//! Token estimation using a real BPE tokenizer (tiktoken cl100k_base).
+//! Token estimation with a real BPE tokenizer (tiktoken cl100k_base), the
+//! tokenizer OpenAI uses for GPT-4/GPT-3.5. It covers the two cases where a
+//! char-based estimate misleads:
 //!
-//! This module uses the same tokenizer OpenAI uses for GPT-4/GPT-3.5
-//! (cl100k_base). It provides accurate token counts for:
+//! 1. **Upstreams that omit the `usage` block** (most streaming endpoints),
+//!    where estimation is the only source of a token count and
+//!    `cost_usd = 0` rows otherwise reach analytics.
+//! 2. **Compression savings**, where BPE is not linear in char count:
+//!    whitespace compresses to fewer tokens than its length suggests and
+//!    JSON braces tokenize unlike prose.
 //!
-//! 1. **Requests where the upstream doesn't return usage data** — many
-//!    providers (especially streaming endpoints) omit the `usage` block.
-//!    Without estimation, these rows get `cost_usd = 0` and NULL tokens,
-//!    making analytics incomplete.
+//! The cl100k_base vocab (~1.6MB) is embedded at compile time and loaded once
+//! via `std::sync::LazyLock`. Tokenization is ~1-5µs per token, so a 100K-token
+//! prompt takes ~100-500ms: the estimator runs after the request completes and
+//! the savings path tokenizes only the diff, never the full conversation.
 //!
-//! 2. **Compression savings calculation** — the old char-based savings
-//!    percentage was misleading because BPE tokenization is not linear
-//!    with char count. Whitespace compresses to fewer tokens than its
-//!    char count suggests; JSON braces tokenize differently than prose.
-//!    Real BPE gives an accurate token-level savings percentage.
-//!
-//! ## Performance
-//!
-//! The cl100k_base vocab (~1.6MB) is embedded at compile time and
-//! loaded once via `std::sync::LazyLock`. Tokenization is ~1-5µs per
-//! token, so a 100K-token prompt takes ~100-500ms. For the hot path
-//! (compression savings), we only tokenize the *diff* (changed messages),
-//! not the full conversation — and the estimator runs after the request
-//! completes, not on the request path.
-//!
-//! ## Accuracy
-//!
-//! cl100k_base is the exact tokenizer for OpenAI models. For Claude
-//! (Anthropic) and other providers, it's an approximation — Claude uses
-//! a different BPE vocab, but the token counts are typically within
-//! ±10% of cl100k_base for mixed English/code content. This is
-//! sufficient for cost tracking and compression savings.
+//! Exact for OpenAI models, an approximation elsewhere: Claude's own BPE vocab
+//! typically lands within ±10% of cl100k_base on mixed English/code content,
+//! which is enough for cost tracking and savings.
 
 use openproxy_types::message::OpenAIMessage;
 
-/// Estimate prompt tokens from a list of OpenAI messages using a fast heuristic.
-///
-/// Walks every message (system, user, assistant, tool), extracts text
-/// from both string content and array-of-parts content (Anthropic-style
-/// `[{type:"text",text:"..."}]`), and estimates tokens.
-///
-/// Includes a per-message overhead of 4 tokens (matching OpenAI's
-/// documented message framing overhead: `<|im_start|>role\n...<|im_end|>`).
+/// Estimate prompt tokens from string and array-of-parts (Anthropic-style
+/// `[{type:"text",text:"..."}]`) content across every message role, plus 4
+/// tokens of framing overhead per message (`<|im_start|>role\n...<|im_end|>`).
 pub fn estimate_prompt_tokens(messages: &[OpenAIMessage]) -> u32 {
     let mut total: u32 = 0;
     for msg in messages {
@@ -48,8 +30,7 @@ pub fn estimate_prompt_tokens(messages: &[OpenAIMessage]) -> u32 {
         if !text.is_empty() {
             total += count_tokens(&text);
         }
-        // Per-message overhead: 4 tokens for the role framing
-        // (OpenAI's format: <|im_start|>role\ncontent<|im_end|>\n).
+        // 4 tokens of role framing: <|im_start|>role\ncontent<|im_end|>\n.
         total += 4;
     }
     total
@@ -63,14 +44,11 @@ pub fn estimate_completion_tokens(text: &str) -> u32 {
     count_tokens(text)
 }
 
-/// Estimate completion tokens from a response body JSON value.
-///
-/// Handles:
-/// - OpenAI format: `choices[].message` or `choices[].delta` with `content`,
-///   `reasoning_content` / `reasoning`, and `tool_calls` (name + arguments + framing).
-/// - Anthropic format: `content` blocks (`text`, `thinking`, `tool_use`).
-/// - Gemini format: `candidates[].content.parts` (`text`, `functionCall`).
-/// - Direct string or fallback object.
+/// Estimate completion tokens from a response body JSON value: OpenAI
+/// `choices[].message` / `choices[].delta` (`content`, `reasoning_content` /
+/// `reasoning`, `tool_calls`), Anthropic `content` blocks (`text`, `thinking`,
+/// `tool_use`), Gemini `candidates[].content.parts` (`text`, `functionCall`),
+/// or a bare string.
 pub fn estimate_completion_tokens_from_body(body: &serde_json::Value) -> u32 {
     let mut total_tokens = 0u32;
     let mut found_structured = false;
@@ -81,7 +59,6 @@ pub fn estimate_completion_tokens_from_body(body: &serde_json::Value) -> u32 {
             let msg = choice.get("message").or_else(|| choice.get("delta"));
             if let Some(msg) = msg {
                 found_structured = true;
-                // Content
                 if let Some(content) = msg.get("content") {
                     if let Some(s) = content.as_str()
                         && !s.is_empty()
@@ -98,7 +75,6 @@ pub fn estimate_completion_tokens_from_body(body: &serde_json::Value) -> u32 {
                     }
                 }
 
-                // Reasoning content
                 let reasoning = msg
                     .get("reasoning_content")
                     .or_else(|| msg.get("reasoning"))
@@ -109,10 +85,9 @@ pub fn estimate_completion_tokens_from_body(body: &serde_json::Value) -> u32 {
                     total_tokens += count_tokens(r);
                 }
 
-                // Tool calls
                 if let Some(tool_calls) = msg.get("tool_calls").and_then(|tc| tc.as_array()) {
                     for tc in tool_calls {
-                        // 4 tokens framing overhead per tool call
+                        // 4 tokens of framing overhead per tool call
                         total_tokens += 4;
                         if let Some(func) = tc.get("function") {
                             if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
@@ -170,7 +145,7 @@ pub fn estimate_completion_tokens_from_body(body: &serde_json::Value) -> u32 {
         }
     }
 
-    // 3. Gemini shape: candidates[].content.parts[]
+    // Gemini shape: candidates[].content.parts[]
     if let Some(candidates) = body.get("candidates").and_then(|c| c.as_array()) {
         for cand in candidates {
             if let Some(parts) = cand.pointer("/content/parts").and_then(|p| p.as_array()) {
@@ -207,17 +182,11 @@ fn count_tokens(text: &str) -> u32 {
     estimate_tokens_heuristic(text)
 }
 
-/// Extract text from an OpenAIMessage's content field, handling both
-/// string content and array-of-parts content (Anthropic-style).
-/// Returns the concatenated text.
-///
-/// Also includes tool_calls arguments if present (assistant messages
-/// with tool calls carry arguments as a JSON string in
-/// `tool_calls[].function.arguments`).
+/// Concatenated text of an `OpenAIMessage`: `extract_text()` plus the
+/// `tool_calls[].function.arguments` JSON string when present.
 pub fn message_content_to_text(msg: &OpenAIMessage) -> String {
     let mut text = msg.extract_text();
 
-    // Extract tool_calls arguments (assistant messages with tool calls)
     if let Some(ref tool_calls) = msg.tool_calls {
         for tc in tool_calls {
             if let Some(args) = tc
@@ -240,8 +209,8 @@ fn flush_whitespace_run(ws_run: usize) -> usize {
     if ws_run > 4 { ws_run / 10 } else { ws_run }
 }
 
-/// Char-based heuristic fallback (~4 chars/token for Latin, ~2 for CJK).
-/// Only used if the BPE encoder fails to initialize.
+/// Char-based fallback (~4 chars/token Latin, ~2 CJK) for when the BPE encoder
+/// fails to initialize.
 fn estimate_tokens_heuristic(text: &str) -> u32 {
     if text.is_empty() {
         return 0;
@@ -303,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_estimate_english_text() {
-        // "Hello world" in cl100k_base is 2 tokens
+        // "Hello world" is 2 tokens in cl100k_base.
         let tokens = estimate_completion_tokens("Hello world");
         assert!(
             (1..=5).contains(&tokens),
@@ -331,8 +300,7 @@ mod tests {
     fn test_estimate_code() {
         let code = "fn main() { println!(\"hello\"); }";
         let tokens = estimate_completion_tokens(code);
-        // cl100k_base tokenizes code differently than prose — verify
-        // we get a reasonable count (not 0, not absurdly high).
+        // Code tokenizes unlike prose, so the range is wide on purpose.
         assert!(
             (5..=30).contains(&tokens),
             "expected 5-30 tokens, got {tokens}"
@@ -343,8 +311,7 @@ mod tests {
     fn test_estimate_prompt_tokens_with_string_content() {
         let messages = vec![msg("user", "Hello"), msg("assistant", "Hi there!")];
         let tokens = estimate_prompt_tokens(&messages);
-        // 2 messages × 4 overhead = 8, plus content tokens.
-        // "Hello" ≈ 1 token, "Hi there!" ≈ 2 tokens → total ≈ 11.
+        // 2 messages x 4 overhead = 8, plus ~1 and ~2 content tokens.
         assert!(
             (10..=20).contains(&tokens),
             "expected 10-20 tokens, got {tokens}"
@@ -365,7 +332,6 @@ mod tests {
             extra: serde_json::Map::default(),
         }];
         let tokens = estimate_prompt_tokens(&messages);
-        // 1 message × 4 overhead + content tokens
         assert!(tokens >= 5, "expected at least 5 tokens, got {tokens}");
     }
 
@@ -387,7 +353,6 @@ mod tests {
             extra: serde_json::Map::default(),
         }];
         let tokens = estimate_prompt_tokens(&messages);
-        // Should include both the text content AND the tool_call arguments
         assert!(
             tokens >= 8,
             "expected at least 8 tokens (4 overhead + content + args), got {tokens}"
@@ -396,10 +361,9 @@ mod tests {
 
     #[test]
     fn test_estimate_prompt_tokens_message_overhead() {
-        // Empty content messages should still count the 4-token overhead
         let messages = vec![msg("system", ""), msg("user", ""), msg("assistant", "")];
         let tokens = estimate_prompt_tokens(&messages);
-        // 3 messages × 4 overhead = 12 (empty strings produce 0 content tokens)
+        // 3 messages x 4 overhead = 12; empty content adds nothing.
         assert!(
             tokens >= 12,
             "expected at least 12 tokens (3×4 overhead), got {tokens}"
@@ -408,11 +372,9 @@ mod tests {
 
     #[test]
     fn test_estimate_whitespace_heavy() {
-        // Lots of whitespace should NOT produce absurdly high token counts
         let text = "a".to_string() + &" ".repeat(100) + "b";
         let tokens = estimate_completion_tokens(&text);
-        // cl100k_base merges whitespace runs efficiently — 100 spaces
-        // should be ~5-15 tokens, not 25+.
+        // 100 spaces merge into a handful of tokens, not 25+.
         assert!(
             tokens <= 30,
             "expected ≤30 tokens for whitespace-heavy text, got {tokens}"
@@ -421,37 +383,25 @@ mod tests {
 
     #[test]
     fn test_bpe_vs_heuristic_differ_on_whitespace() {
-        // This test verifies that the BPE tokenizer gives a DIFFERENT
-        // result than the char heuristic for whitespace-heavy text —
-        // proving we're using a real tokenizer, not just chars/4.
+        // Whitespace runs merge into adjacent word tokens, so BPE lands near
+        // 3-5 tokens where chars/4 would overcount.
         let text = "hello     world     test"; // 5-space runs
         let bpe_tokens = count_tokens(text);
         let heuristic_tokens = estimate_tokens_heuristic(text);
-        // BPE should tokenize this differently than the heuristic.
-        // If they're equal, it's a coincidence — but the important
-        // thing is that BPE is being used (the encoder is initialized).
         assert!(bpe_tokens > 0, "BPE should produce > 0 tokens");
-        // The BPE count for "hello     world     test" is typically
-        // 3-5 tokens (the spaces merge into the adjacent word tokens).
         assert!(
             bpe_tokens <= 10,
             "BPE should be efficient with whitespace, got {bpe_tokens}"
         );
-        // The heuristic might give a different number — that's fine,
-        // the point is they CAN differ (proving BPE is real).
         let _ = heuristic_tokens; // used for documentation
     }
 
     #[test]
     fn test_json_tokenization() {
-        // JSON braces and quotes tokenize differently than prose.
-        // This is the key difference from char-based estimation:
-        // {"key":"value"} is NOT 14 chars / 4 = 3.5 tokens in BPE.
+        // Braces and quotes tokenize unlike prose, so the count is not
+        // len/4.
         let json = r#"{"id":1,"name":"test","status":"active"}"#;
         let tokens = estimate_completion_tokens(json);
-        // cl100k_base tokenizes JSON with special handling for braces
-        // and quotes — the count should be reasonable but NOT simply
-        // len/4.
         assert!(
             (5..=30).contains(&tokens),
             "expected 5-30 tokens for JSON, got {tokens}"
@@ -460,8 +410,6 @@ mod tests {
 
     #[test]
     fn test_large_text_performance() {
-        // Verify the tokenizer is fast enough for large inputs.
-        // A 100KB text should tokenize in well under 1 second.
         let large_text = "The quick brown fox jumps over the lazy dog. ".repeat(2500); // ~110KB
         let start = std::time::Instant::now();
         let tokens = estimate_completion_tokens(&large_text);

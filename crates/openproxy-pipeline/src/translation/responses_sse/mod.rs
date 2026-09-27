@@ -1,6 +1,6 @@
 //! Streaming bridge from internal OpenAI chat completion SSE chunks to OpenAI Responses API SSE events.
 //!
-//! Conforms to OpenAI Responses API streaming specifications:
+//! Emits the OpenAI Responses API streaming event sequence:
 //! - `response.created`
 //! - `response.output_item.added`
 //! - `response.output_text.delta`
@@ -437,7 +437,6 @@ impl<S> OpenAIToResponsesSseStream<S> {
 
         for c in choices {
             if let Some(delta) = c.delta {
-                // Reasoning
                 if let Some(reasoning) =
                     delta.reasoning_content.as_deref().filter(|s| !s.is_empty())
                 {
@@ -472,7 +471,6 @@ impl<S> OpenAIToResponsesSseStream<S> {
                     self.accumulated_reasoning.push_str(reasoning);
                 }
 
-                // Text
                 if let Some(text) = delta.content.as_deref().filter(|s| !s.is_empty()) {
                     self.close_reasoning();
                     let t_idx = match self.text_output_index {
@@ -510,7 +508,6 @@ impl<S> OpenAIToResponsesSseStream<S> {
                     self.accumulated_text.push_str(text);
                 }
 
-                // Tool calls
                 if let Some(tool_calls) = delta.tool_calls {
                     self.close_reasoning();
                     self.close_text();

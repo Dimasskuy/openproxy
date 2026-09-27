@@ -1,8 +1,4 @@
-/* ============================================
-   TABLES & DATA GRID COMPONENT STYLES
-   ============================================ */
 
-/* ----- Tables ----- */
 table {
   width: 100%;
   border-collapse: collapse;
@@ -27,7 +23,6 @@ th {
 tbody tr:hover { background: var(--color-surface-hover); }
 tr.selected { background: var(--color-primary-soft); }
 
-/* ----- Sortable table headers ----- */
 th.sortable {
   cursor: pointer;
   user-select: none;
@@ -49,9 +44,7 @@ th.sortable .sort-indicator {
   min-width: 0.9em;
 }
 
-/* ============================================
-   DRAG & DROP — target row reorder
-   ============================================ */
+/* DRAG & DROP — target row reorder */
 
 .drag-handle {
   cursor: grab;
@@ -82,7 +75,6 @@ tr.dnd-placeholder td {
   border: none;
 }
 
-/* ----- Responsive card table (generic helper) ----- */
 @media (max-width: 768px) {
   .responsive-card-table thead { display: none; }
   .responsive-card-table tbody { display: flex; flex-direction: column; gap: var(--space-2); }

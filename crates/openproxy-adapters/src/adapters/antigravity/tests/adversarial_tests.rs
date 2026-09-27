@@ -1,9 +1,7 @@
 use super::super::{COUNT_TOKENS_URL, normalize_quota_fraction, parse_total_tokens};
 use serde_json::json;
 
-// =====================================================================
 // ADVERSARIAL TESTS — dedup-antigravity-gemini refactor (D6)
-// =====================================================================
 
 #[test]
 fn normalize_quota_fraction_both_none_is_unlimited() {
@@ -178,9 +176,7 @@ fn normalize_quota_fraction_treats_nan_as_zero_fraction_with_reset() {
     assert!(!is_unlimited);
 }
 
-// ============================================================
 // GAP-3: Adversarial tests for count_tokens / parse_total_tokens
-// ============================================================
 
 #[test]
 fn adv_parse_total_tokens_negative_value() {

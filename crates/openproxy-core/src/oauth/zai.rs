@@ -94,10 +94,9 @@ impl OAuthProvider for ZaiOAuthProvider {
     ) -> Result<TokenResponse> {
         let (actual_code, extracted_state) = crate::oauth::util::parse_oauth_callback_input(code);
 
-        // Determine effective state:
-        // 1. Extracted from callback URL / fragment
-        // 2. Passed via code_verifier (stored during build_auth_url)
-        // 3. Fallback to random UUID (Z.ai strictly requires non-empty state with code 3001)
+        // effective state, in order: from the callback URL/fragment, from
+        // code_verifier, else a random UUID. Z.ai rejects an empty state with
+        // code 3001.
         let effective_state = extracted_state
             .filter(|s| !s.trim().is_empty())
             .or_else(|| {

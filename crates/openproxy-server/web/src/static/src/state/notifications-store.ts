@@ -1,44 +1,29 @@
-// state/notifications-store.ts — module-local store for the unread
-// notifications count + a fan-out bus for `notification` WS events.
-//
-// F4 introduced this store because both the sidebar badge (F4.2) and
-// the notifications view header (F4.1) need to know the unread count,
-// and multiple consumers (sidebar, view, DnD overlay) want to react
-// to live `notification` WS events without each subscribing to ws-bus
-// independently and risking duplicate toasts.
+// state/notifications-store.ts — module-local store for the unread notifications count plus a
+// fan-out bus for `notification` WS events. Shared by the sidebar badge and the notifications
+// view header so multiple consumers react to live events without each subscribing to ws-bus
+// (which would risk duplicate toasts).
 //
 // Responsibilities:
-//   1. Hold the authoritative unread count (server-fetched on init
-//      and on every 30s tick; incremented optimistically on each
-//      novel live WS event, then re-synced 500ms later).
-//   2. Subscribe to ws-bus `'notification'` events once at boot and
-//      fan them out to registered listeners (sidebar, view).
-//   3. Open the live-logs WebSocket at boot so `notification` events
-//      arrive even when no view that owns the WS is mounted. The WS
-//      is shared with `views/logs.ts` and `state/live-store.ts` —
-//      `connectLogsWebSocket()` is idempotent, so re-opening on top
-//      of an existing connection is a no-op.
-//   4. Show a transient toast per live notification (unless a drag
-//      is in progress — the `suppressToasts` flag is toggled by the
-//      DnD overlay so a fresh notification mid-drag doesn't yank
-//      focus).
+//   1. Authoritative unread count: server-fetched on init and every 30s tick, incremented
+//      optimistically per novel WS event, re-synced 500ms later.
+//   2. One ws-bus `'notification'` subscription at boot, fanned out to listeners.
+//   3. Open the live-logs WebSocket at boot so events arrive even with no WS-owning view
+//      mounted. Shared with views/logs.ts and state/live-store.ts; `connectLogsWebSocket()`
+//      is idempotent, so re-opening over an existing connection is a no-op.
+//   4. One transient toast per live notification, suppressed during a drag (the
+//      `suppressToasts` flag, toggled by the DnD overlay, so a mid-drag notification
+//      doesn't yank focus).
 //
-// NOTIF-FIX (bugs A, B, D): the count is now guarded by a `dirty`
-// flag that prevents the 30s poll from overwriting optimistic local
-// changes (decrements after dismiss, increments after a WS event)
-// until a user-initiated `refreshUnreadCount()` confirms them. The
-// WS handler also deduplicates by notification id — the server
-// rebroadcasts the same id for dedup-hit inserts (e.g. a flapping
-// `discovery_failed` code within 24h), and without dedup the badge
-// would inflate by +1 per rebroadcast even though the underlying
-// row (and therefore the server's unread count) hasn't changed.
+// NOTIF-FIX (bugs A, B, D): a `dirty` flag stops the 30s poll from overwriting optimistic local
+// changes (decrement after dismiss, increment after a WS event) until a user-initiated
+// `refreshUnreadCount()` confirms them. The WS handler also dedupes by notification id: the
+// server rebroadcasts the same id for dedup-hit inserts (e.g. a flapping `discovery_failed`
+// within 24h), and without dedup the badge inflates by +1 per rebroadcast even though the
+// underlying row — and the server's count — hasn't changed.
 //
-// The store is process-global and never tears down. The 30s poll
-// handles the case where the WS is closed (e.g. the user navigated
-// away from the logs view, which calls `disconnectLogsWebSocket()`)
-// — the badge still updates, just at 30s granularity instead of
-// real-time. A 5s keepalive re-opens the WS if it has been closed
-// so the sidebar can resume real-time delivery.
+// The store is process-global and never tears down. The 30s poll covers a closed WS (e.g. the
+// user left the logs view, which calls `disconnectLogsWebSocket()`) at 30s granularity instead
+// of real time; a 5s keepalive re-opens the WS so the sidebar resumes real-time delivery.
 
 import { api } from "./api.js";
 import { subscribeWs } from "./ws-bus.js";
@@ -57,92 +42,64 @@ import type {
   NotificationKind,
 } from "../lib/types/notifications.js";
 
-// ----------------------------------------------------------------------------
-// Types
-// ----------------------------------------------------------------------------
+// ── Types ──────────────────────────────────────────────────────────────────
 
-// `GET /admin/api/notifications/unread-count` returns
-// `{ "count": <number> }`. (NOTIF-FIX: previously this code read
-// `unread_count` which never matched the server's response field,
-// so the count was never actually synced from the server — only
-// optimistic WS increments accumulated, producing the inflated
-// "99" badge with an empty list.) We narrow defensively via
-// `Record<string, unknown>` rather than a dedicated interface — the
-// server contract is small enough that an inline narrowing is
-// clearer than a one-field type alias.
+// `GET /admin/api/notifications/unread-count` returns `{ "count": <number> }`. (NOTIF-FIX: this
+// code previously read `unread_count`, which never matched the server's field, so the count was
+// never synced — only optimistic WS increments accumulated, producing the inflated "99" badge
+// with an empty list.) Narrowed via `Record<string, unknown>` rather than a dedicated interface:
+// the contract is small enough that inline narrowing beats a one-field type alias.
 
 type CountListener = (count: number) => void;
 type EventListener = (evt: NotificationEvent) => void;
 
-// ----------------------------------------------------------------------------
-// Module-local state
-// ----------------------------------------------------------------------------
+// ── Module-local state ─────────────────────────────────────────────────────
 
 let unreadCount: number = 0;
 let initialized: boolean = false;
 let suppressToasts: boolean = false;
 
-/** NOTIF-FIX (bug A): dirty flag set whenever the local count is
- *  "ahead" of the server (after an optimistic increment on a WS
- *  event or an optimistic decrement on a dismiss/mark-read). While
- *  dirty, the 30s background poll skips applying its fetched count
- *  — otherwise a poll that races with an in-flight dismiss API
- *  call would clobber the optimistic decrement with the server's
- *  stale "still unread" value. The flag is cleared by the next
- *  successful user-initiated `refreshUnreadCount()` (which always
- *  applies the server's response). */
+/** NOTIF-FIX (bug A): set when the local count is "ahead" of the server (optimistic increment
+ *  or decrement). While dirty the 30s poll skips its fetched count — a poll racing an in-flight
+ *  dismiss would otherwise clobber the optimistic decrement with the server's stale "still
+ *  unread" value. Cleared by the next successful `refreshUnreadCount()`. */
 let dirty: boolean = false;
 
-/** NOTIF-FIX (bug B): set of notification ids we've already counted
- *  via a WS event. The server rebroadcasts the same id for dedup-hit
- *  inserts (e.g. `record_system("discovery_failed", ...)` twice in
- *  24h), so without dedup the badge would inflate by +1 per
- *  rebroadcast even though the underlying row hasn't changed.
- *  Populated from WS events and from `markIdsSeen()` (called by the
- *  notifications view after its initial list fetch). Capped at
- *  `SEEN_IDS_CAP` to bound memory; when the cap is exceeded we
- *  clear the set and start fresh (the 500ms debounced refresh
- *  will re-sync the count from the server, so a brief overcount
- *  window after the clear is acceptable). */
+/** NOTIF-FIX (bug B): ids already counted via a WS event. The server rebroadcasts the same id on
+ *  dedup-hit inserts (e.g. `record_system("discovery_failed", …)` twice in 24h), so without dedup
+ *  the badge inflates by +1 per rebroadcast though the row hasn't changed. Populated from WS
+ *  events and from `markIdsSeen()` (called by the notifications view after its initial list
+ *  fetch). Capped at `SEEN_IDS_CAP`; on overflow the set is cleared and refilled (the 500ms
+ *  debounced refresh re-syncs, so a brief overcount window is acceptable). */
 const seenIds: Set<number> = new Set<number>();
 const SEEN_IDS_CAP: number = 1000;
 
-/** 30s visibility-aware poll for `GET /notifications/unread-count`.
- *  Async-aware (next tick scheduled only after the previous one
- *  settles, so a slow request can't stack up two concurrent ticks)
- *  and paused while the tab is hidden — the badge refreshes once on
- *  resume instead of burning background requests. */
+/** 30s visibility-aware poll for `GET /notifications/unread-count`. Async-aware (the next tick
+ *  is scheduled only after the previous settles, so a slow request can't stack ticks) and
+ *  paused while the tab is hidden — it refreshes once on resume. */
 let pollHandle: VisibilityAwareHandle | null = null;
 
-/** Debounce timer for the post-WS-event `refreshUnreadCount()` call.
- *  Multiple events arriving in quick succession coalesce into a
- *  single network call. */
+/** Debounce timer for the post-WS-event `refreshUnreadCount()`: events arriving in quick
+ *  succession coalesce into one network call. */
 let refreshDebounce: ReturnType<typeof setTimeout> | null = null;
 
 const countListeners: Set<CountListener> = new Set();
 const eventListeners: Set<EventListener> = new Set();
 
-// ----------------------------------------------------------------------------
-// Public API
-// ----------------------------------------------------------------------------
+// ── Public API ─────────────────────────────────────────────────────────────
 
 /** Current unread count. Reads are cheap (no allocation). */
 export function getUnreadCount(): number {
   return unreadCount;
 }
 
-/** Replace the unread count and notify every subscriber (sidebar,
- *  view header). Callers should pass a non-negative number; we clamp
- *  defensively in case a server bug returns -1.
+/** Replace the unread count and notify every subscriber (sidebar, view header). Clamped
+ *  defensively against a negative from a server bug.
  *
- *  NOTIF-FIX: the `opts.optimistic` flag marks the local count as
- *  "ahead of the server" (sets the dirty flag). Pass `optimistic: true`
- *  for local changes that haven't yet been confirmed by a server
- *  fetch — e.g. an optimistic decrement after dismiss, or an
- *  optimistic increment on a novel WS event. Pass `optimistic: false`
- *  (the default) when applying a server-confirmed value (e.g. inside
- *  `refreshUnreadCount` after a successful fetch, or restoring a
- *  reverted optimistic change after an API failure). */
+ *  NOTIF-FIX: `opts.optimistic` marks the local count as "ahead of the server" (sets the dirty
+ *  flag). Pass `true` for unconfirmed local changes (optimistic decrement after dismiss,
+ *  increment on a novel WS event) and `false` (default) when applying a server-confirmed value
+ *  (inside `refreshUnreadCount`, or reverting an optimistic change after an API failure). */
 export function setUnreadCount(n: number, opts: { optimistic?: boolean } = {}): void {
   const next: number = Math.max(0, n | 0);
   const changed: boolean = next !== unreadCount;
@@ -165,31 +122,25 @@ export function onUnreadCountChange(fn: CountListener): () => void {
   return () => { countListeners.delete(fn); };
 }
 
-/** Subscribe to live `notification` WS events. Returns an unsubscribe
- *  fn. Listeners receive the parsed `NotificationEvent` (already
- *  narrowed by the ws-bus dispatcher). */
+/** Subscribe to live `notification` WS events; returns an unsubscribe fn. Listeners receive
+ *  the parsed `NotificationEvent`, already narrowed by the ws-bus dispatcher. */
 export function onNotificationEvent(fn: EventListener): () => void {
   eventListeners.add(fn);
   return () => { eventListeners.delete(fn); };
 }
 
-/** Toggle whether live notifications surface a toast. Used by the DnD
- *  overlay so a fresh notification mid-drag doesn't yank focus. */
+/** Toggle toasts for live notifications. Used by the DnD overlay. */
 export function setSuppressToasts(b: boolean): void {
   suppressToasts = b;
 }
 
-/** Force a refetch of the unread count from the server. Used by the
- *  notifications view after a mark-as-read / archive call, by the WS
- *  event handler's debounced re-sync (500ms after each event), and by
- *  the 30s background poll.
+/** Force-refetch the unread count. Used by the notifications view after mark-as-read/archive,
+ *  by the WS handler's debounced re-sync (500ms after each event) and by the 30s poll.
  *
- *  NOTIF-FIX: always applies the fetched count (regardless of the
- *  `dirty` flag) and clears `dirty` on success — this is the
- *  "confirmation" half of the dirty-flag protocol. The 30s poll
- *  goes through `pollRefreshUnreadCount()` which skips when dirty.
- *  Also fixed the response field name from `unread_count` (never
- *  matched the server's `count` field) to `count`. */
+ *  NOTIF-FIX: always applies the fetched count regardless of `dirty` and clears it on success —
+ *  the confirmation half of the dirty-flag protocol. The 30s poll goes through
+ *  `pollRefreshUnreadCount()`, which skips while dirty. Also fixed the response field name from
+ *  `unread_count` to the server's actual `count`. */
 export async function refreshUnreadCount(): Promise<void> {
   try {
     const raw: unknown = await api("/notifications/unread-count");
@@ -201,37 +152,31 @@ export async function refreshUnreadCount(): Promise<void> {
       }
     }
   } catch (_e: unknown) {
-    // Swallow — the 30s poll will try again. The badge just stays
-    // at its last-known value rather than flickering to 0.
+    // Swallow: the 30s poll retries. The badge stays at its last-known value rather than
+    // flickering to 0.
   }
 }
 
-/** NOTIF-FIX: 30s background poll. Skips the fetch entirely when
- *  `dirty` is set — the local count is ahead of the server (an
- *  optimistic increment or decrement hasn't yet been confirmed by
- *  a user-initiated refresh), so applying the server's stale value
- *  would clobber the optimistic change. The next user action (or
- *  the WS handler's 500ms debounced refresh) will clear dirty and
- *  re-enable normal polling. */
+/** NOTIF-FIX: 30s background poll. Skips the fetch entirely while `dirty` — the local count is
+ *  ahead of the server, so applying the server's stale value would clobber the optimistic
+ *  change. The next user action (or the WS handler's 500ms debounced refresh) clears dirty and
+ *  re-enables polling. */
 async function pollRefreshUnreadCount(): Promise<void> {
   if (dirty) return;
   await refreshUnreadCount();
 }
 
-/** Decrement the unread count locally (e.g. after the user marks a
- *  single notification as read). Clamped at 0. Marks the local
- *  count as optimistic (dirty) so the 30s poll doesn't overwrite it
- *  before the next `refreshUnreadCount()` confirms. */
+/** Decrement the unread count locally (e.g. after marking one notification read). Clamped at 0
+ *  and marked optimistic (dirty) so the 30s poll can't overwrite it before the next
+ *  `refreshUnreadCount()` confirms. */
 export function decrementUnread(by: number = 1): void {
   setUnreadCount(unreadCount - by, { optimistic: true });
 }
 
-/** NOTIF-FIX (bug B): mark a set of notification ids as "already
- *  seen" so a subsequent WS rebroadcast for the same id (dedup-hit
- *  on the server) doesn't cause a spurious optimistic increment.
- *  Called by the notifications view after its initial list fetch.
- *  The set is capped at `SEEN_IDS_CAP`; when the cap is exceeded we
- *  clear it and start fresh. */
+/** NOTIF-FIX (bug B): mark ids as "already seen" so a WS rebroadcast of the same id (server
+ *  dedup-hit) doesn't cause a spurious optimistic increment. Called by the notifications view
+ *  after its initial list fetch. Capped at `SEEN_IDS_CAP`; on overflow the set is cleared and
+ *  refilled. */
 export function markIdsSeen(ids: Iterable<number>): void {
   for (const id of ids) {
     seenIds.add(id);
@@ -241,24 +186,15 @@ export function markIdsSeen(ids: Iterable<number>): void {
   }
 }
 
-// ----------------------------------------------------------------------------
-// i18n helpers — shared by the store (toast body) and the view (card
-// body). Keeps the per-kind payload-narrowing logic in one place.
-// ----------------------------------------------------------------------------
+// ── i18n helpers (store toast body + view card body) ───────────────────────
 
-/** Pull the per-kind body text via `t()`. Accepts either a live
- *  `NotificationEvent` or a persisted `NotificationRow` — both have
- *  `kind` + `payload`.
+/** Per-kind body text via `t()`. Accepts a live `NotificationEvent` or a persisted
+ *  `NotificationRow` — both have `kind` + `payload`.
  *
- *  For `system` notifications (G2), dispatches on `payload.code` to
- *  pick a per-code body template (`notifications.body.{code}`). The
- *  template receives the per-payload `details` fields as
- *  interpolation params, so the server-side `details` shape is the
- *  contract for what placeholders are available. If the per-code
- *  template is missing (older i18n pack, or a brand-new code the
- *  pack hasn't been updated for), falls back to the generic
- *  `notifications.body.system` template that just echoes `message`.
- */
+ *  For `system` notifications (G2) it dispatches on `payload.code` to pick a per-code template
+ *  (`notifications.body.{code}`), whose placeholders come from the server-side `details` shape.
+ *  A missing template (older i18n pack, or a brand-new code) falls back to the generic
+ *  `notifications.body.system` that echoes `message`. */
 export function notificationBody(evt: NotificationEvent | NotificationRow): string {
   const p: Record<string, unknown> = evt.payload || {};
   const modelId: string = typeof p["model_id"] === "string" ? p["model_id"] : "";
@@ -271,10 +207,9 @@ export function notificationBody(evt: NotificationEvent | NotificationRow): stri
     case "model_gone":
       return t("notifications.body.model_gone", { model_id: modelId, provider_id: providerId });
     case "model_auto_activated":
-      // The "matched {{keyword}}" variant only fires when the
-      // provider had an `auto_activate_keyword` configured. A null
-      // keyword means "all new models auto-activate" — that gets the
-      // shorter "_no_keyword" template.
+      // The "matched {{keyword}}" variant only applies when the provider had an
+      // `auto_activate_keyword`; a null keyword means "all new models auto-activate", which uses
+      // the shorter `_no_keyword` template.
       return keyword
         ? t("notifications.body.model_auto_activated", { model_id: modelId, provider_id: providerId, keyword })
         : t("notifications.body.model_auto_activated_no_keyword", { model_id: modelId, provider_id: providerId });
@@ -285,31 +220,24 @@ export function notificationBody(evt: NotificationEvent | NotificationRow): stri
   }
 }
 
-/** Per-code body template lookup for `system` notifications. Mirrors
- *  the per-code constants on the Rust side
- *  (`notifications::CODE_*`). Falls back to `notifications.body.system`
- *  (which just echoes `{{message}}`) when the per-code key isn't in
- *  the i18n pack — `t()` returns the key itself when missing, so we
- *  detect that case explicitly and route to the generic template
- *  rather than showing the raw key string to the user. */
+/** Per-code body template for `system` notifications, mirroring the `notifications::CODE_*`
+ *  constants on the Rust side. Falls back to `notifications.body.system` when the per-code key
+ *  isn't in the pack: `t()` returns the key itself when missing, so that case is detected
+ *  explicitly to avoid showing the raw key string. */
 function systemBody(p: Record<string, unknown>, message: string): string {
   const code: string = typeof p["code"] === "string" ? p["code"] : "";
   if (!code) {
     return t("notifications.body.system", { message });
   }
-  // Pull the per-code template. `t()` returns the key itself if the
-  // string isn't loaded, so we detect that fallback and route to the
-  // generic system template instead.
+  // `t()` returns the key itself when the string isn't loaded, so detect that fallback and
+  // route to the generic system template.
   const perCodeKey: string = `notifications.body.${code}`;
   const details: Record<string, unknown> =
     (p["details"] && typeof p["details"] === "object" && !Array.isArray(p["details"]))
       ? p["details"] as Record<string, unknown>
       : {};
-  // Interpolation params: merge top-level payload fields + `details`
-  // so templates can use either `{{account_id}}` (top-level on
-  // SystemPayload? no — `account_id` lives inside `details`) or
-  // `{{provider_id}}` (top-level on SystemPayload). Both shapes are
-  // available to the template.
+  // Interpolation params merge top-level payload fields with `details`, so templates can use
+  // either `{{provider_id}}` (top-level) or `{{account_id}}` (inside `details`).
   const params: Record<string, string | number> = Object.assign({}, { message });
   for (const [k, v] of Object.entries(p)) {
     if (typeof v === "string") params[k] = v;
@@ -322,17 +250,15 @@ function systemBody(p: Record<string, unknown>, message: string): string {
   }
   const rendered: string = t(perCodeKey, params);
   if (rendered === perCodeKey) {
-    // Missing i18n key — fall back to the generic system body so
-    // the user sees the server-provided `message` instead of the
-    // raw key string.
+    // Missing i18n key — fall back to the generic system body so the user sees the
+    // server-provided `message` instead of the raw key string.
     return t("notifications.body.system", { message });
   }
   return rendered;
 }
 
-/** Format a `created_at` RFC-3339 timestamp as a relative "X ago"
- *  string via the i18n pluralised keys. Returns "just now" for
- *  anything within the last minute. */
+/** Format an RFC-3339 `created_at` as a relative "X ago" string through the i18n pluralised
+ *  keys; anything within the last minute is "just now". */
 export function formatRelativeAgo(iso: string, nowMs: number = Date.now()): string {
   let createdMs: number;
   try {
@@ -359,28 +285,21 @@ export function formatRelativeAgo(iso: string, nowMs: number = Date.now()): stri
   return t("notifications.ago.days", { count: deltaDay });
 }
 
-// ----------------------------------------------------------------------------
-// Boot + lifecycle
-// ----------------------------------------------------------------------------
+// ── Boot + lifecycle ───────────────────────────────────────────────────────
 
-/** Initialise the store at app boot. Idempotent — safe to call more
- *  than once. Opens the WS, subscribes to ws-bus, starts the 30s
- *  poll, and primes the unread count from the server. */
+/** Initialise the store at app boot. Idempotent. Opens the WS, subscribes to ws-bus, starts the
+ *  30s poll and primes the unread count from the server. */
 export function initNotificationsStore(): void {
   if (initialized) return;
   initialized = true;
 
-  // Open the live-logs WS at boot so `notification` events arrive
-  // even when no view that owns the WS is mounted. `connectLogsWebSocket`
-  // is idempotent — a later call from `views/logs.ts` is a no-op.
+  // Open the live-logs WS at boot so `notification` events arrive with no WS-owning view
+  // mounted. `connectLogsWebSocket` is idempotent — a later call from views/logs.ts is a no-op.
   connectLogsWebSocket();
 
-  // Keepalive: re-open the WS if anything closed it. The interval is
-  // generous (5s) so we don't fight with the logs view's own reconnect
-  // cadence — the logs view schedules a reconnect with 1–30s backoff,
-  // and our keepalive acts as a safety net once that backoff window
-  // has elapsed. The handle is intentionally not stored — the store
-  // is process-global, so we never cancel the interval.
+  // Keepalive re-opens the WS if anything closed it. 5s is generous enough not to fight the
+  // logs view's own 1–30s reconnect backoff, acting as a safety net once that window elapses.
+  // The handle is intentionally not stored: the store is process-global and never cancels it.
   void setInterval(() => {
     if (!isLoggedIn()) return;
     const ws: WebSocket | null = state.logs.ws;
@@ -389,20 +308,15 @@ export function initNotificationsStore(): void {
     }
   }, 5000);
 
-  // Subscribe to ws-bus `notification` events. The bus is independent
-  // of the WS connection state — when the WS is closed, no events
-  // arrive and the 30s poll is the only source of truth.
+  // The ws-bus is independent of WS connection state — with the WS closed no events arrive
+  // and the 30s poll is the only source of truth.
   //
-  // NOTIF-FIX (bug B): only increment the count for NOVEL ids. The
-  // server rebroadcasts the same id on dedup-hit inserts (e.g. a
-  // flapping `discovery_failed` code within 24h, or a `model_new`
-  // for the same provider:model that re-discovery sees again). The
-  // underlying row already exists in those cases, so the server's
-  // unread count is unchanged — incrementing the badge for each
-  // rebroadcast produced the inflated "99" badge with an empty
-  // list (the view's WS handler refuses to prepend a row whose id
-  // is already in the list, so the rebroadcast was invisible in
-  // the list but still +1 on the badge).
+  // NOTIF-FIX (bug B): increment only for NOVEL ids. The server rebroadcasts the same id on
+  // dedup-hit inserts (e.g. a flapping `discovery_failed` within 24h, or a `model_new` for a
+  // provider:model re-discovery sees again). The underlying row already exists, so the server's
+  // count is unchanged — incrementing per rebroadcast produced the inflated "99" badge with an
+  // empty list (the view's WS handler refuses to prepend a row whose id is already listed, so
+  // the rebroadcast was invisible in the list but still +1 on the badge).
   subscribeWs("notification", (msg) => {
     const data: unknown = msg.data;
     if (!data || typeof data !== "object") return;
@@ -411,34 +325,29 @@ export function initNotificationsStore(): void {
     if (isNovel) {
       seenIds.add(evt.id);
       if (seenIds.size > SEEN_IDS_CAP) seenIds.clear();
-      // Optimistic increment so the badge reacts instantly. The
-      // server is the source of truth — we re-sync 500ms later
-      // (debounced) and clear the dirty flag then. The dirty flag
-      // also protects this increment from being clobbered by a
-      // racing 30s poll.
+      // Optimistic increment so the badge reacts instantly; the server stays the source of truth
+      // (debounced re-sync 500ms later clears `dirty`). The flag also shields this increment
+      // from a racing 30s poll.
       setUnreadCount(unreadCount + 1, { optimistic: true });
     }
-    // Fan out to listeners (sidebar, view) regardless of novelty —
-    // a rebroadcast for an already-known id still carries real-time
-    // signal (the event is happening again right now), so listeners
-    // may want to e.g. move the row to the top of the list. Each
-    // listener is responsible for its own error handling.
+    // Fan out regardless of novelty: a rebroadcast of a known id is still real-time signal
+    // (the event is happening again now), so listeners may want to move the row to the top.
+    // Each listener handles its own errors.
     for (const fn of eventListeners) {
       try { fn(evt); } catch (e: unknown) {
         console.error("[notifications-store] event listener threw", e);
       }
     }
-    // Debounced re-sync. Multiple events arriving in quick succession
-    // coalesce into a single server call. This is the "confirm"
-    // half of the dirty-flag protocol: it always applies the server's
-    // count and clears dirty.
+    // Debounced re-sync: events in quick succession coalesce into one server call. This is
+    // the confirmation half of the dirty-flag protocol — always applies the server's count and
+    // clears dirty.
     if (refreshDebounce !== null) clearTimeout(refreshDebounce);
     refreshDebounce = setTimeout(() => {
       refreshDebounce = null;
       void refreshUnreadCount();
     }, 500);
-    // Transient toast. Suppressed during DnD so a fresh notification
-    // mid-drag doesn't yank focus. Only show toasts for novel events.
+    // Transient toast, suppressed during DnD so a notification mid-drag doesn't yank focus.
+    // Novel events only.
     if (!suppressToasts && isNovel) {
       const title: string = t("notifications.kind." + (evt.kind as NotificationKind));
       const body: string = notificationBody(evt);
@@ -452,11 +361,9 @@ export function initNotificationsStore(): void {
   schedulePoll();
 }
 
-/** Start the 30s visibility-aware poll. The callback goes through
- *  `pollRefreshUnreadCount` which skips when `dirty` is set, so an
- *  in-flight optimistic change can't be clobbered by a racing poll.
- *  The next user-initiated `refreshUnreadCount()` clears dirty and
- *  re-enables polling. */
+/** Start the 30s visibility-aware poll. Its callback goes through `pollRefreshUnreadCount`,
+ *  which skips while `dirty`, so an in-flight optimistic change can't be clobbered. The next
+ *  user-initiated `refreshUnreadCount()` clears dirty and re-enables polling. */
 function schedulePoll(): void {
   if (pollHandle !== null) return;
   pollHandle = createVisibilityAwareInterval(() => pollRefreshUnreadCount(), 30_000);

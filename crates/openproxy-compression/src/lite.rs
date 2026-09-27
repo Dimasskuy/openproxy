@@ -7,7 +7,7 @@ use std::borrow::Cow;
 
 type Messages = Vec<OpenAIMessage>;
 
-// ─── Technique 1: Collapse whitespace ───────────────────────────────────────
+// Technique 1: Collapse whitespace
 
 fn collapse_msg_whitespace(msg: &mut OpenAIMessage) -> bool {
     mutate_message_text(msg, |text| match normalize_message_whitespace(text) {
@@ -48,13 +48,10 @@ fn process_whitespace_char(
     }
 }
 
-/// Collapse 3+ consecutive newlines to 2, and trim trailing whitespace
-/// (spaces, tabs) from each line. Single-pass, single allocation.
-///
-/// If the input is already normalized, returns `Cow::Borrowed`.
+/// Collapse 3+ consecutive newlines to 2 and trim trailing spaces/tabs per
+/// line. Single pass, single allocation, `Cow::Borrowed` when already
+/// normalized.
 fn normalize_message_whitespace(s: &str) -> Cow<'_, str> {
-    // Fast path: if the string has no 3+ newline runs AND no trailing
-    // whitespace before newlines, it's already normalized.
     if !needs_normalization(s) {
         return Cow::Borrowed(s);
     }
@@ -118,7 +115,7 @@ fn trim_trailing_ws_in_place(out: &mut String, from: usize) {
     out.truncate(end);
 }
 
-// ─── Technique 2: Dedup system prompts ──────────────────────────────────────
+// Technique 2: Dedup system prompts
 
 pub fn dedup_system_prompt(msgs: &mut Messages) -> Vec<&'static str> {
     let mut applied = Vec::new();
@@ -148,7 +145,7 @@ pub fn dedup_system_prompt(msgs: &mut Messages) -> Vec<&'static str> {
     applied
 }
 
-// ─── Technique 3: Compress tool results ─────────────────────────────────────
+// Technique 3: Compress tool results
 
 const MAX_TOOL_CHARS: usize = 2000;
 
@@ -186,7 +183,7 @@ pub fn compress_tool_results(msgs: &mut Messages) -> Vec<&'static str> {
     applied
 }
 
-// ─── Technique 4: Remove redundant consecutive messages ────────────────────
+// Technique 4: Remove redundant consecutive messages
 
 fn message_has_tools(msg: &OpenAIMessage) -> bool {
     msg.tool_calls.is_some() || msg.tool_call_id.is_some()
@@ -215,7 +212,7 @@ pub fn remove_redundant_content(msgs: &mut Messages) -> Vec<&'static str> {
     applied
 }
 
-// ─── Technique 5: Replace image URLs with placeholders ─────────────────────
+// Technique 5: Replace image URLs with placeholders
 
 fn extract_data_image_format(url: &str) -> &str {
     let Some(rest) = url.strip_prefix("data:image/") else {
@@ -272,7 +269,7 @@ pub fn replace_image_urls(msgs: &mut Messages) -> Vec<&'static str> {
     applied
 }
 
-// ─── Technique 6: Clean invisible unicode & BOM ────────────────────────────
+// Technique 6: Clean invisible unicode & BOM
 
 fn has_invisible_or_crlf(text: &str) -> bool {
     const INVISIBLE: [char; 6] = ['\u{200B}', '\u{200C}', '\u{200D}', '\u{FEFF}', '\0', '\r'];
@@ -310,7 +307,7 @@ pub fn clean_invisible_unicode(msgs: &mut Messages) -> Vec<&'static str> {
     applied
 }
 
-// ─── Technique 7: Strip ANSI escape sequences ──────────────────────────────
+// Technique 7: Strip ANSI escape sequences
 
 pub fn strip_ansi_escapes(msgs: &mut Messages) -> Vec<&'static str> {
     let mut applied = Vec::new();
@@ -367,7 +364,7 @@ fn strip_ansi_string(text: &str) -> String {
     out
 }
 
-// ─── Technique 8: Compact formatted multiline JSON ────────────────────────
+// Technique 8: Compact formatted multiline JSON
 
 fn minify_json(json: &str) -> String {
     let mut out = String::with_capacity(json.len());
@@ -426,7 +423,7 @@ pub fn compact_json(msgs: &mut Messages) -> Vec<&'static str> {
     applied
 }
 
-// ─── Technique 9: Collapse decorative ASCII separators ─────────────────────
+// Technique 9: Collapse decorative ASCII separators
 
 pub fn collapse_ascii_separators(msgs: &mut Messages) -> Vec<&'static str> {
     let mut applied = Vec::new();
@@ -502,18 +499,11 @@ fn collapse_separator_runs(s: &str) -> String {
     out
 }
 
-// ─── Apply all lite techniques ──────────────────────────────────────────────
-
-/// Aplica las técnicas deterministas y 100% lossless (zero semantic loss).
-///
-/// Solo ejecuta técnicas puramente sin pérdida:
-/// 1. `clean_invisible_unicode` (elimina zero-width spaces, BOM, null bytes, normaliza CRLF).
-/// 2. `strip_ansi_escapes` (elimina secuencias de color/escape ANSI de terminal).
-/// 3. `collapse_whitespace` (espacios al final de línea y 3+ newlines a 2).
-/// 4. `collapse_ascii_separators` (reduce separadores de 80 caracteres repetidos a 10).
-/// 5. `compact_json` (minifica JSONs indentados multilínea a formato compacto).
-/// 6. `dedup_system_prompt` (elimina system prompts duplicados idénticos).
-/// 7. `remove_redundant_content` (elimina mensajes consecutivos idénticos de texto).
+/// Aplica las técnicas deterministas y 100% lossless (zero semantic loss):
+/// zero-width/BOM/null cleanup and CRLF normalization, ANSI escape removal,
+/// trailing-whitespace and 3+ newline collapsing, repeated 80-char separator
+/// shrinking, multiline JSON minification, duplicate system-prompt removal and
+/// consecutive duplicate message removal.
 pub fn apply_lite(msgs: &mut Messages) -> Vec<&'static str> {
     let mut all: Vec<&'static str> = Vec::new();
     all.extend(clean_invisible_unicode(msgs));

@@ -408,7 +408,6 @@ impl PipelineStage for DispatchStage {
         update_predictive_limiter_on_result(&ctx.pipeline, target, &result);
         update_account_rate_limited_until_on_result(&ctx.pipeline, target, &result);
 
-        // Do not call next.execute here. We are the final stage of target execution.
         Ok(result)
     }
 }
@@ -460,10 +459,8 @@ async fn try_lazy_fetch_antigravity_project(
     }
 }
 
-/// GAP-6 helper: pure decision. Returns `true` if the error body
-/// matches `429 RESOURCE_EXHAUSTED` (the trigger condition for the
-/// `live_limited_models` insert). Extracted so it can be unit-tested
-/// without spinning up a full `Pipeline`.
+/// Trigger for the `live_limited_models` insert. Pure so it can be
+/// unit-tested without a full `Pipeline`.
 fn should_mark_live_limited(err: &CoreError) -> bool {
     let CoreError::UpstreamError { status, body, .. } = err else {
         return false;
@@ -471,15 +468,13 @@ fn should_mark_live_limited(err: &CoreError) -> bool {
     *status == 429 && body.contains("RESOURCE_EXHAUSTED")
 }
 
-/// GAP-6 helper: persist a live-limit sentinel for
-/// `(account_id, model_id)` when the error body says
-/// `429 RESOURCE_EXHAUSTED`. Independent of GAP-4: the trigger
-/// decision is made on `(status, body)` directly.
+/// Live-limit sentinel for `(account_id, model_id)`. The trigger reads
+/// `(status, body)` directly, so it stays independent of GAP-4's
+/// `UpstreamErrorClass`.
 ///
-/// The Writer lock is released inside the `spawn_blocking` closure
-/// before the function returns; we never hold it across an `.await`
-/// (AGENTS.md §4.3). The `handle` is `drop`ped explicitly so
-/// `clippy::let_underscore_future` is satisfied (fire-and-forget).
+/// The writer lock is taken and released inside the `spawn_blocking`
+/// closure: no guard crosses an `.await` (AGENTS.md §4.3). The handle is
+/// dropped explicitly (fire-and-forget).
 fn mark_live_limited_inner(
     conn_arc: Arc<parking_lot::Mutex<rusqlite::Connection>>,
     aid: openproxy_types::ids::AccountId,
@@ -526,21 +521,11 @@ fn update_circuit_breaker_on_result(
         target.model_row_id,
     );
 
-    // GAP-6: persist a per-(account, model) "live-limited" sentinel so
-    // future routing can skip this combo on the model even when the
-    // breaker decision below records a success (e.g. the catch-all
-    // `_ => record_success(key)` arm for non-retryable errors, or
-    // GAP-4's `hard_skip` arm once it lands).
-    //
-    // We classify the body directly with a substring check on
-    // `429 RESOURCE_EXHAUSTED` so this code path is independent of
-    // GAP-4's `UpstreamErrorClass::ResourceExhausted` enum (which
-    // lives in `openproxy-pipeline::error_classification` and is
-    // expected to land in a separate commit).
-    //
-    // Fire-and-forget: the Writer lock is acquired and released
-    // entirely inside `spawn_blocking` — no guard held across
-    // `.await` (AGENTS.md §4.3).
+    // The per-(account, model) live-limit sentinel has to be written
+    // even when the breaker records a success below (the catch-all arm
+    // for non-retryable errors, or the hard_skip arm). The decision is
+    // a substring check on `429 RESOURCE_EXHAUSTED`, independent of
+    // `error_classification::UpstreamErrorClass`.
     if let Some(err) = &result.error {
         mark_live_limited_inner(Arc::clone(&pipeline.conn), aid, &model.model_id, err);
     }
@@ -552,8 +537,7 @@ fn update_circuit_breaker_on_result(
                 "client cancelled; leaving circuit breaker untouched"
             );
         }
-        // GAP-4: hard-skip errors are request-shaped; record a success
-        // so the breaker stays calm.
+        // Request-shaped errors must not count against the breaker.
         Some(e) if e.is_hard_skip() => {
             tracing::debug!(
                 account_id = aid.0,

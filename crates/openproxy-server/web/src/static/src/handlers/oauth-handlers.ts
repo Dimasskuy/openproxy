@@ -1,16 +1,11 @@
-// handlers/oauth-handlers.ts — OAuth login flows (PKCE popup +
-// manual paste + device code).
+// handlers/oauth-handlers.ts — OAuth login flows (PKCE popup, manual paste, device code).
+// Per spec §3 + §13.8 nothing is attached to `window.*`: the `OAuthLogin` object is exported by
+// name and handlers/registry.ts exposes each method under a flat name (`oauthStartPKCE`,
+// `oauthStartDeviceCode`, `oauthSubmitManualCallback`).
 //
-// Per spec §3 + §13.8 we do not attach to `window.*`. The
-// `OAuthLogin` object is exported by name; the data-action shim
-// in handlers/registry.ts exposes each method under a flat name
-// (`oauthStartPKCE`, `oauthStartDeviceCode`,
-// `oauthSubmitManualCallback`).
-//
-// Migrated to lit-html: the device-code panel is rendered with
-// `render(html\`...\`, el)` instead of `el.innerHTML = ...`.
-// lit-html auto-escapes the provider / verification URI / user
-// code, so we no longer call `escapeHtml` / `escapeAttr`.
+// Migrated to lit-html: the device-code panel uses `render(html`…`, el)` instead of
+// `el.innerHTML = …`; lit-html auto-escapes the provider, verification URI and user code, so
+// `escapeHtml` / `escapeAttr` are gone.
 
 import { state } from "../state/index.js";
 import { api } from "../state/api.js";

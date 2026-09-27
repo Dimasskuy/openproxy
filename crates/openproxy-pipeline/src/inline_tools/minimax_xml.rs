@@ -25,8 +25,8 @@ impl InlineToolParser for MiniMaxXmlParser {
     }
 }
 
-/// Parses all `<invoke ...>...</invoke>`, `<function ...>...</function>`, `<call ...>...</call>`,
-/// and `<function_call ...>...</function_call>` tags within the provided block.
+/// Parses `<invoke>`, `<function>`, `<call>` and `<function_call>` tags
+/// within the provided block.
 pub fn parse_xml_invokes(text: &str) -> Vec<ParsedToolCall> {
     let mut calls = Vec::new();
     let mut cursor = 0;
@@ -64,7 +64,7 @@ pub fn parse_xml_invokes(text: &str) -> Vec<ParsedToolCall> {
                     (body, next)
                 }
                 None => {
-                    // If closing tag is missing (e.g. at end of stream), take remainder of block
+                    // Missing closing tag (truncated stream): take the remainder.
                     (after_body, text.len())
                 }
             }
@@ -88,7 +88,6 @@ pub fn parse_xml_invokes(text: &str) -> Vec<ParsedToolCall> {
     calls
 }
 
-/// Finds the next `<invoke`, `<function_call`, `<function`, `<call`, or `<action` tag start in `s`.
 fn find_next_invoke_tag(s: &str) -> Option<(usize, &'static str)> {
     let candidates = [
         ("<invoke", "</invoke>"),
@@ -104,7 +103,7 @@ fn find_next_invoke_tag(s: &str) -> Option<(usize, &'static str)> {
         while let Some(pos) = find_ignore_ascii_case(&s[cursor..], open) {
             let abs_pos = cursor + pos;
             let after_tag = abs_pos + open.len();
-            // Validate boundary after tag name: must be whitespace, '>' or '/'
+            // After the tag name only whitespace, '>' or '/' is valid.
             let next_byte = s.as_bytes().get(after_tag);
             let is_boundary =
                 next_byte.is_none_or(|&b| b.is_ascii_whitespace() || b == b'>' || b == b'/');
@@ -120,7 +119,6 @@ fn find_next_invoke_tag(s: &str) -> Option<(usize, &'static str)> {
     best
 }
 
-/// Extract all attribute (name, value) pairs from an opening XML tag.
 pub fn extract_all_attributes(tag_str: &str) -> Vec<(String, String)> {
     let mut attributes = Vec::new();
     let bytes = tag_str.as_bytes();
@@ -129,7 +127,6 @@ pub fn extract_all_attributes(tag_str: &str) -> Vec<(String, String)> {
         return attributes;
     }
 
-    // Skip tag name if starting with '<' or if tag name is present
     let mut i = 0;
     if bytes[0] == b'<' {
         i = 1;
@@ -147,7 +144,6 @@ pub fn extract_all_attributes(tag_str: &str) -> Vec<(String, String)> {
     }
 
     while i < len {
-        // Skip whitespace
         while i < len && bytes[i].is_ascii_whitespace() {
             i += 1;
         }
@@ -155,7 +151,6 @@ pub fn extract_all_attributes(tag_str: &str) -> Vec<(String, String)> {
             break;
         }
 
-        // Read attribute name
         let key_start = i;
         while i < len
             && !bytes[i].is_ascii_whitespace()
@@ -169,7 +164,6 @@ pub fn extract_all_attributes(tag_str: &str) -> Vec<(String, String)> {
         if key.is_empty() {
             break;
         }
-
         // Skip whitespace
         while i < len && bytes[i].is_ascii_whitespace() {
             i += 1;
@@ -218,7 +212,6 @@ pub fn extract_all_attributes(tag_str: &str) -> Vec<(String, String)> {
     attributes
 }
 
-/// Extract an XML attribute value from an opening tag string (e.g. `name="fetch_web_page"` or `name = '...'`).
 pub fn extract_xml_attribute(tag_str: &str, attr_name: &str) -> Option<String> {
     extract_all_attributes(tag_str)
         .into_iter()
@@ -249,7 +242,6 @@ pub(crate) fn advance_cursor(s: &str, current: usize, next: usize) -> usize {
     }
 }
 
-/// Decode common XML entities (&amp;, &lt;, &gt;, &quot;, &apos;, and numeric entities).
 pub fn decode_xml_entities(input: &str) -> String {
     if !input.contains('&') {
         return input.to_string();
@@ -323,7 +315,6 @@ pub fn decode_xml_entities(input: &str) -> String {
     out
 }
 
-/// Strips CDATA wrappers (`<![CDATA[...]]>`) from a string.
 fn strip_cdata(s: &str) -> String {
     if !s.contains("<![CDATA[") {
         return s.to_string();
@@ -371,11 +362,9 @@ fn parse_invoke_to_json_arguments(open_tag_content: &str, body: &str) -> String 
     }
 }
 
-/// Parses the inner body of an `<invoke>` tag into a JSON string representing arguments.
 fn parse_invoke_body_to_json_arguments(body: &str) -> String {
     let trimmed = body.trim();
 
-    // Case 1: Body is already a JSON object
     if trimmed.starts_with('{')
         && trimmed.ends_with('}')
         && let Ok(v) = serde_json::from_str::<Value>(trimmed)
@@ -384,12 +373,10 @@ fn parse_invoke_body_to_json_arguments(body: &str) -> String {
         return trimmed.to_string();
     }
 
-    // Case 2: Strip outer <parameters> or <arguments> wrapper if present
     let inner_body = strip_outer_wrapper_tag(trimmed, "parameters")
         .or_else(|| strip_outer_wrapper_tag(trimmed, "arguments"))
         .unwrap_or(trimmed);
 
-    // If unwrapped body is a JSON object:
     let inner_trimmed = inner_body.trim();
     if inner_trimmed.starts_with('{')
         && inner_trimmed.ends_with('}')
@@ -399,7 +386,6 @@ fn parse_invoke_body_to_json_arguments(body: &str) -> String {
         return inner_trimmed.to_string();
     }
 
-    // Case 3: Parse XML child tags into JSON map
     let mut map = Map::new();
     let mut cursor = 0;
 
@@ -416,7 +402,6 @@ fn parse_invoke_body_to_json_arguments(body: &str) -> String {
         };
         let open_tag_header = &after_open[..open_tag_end].trim();
 
-        // Check for self-closing tag or closing tag
         if open_tag_header.starts_with('/') {
             cursor = open_tag_abs + 1 + open_tag_end + 1;
             continue;
@@ -437,7 +422,6 @@ fn parse_invoke_body_to_json_arguments(body: &str) -> String {
         let content_start = open_tag_abs + 1 + open_tag_end + 1;
 
         if is_self_closing {
-            // Handle <param name="foo" value="bar"/>
             let key = extract_xml_attribute(open_tag_header, "name")
                 .unwrap_or_else(|| raw_tag_name.to_string());
             let val = extract_xml_attribute(open_tag_header, "value")
@@ -461,7 +445,6 @@ fn parse_invoke_body_to_json_arguments(body: &str) -> String {
                 }
             };
 
-        // If Anthropic style: <parameter name="key">value</parameter> or <param name="key">
         let key = if raw_tag_name.eq_ignore_ascii_case("parameter")
             || raw_tag_name.eq_ignore_ascii_case("param")
         {
@@ -484,7 +467,6 @@ fn parse_invoke_body_to_json_arguments(body: &str) -> String {
     }
 }
 
-/// Convert scalar content text to JSON Value (bool, number, null, JSON, or String).
 fn parse_scalar_value(text: &str) -> Value {
     let un_cdata = strip_cdata(text);
     let decoded = decode_xml_entities(&un_cdata);
@@ -493,7 +475,6 @@ fn parse_scalar_value(text: &str) -> Value {
         return Value::String(String::new());
     }
 
-    // Direct literals
     if trimmed.eq_ignore_ascii_case("true") {
         return Value::Bool(true);
     }
@@ -504,7 +485,6 @@ fn parse_scalar_value(text: &str) -> Value {
         return Value::Null;
     }
 
-    // Try parsing as valid JSON (numbers, arrays, nested objects)
     if let Ok(val) = serde_json::from_str::<Value>(trimmed) {
         match val {
             Value::Number(_) | Value::Array(_) | Value::Object(_) => return val,
@@ -516,7 +496,6 @@ fn parse_scalar_value(text: &str) -> Value {
     Value::String(trimmed.to_string())
 }
 
-/// Strips an outer wrapper tag like `<parameters>...</parameters>`.
 fn strip_outer_wrapper_tag<'a>(s: &'a str, tag_name: &str) -> Option<&'a str> {
     let open_tag = format!("<{tag_name}>");
     let close_tag = format!("</{tag_name}>");
@@ -532,7 +511,6 @@ fn strip_outer_wrapper_tag<'a>(s: &'a str, tag_name: &str) -> Option<&'a str> {
     }
 }
 
-/// Case-insensitive needle search in haystack without allocation.
 fn find_ignore_ascii_case(haystack: &str, needle: &str) -> Option<usize> {
     if needle.is_empty() {
         return Some(0);

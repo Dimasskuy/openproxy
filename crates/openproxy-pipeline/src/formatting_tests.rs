@@ -489,7 +489,6 @@ fn test_responses_formatter_preserves_prompt_cache_key_and_developer_instruction
         .expect("formatted");
     let val: Value = serde_json::from_slice(&formatted).unwrap();
 
-    // Verify explicit prompt_cache_key is NOT overwritten
     assert_eq!(
         val.get("prompt_cache_key").and_then(Value::as_str),
         Some("client-cache-key-999")
@@ -544,7 +543,6 @@ fn test_responses_formatter_assistant_reasoning_reinjection() {
     assert_eq!(items.len(), 3);
     assert_eq!(items[0].get("role").and_then(Value::as_str), Some("user"));
 
-    // Verify reasoning shape: summary has the reasoning text, and content is omitted to satisfy Codex maxItems: 0
     assert_eq!(
         items[1].get("type").and_then(Value::as_str),
         Some("reasoning")
@@ -661,7 +659,6 @@ fn test_responses_formatter_developer_instruction_preservation_and_cache_key() {
         .expect("formatted");
     let val: Value = serde_json::from_slice(&formatted).unwrap();
 
-    // Verify developer message is extracted as instructions
     assert_eq!(
         val.get("instructions").and_then(Value::as_str),
         Some("You are an elite coding subagent.")

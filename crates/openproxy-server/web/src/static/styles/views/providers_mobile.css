@@ -1,8 +1,4 @@
-/* ======================================================================
-   Providers & Models & Accounts — Mobile Responsive (<= 768px)
-   ====================================================================== */
 @media (max-width: 768px) {
-  /* Cabecera del Proveedor */
   .provider-detail-header {
     display: flex;
     flex-direction: column;
@@ -65,7 +61,7 @@
     font-weight: 600;
   }
 
-  /* Toolbar de Modelos */
+  /* Models toolbar */
   .section-header > div:last-child {
     display: grid;
     grid-template-columns: 1fr 1fr 1.25fr;
@@ -73,7 +69,7 @@
     width: 100%;
   }
 
-  /* Tarjeta Nativa de Modelo */
+  /* Native model card */
   table.models-table,
   .models-table tbody {
     display: flex;
@@ -119,7 +115,7 @@
     background: transparent;
   }
 
-  /* 1. Header de Tarjeta */
+  /* Card header */
   .card-top-header {
     display: flex;
     align-items: center;
@@ -182,7 +178,7 @@
     color: var(--color-text-muted);
   }
 
-  /* 2. Fila de Badges & Metadatos */
+  /* Badges and metadata row */
   .card-meta-row {
     display: flex;
     align-items: center;
@@ -220,7 +216,7 @@
     cursor: pointer;
   }
 
-  /* 3. Fila de Configuración (Sin etiqueta 'Upstream') */
+  /* Config row (no 'Upstream' label) */
   .card-config-box {
     display: flex;
     flex-direction: column;
@@ -265,7 +261,7 @@
     text-align: right;
   }
 
-  /* 4. Selectores de Enrutamiento */
+  /* Routing selectors */
   .card-routes-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -284,7 +280,7 @@
     padding: 0 4px;
   }
 
-  /* 5. Barra de Acciones */
+  /* Actions bar */
   .card-actions-bar {
     display: grid;
     grid-template-columns: 1.2fr 1.2fr 34px;
@@ -398,9 +394,6 @@
     -webkit-overflow-scrolling: touch;
   }
 
-  /* ==========================================================================
-     Responsive Card Tables (Accounts & Models Mobile Card Mode)
-     ========================================================================== */
 
   .responsive-card-table {
     display: flex;
@@ -427,7 +420,7 @@
     padding: var(--space-4);
   }
 
-  /* ----- Account Cards on Mobile ----- */
+  /* Account cards */
   .account-card-row {
     display: flex;
     flex-direction: column;
@@ -531,7 +524,7 @@
     font-size: var(--fs-xs);
   }
 
-  /* ----- Model Cards on Mobile ----- */
+  /* Model cards */
   .model-card-row {
     display: flex;
     flex-direction: column;
@@ -561,7 +554,6 @@
     width: 100%;
   }
   
-  /* Model Card Top Header: Select checkbox + Name + Status */
   .model-card-row .col-model-select {
     position: absolute;
     top: var(--space-3);
@@ -603,7 +595,6 @@
     width: auto;
   }
 
-  /* Specs & Format Row */
   .model-card-row .col-model-format,
   .model-card-row .col-model-context,
   .model-card-row .col-model-max-output {
@@ -623,7 +614,6 @@
     border-radius: var(--radius-sm);
   }
 
-  /* Modality & Capabilities */
   .model-modality-block {
     display: flex;
     flex-direction: column;
@@ -648,7 +638,6 @@
     font-size: var(--fs-2xs);
   }
 
-  /* Test Status */
   .model-card-row .col-model-test-status {
     display: flex;
     align-items: center;
@@ -658,7 +647,6 @@
     padding: var(--space-1) 0;
   }
 
-  /* Actions Block */
   .model-actions-block {
     display: flex;
     flex-direction: column;

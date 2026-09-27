@@ -72,13 +72,11 @@ pub async fn dispatch_audio_request(
     let boundary = format!("----WebKitFormBoundary{}", uuid::Uuid::new_v4().simple());
     let mut payload = Vec::new();
 
-    // model field
     payload.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
     payload.extend_from_slice(b"Content-Disposition: form-data; name=\"model\"\r\n\r\n");
     payload.extend_from_slice(upstream_model_id.as_bytes());
     payload.extend_from_slice(b"\r\n");
 
-    // form fields
     for (k, v) in &body.form_fields {
         if v.trim().is_empty() {
             continue;
@@ -91,7 +89,6 @@ pub async fn dispatch_audio_request(
         payload.extend_from_slice(b"\r\n");
     }
 
-    // file field
     payload.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
     payload.extend_from_slice(
         format!(
@@ -105,7 +102,6 @@ pub async fn dispatch_audio_request(
     payload.extend_from_slice(&body.file_bytes);
     payload.extend_from_slice(b"\r\n");
 
-    // end
     payload.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
 
     let content_type = format!("multipart/form-data; boundary={boundary}");
@@ -209,16 +205,13 @@ pub async fn execute_transcribe(
 ) -> Result<AudioTranscriptionResponse> {
     let started = Instant::now();
 
-    // 1. Resolve routing.
     let routing_plan = routing::resolve_routing(db_pool, &parsed_body.model_name).await?;
 
-    // 2. Resolve audio targets.
     let targets = resolve_audio_targets(db_pool, routing_plan, api_key_id, started)?;
 
     let mut last_error = None;
     let mut attempt = 0;
 
-    // 3. Multi-target dispatch loop
     for target in targets {
         attempt += 1;
 

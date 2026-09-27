@@ -1,7 +1,6 @@
 /**
- * lib/escape.ts — HTML-escape helpers. `escapeAttr` is just an alias
- * used at the call site to make the intent obvious (we're putting the
- * value inside an attribute, not text).
+ * lib/escape.ts — HTML-escape helpers. `escapeAttr` is an alias used at call sites to make the
+ * intent obvious (the value goes inside an attribute, not text).
  */
 
 export function escapeHtml(s: unknown): string {
@@ -19,10 +18,9 @@ export function escapeAttr(s: unknown): string {
 }
 
 /**
- * Pull the human-readable `message` field out of the JSON envelope
- * produced by the server's `ApiError` impl. The thrower is `api()`,
- * which raises `new Error("<status>: <body>")`; the JSON body lives
- * as a string suffix on `e.message`, and we re-parse it here.
+ * Pull the human-readable `message` field out of the JSON envelope produced by the server's
+ * `ApiError` impl. The thrower is `api()`, which raises `new Error("<status>: <body>")`; the JSON
+ * body lives as a string suffix on `e.message` and is re-parsed here.
  */
 export function extractApiErrorMessage(e: unknown): string | null {
   if (!e || typeof (e as { message?: unknown }).message !== "string") return null;

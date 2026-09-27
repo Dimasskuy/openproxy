@@ -1,14 +1,10 @@
 //! Tests for the in-memory adapter registry hot-reload path.
 //!
-//! The regression test exercises the bug fixed by
-//! `rebuild_adapters`: prior to the fix, the registry was built
-//! once at startup and never refreshed, so a `POST
-//! /admin/providers` made AFTER the server was already
-//! running inserted the row but left the in-memory adapter list
-//! stale, causing `CoreError::ProviderNotFound(<id>)` on the
-//! first chat attempt against the new provider. The fix wraps
-//! the registry in an `Arc<RwLock<Vec<...>>>` and exposes
-//! `rebuild_adapters()` so the admin handlers can refresh it.
+//! Regression coverage for the frozen-registry bug: the list used to be built
+//! once at startup, so a `POST /admin/providers` on a running server inserted the
+//! row but left the registry stale and the first chat attempt failed with
+//! `CoreError::ProviderNotFound`. The registry is now an `Arc<RwLock<Vec<…>>>`
+//! with a `rebuild_adapters()` the admin handlers call after mutations.
 
 use super::*;
 use crate::state::AppState;
@@ -32,12 +28,9 @@ fn fresh_pool() -> (core_db::DbPool, PathBuf) {
 async fn make_state() -> AppState {
     let (pool, _path) = fresh_pool();
     let db_pool = Arc::new(pool);
-    // MasterKey::generate().unwrap() returns a fresh 32-byte key — safe
-    // for tests that don't decrypt any real secrets.
+    // Fresh 32-byte key: safe for tests that decrypt no real secrets.
     let master_key = Arc::new(MasterKey::generate().unwrap());
-    // Start with an empty adapter registry; `rebuild_adapters`
-    // is responsible for filling in both the built-ins and any
-    // custom rows.
+    // Empty registry: `rebuild_adapters` fills in built-ins and custom rows.
     let adapters = Arc::new(RwLock::new(Arc::new(
         Vec::<adapters::ProviderAdapterEnum>::new(),
     )));
@@ -109,8 +102,8 @@ async fn rebuild_adapters_registers_custom_provider() {
     );
 }
 
-/// Companion test: deleting a custom provider removes its
-/// `CustomAdapter` from the registry on the next rebuild.
+/// Companion: deleting a custom provider drops its `CustomAdapter` on the next
+/// rebuild.
 #[tokio::test]
 async fn rebuild_adapters_unregisters_deleted_custom_provider() {
     let state = make_state().await;
@@ -212,12 +205,12 @@ async fn test_api_key_cache_saturation_6000_keys() {
         AppState::MAX_API_KEY_CACHE_ENTRIES
     );
 
-    // Oldest 1,000 keys (key_hash_0 .. key_hash_999) must have been evicted
+    // Oldest 1,000 (key_hash_0..999) evicted.
     assert!(state.get_cached_api_key("key_hash_0").is_none());
     assert!(state.get_cached_api_key("key_hash_500").is_none());
     assert!(state.get_cached_api_key("key_hash_999").is_none());
 
-    // Newest 5,000 keys (key_hash_1000 .. key_hash_5999) must be retained
+    // Newest 5,000 (key_hash_1000..5999) retained.
     assert!(state.get_cached_api_key("key_hash_1000").is_some());
     assert!(state.get_cached_api_key("key_hash_3000").is_some());
     assert!(state.get_cached_api_key("key_hash_5999").is_some());
@@ -243,7 +236,7 @@ async fn test_api_key_cache_eviction_order_expired_first_oldest_next() {
         entry.1 = now.checked_sub(std::time::Duration::from_secs(10)).unwrap();
     }
 
-    // Insert key_hash_5000: capacity check triggers pruning first
+    // Insert key_hash_5000: the capacity check prunes first…
     let new_key = Arc::new(dummy_key(5000, "key_hash_5000"));
     state.cache_api_key(new_key);
 
@@ -252,20 +245,19 @@ async fn test_api_key_cache_eviction_order_expired_first_oldest_next() {
         AppState::MAX_API_KEY_CACHE_ENTRIES
     );
 
-    // key_hash_2500 was expired, so it must have been evicted first!
+    // …key_hash_2500 was expired, so it is evicted first.
     assert!(
         !state.api_key_cache.contains_key("key_hash_2500"),
         "expired key_hash_2500 must be evicted first"
     );
 
-    // key_hash_0 (oldest non-expired) must STILL be present
+    // key_hash_0 (oldest non-expired) must still be present.
     assert!(
         state.api_key_cache.contains_key("key_hash_0"),
         "oldest non-expired key_hash_0 must NOT be evicted when an expired key exists"
     );
 
-    // Now insert key_hash_5001 when NO keys are expired:
-    // Oldest key (key_hash_0) must be evicted!
+    // key_hash_5001 with nothing expired: the oldest key is evicted.
     let next_key = Arc::new(dummy_key(5001, "key_hash_5001"));
     state.cache_api_key(next_key);
 
@@ -297,7 +289,7 @@ async fn test_api_key_cache_refresh_prevents_eviction() {
         state.cache_api_key(key);
     }
 
-    // Refresh key_hash_0: its expiration is renewed to now + 60s
+    // Refresh key_hash_0: expiration renewed to now + 60s.
     let refreshed_key = Arc::new(dummy_key(0, "key_hash_0"));
     state.cache_api_key(refreshed_key);
 
@@ -307,8 +299,7 @@ async fn test_api_key_cache_refresh_prevents_eviction() {
         AppState::MAX_API_KEY_CACHE_ENTRIES
     );
 
-    // Now insert new key_hash_5000:
-    // Since key_hash_0 was refreshed, the oldest key is now key_hash_1!
+    // key_hash_5000 now: key_hash_0 was refreshed, so the oldest is key_hash_1.
     let new_key = Arc::new(dummy_key(5000, "key_hash_5000"));
     state.cache_api_key(new_key);
 

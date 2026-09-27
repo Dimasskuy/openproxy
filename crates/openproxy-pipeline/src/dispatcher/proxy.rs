@@ -6,8 +6,6 @@
 use super::UpstreamDispatcher;
 
 impl UpstreamDispatcher {
-    /// Devuelve el status (`"alive"`, `"dead"`, etc.) del proxy de la URL
-    /// dada, o `None` si no hay match. La consulta se hace en
     /// `spawn_blocking` porque `repo.get_proxy_status_by_url` toma el lock
     /// del `Mutex<Connection>` síncronamente.
     pub(super) async fn fetch_proxy_status(&self, proxy_url: Option<&str>) -> Option<String> {
@@ -18,12 +16,9 @@ impl UpstreamDispatcher {
             .unwrap_or(None)
     }
 
-    /// Resuelve la URL del proxy a usar:
-    /// - Si el request trae `proxy_override`, se respeta.
-    /// - Si no, se consulta `repo.get_or_assign_provider_proxy` (asigna
-    ///   uno nuevo si el provider no tiene).
-    ///
-    /// Devuelve `(proxy_url, proxy_status)`.
+    /// Un `proxy_override` del request gana; si no, se consulta
+    /// `repo.get_or_assign_provider_proxy`, que asigna uno nuevo cuando el
+    /// provider no tiene.
     pub(super) async fn resolve_and_assign_proxy(
         &self,
         req: &crate::PipelineRequest,

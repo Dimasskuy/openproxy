@@ -1,24 +1,21 @@
-// views/debug-logs.ts — Debug Logs viewer (lit-html).
+// Debug Logs viewer.
 //
-// Polls `/admin/debug/logs` every 2s via chained `setTimeout` (NOT
-// `setInterval` — a slow request can't pile up because the next
-// timer is only scheduled after the previous fetch resolves).
-// Maintains a `sinceSeq` cursor that advances to `latest_seq` after
-// each successful poll so we only fetch new entries.
+// Polls `/admin/debug/logs` every 2s via chained `setTimeout` (not
+// `setInterval`: a slow request cannot pile up because the next timer is
+// scheduled only after the previous fetch resolves). A `sinceSeq` cursor
+// advances to `latest_seq` after each successful poll so only new entries
+// are fetched.
 //
-// MIGRATED to lit-html: the polling loop now calls `requestUpdate()`
-// instead of rebuilding the tbody via `innerHTML`. lit-html diffs the
-// new entries against the previous render and patches only the rows
-// that changed — filter inputs keep their value, focus is preserved,
-// and the buffer indicator updates in place.
+// The loop calls `requestUpdate()` rather than rebuilding the tbody, so
+// lit-html patches only the changed rows: filter inputs keep their value
+// and focus is preserved.
 //
-// Filters (Level checkboxes + Request ID / Trace ID text inputs)
-// bump an epoch counter (so any in-flight poll's response is
-// discarded), reset the cursor + entry list, and kick off an
-// immediate poll so the new filter applies instantly.
+// A filter change bumps an epoch counter (discarding any in-flight poll's
+// response), resets the cursor and entry list, and starts an immediate
+// poll.
 //
-// The view returns a cleanup function that cancels the pending
-// poll timer; the router calls it before mounting the next view.
+// The cleanup function cancels the pending poll timer; the router calls it
+// before mounting the next view.
 
 import { html, type TemplateResult } from 'lit-html';
 import { fetchDebugLogs, clearDebugLogs } from "../lib/api.js";
@@ -28,19 +25,17 @@ import { showToast } from "../components/toast.js";
 import { copyToClipboard } from "../lib/clipboard.js";
 import { mountView, requestUpdate } from "../state/reactive.js";
 import type { DebugLogEntry } from "../lib/types/api.js";
-// B1 (Bug 3): mark the debug-log entries as viewed on every
-// successful poll so the sidebar badge (driven by
-// `state/debug-logs-store.ts`) clears while the user is on this
-// page. The store's 30s poll resumes accumulating when the user
-// navigates away.
+// Mark entries viewed on every successful poll so the sidebar badge
+// (driven by `state/debug-logs-store.ts`) clears while the user is on
+// this page. The store's 30s poll resumes accumulating on navigation.
 import { markDebugLogsViewed } from "../state/debug-logs-store.js";
 
 // Poll interval. Chained via setTimeout — see `pollNow` below.
 const POLL_INTERVAL_MS: number = 2000;
 
-// Ring-buffer capacity on the server side. Used for the "Buffer:
-// X / 1000" indicator. Matches `BUFFER_CAPACITY` in
-// `crates/openproxy-server/src/debug_log.rs:59`.
+// Server-side ring-buffer capacity, shown in the "Buffer: X / 1000"
+// indicator. Mirrors `BUFFER_CAPACITY` in
+// `crates/openproxy-server/src/debug_log.rs`.
 const BUFFER_CAPACITY: number = 1000;
 
 // Cap on the number of rows we keep in the DOM. The server's ring
@@ -73,9 +68,7 @@ function formatTime(ts: string): string {
   return t.slice(idx + 1).replace(/Z$/, "");
 }
 
-// Thin wrapper preserving the old `Promise<boolean>` return shape so
-// the call-sites below can keep their `if (ok) ... else showToast(...)`
-// branching without churning the visible flow.
+// Returns `Promise<boolean>` so call sites can branch on success.
 async function copyToClipboardOk(text: string): Promise<boolean> {
   try {
     await copyToClipboard(text);
@@ -109,13 +102,9 @@ function buildMarkdown(rows: DebugLogEntry[]): string {
   return lines.join("\n");
 }
 
-// ---- Module-local state (captured by the closures below) ----
-//
-// `stopped` is set true by the cleanup function so any in-flight
-// poll can short-circuit. `epoch` is a monotonic counter bumped on
-// every filter change — a poll whose epoch no longer matches the
-// current one discards its response (the filter change already
-// kicked off a fresh poll with the new params).
+// `stopped` lets an in-flight poll short-circuit after cleanup. `epoch`
+// is bumped on every filter change; a poll whose epoch no longer matches
+// discards its response, since the filter change started a fresh poll.
 let entries: DebugLogEntry[] = [];
 let sinceSeq: number = 0;
 let pollHandle: ReturnType<typeof setTimeout> | null = null;
@@ -123,9 +112,8 @@ let stopped: boolean = false;
 let epoch: number = 0;
 let lastTotalInBuffer: number = 0;
 let lastPollFailed: boolean = false;
-// Error message from the last failed poll. Shown in the tbody only
-// when the entry list is empty (matches the previous behaviour —
-// if we already have entries, keep them visible and just toast).
+// Last poll error, shown in the tbody only when the entry list is empty;
+// with entries present they stay visible and the toast carries the error.
 let pollErrorMessage: string | null = null;
 
 // Filter state. Updated by the @change handlers on the filter
@@ -134,7 +122,6 @@ let filterLevels: Set<string> = new Set();
 let filterRequestId: string = "";
 let filterTraceId: string = "";
 
-// ---- Handlers ----
 
 async function onCopyCell(val: string): Promise<void> {
   if (!val) return;
@@ -162,8 +149,8 @@ async function onClear(): Promise<void> {
     sinceSeq = 0;
     lastTotalInBuffer = 0;
     pollErrorMessage = null;
-    // B1 (Bug 3): clear the sidebar badge too — after a server-side
-    // clear, the ring buffer is empty so there's nothing unviewed.
+    // After a server-side clear the ring buffer is empty, so there is
+    // nothing left unviewed.
     markDebugLogsViewed();
     requestUpdate();
     showToast("Debug log buffer cleared on the server.", "success");
@@ -193,10 +180,9 @@ function onTidChange(e: Event): void {
   onFilterChange();
 }
 
-// Changing any filter cancels the pending poll timer, bumps the
-// epoch (so any in-flight poll's response is discarded), resets
-// the cursor + entries, and kicks off an immediate poll with the
-// new params.
+// A filter change cancels the pending timer, bumps the epoch so an
+// in-flight poll's response is discarded, resets the cursor + entries, and
+// starts an immediate poll.
 function onFilterChange(): void {
   epoch++;
   sinceSeq = 0;
@@ -210,37 +196,29 @@ function onFilterChange(): void {
   void pollNow();
 }
 
-// ---- Poll loop ----
 //
-// Chained setTimeout: the next poll is scheduled only AFTER the
-// current fetch resolves (success or failure). This prevents
-// request pile-up when the server is slow. Declared as a hoisted
-// `function` so onFilterChange (above) can reference it before its
-// textual position.
+// Chained setTimeout: the next poll is scheduled only after the current
+// fetch resolves, so a slow server cannot pile requests up. Hoisted so
+// onFilterChange can call it above its textual position.
 async function pollNow(): Promise<void> {
   if (stopped) return;
   const myEpoch: number = epoch;
   try {
-    // Build the query opts conditionally so absent filters are
-    // omitted (not sent as `undefined`). Under
-    // `exactOptionalPropertyTypes`, assigning a string to an
-    // optional string field is allowed; assigning `undefined`
-    // is not.
+    // Omit absent filters rather than sending `undefined`:
+    // `exactOptionalPropertyTypes` rejects it for an optional string.
     const opts: FetchDebugLogsOpts = { since: sinceSeq };
     const lvl: string = Array.from(filterLevels).join(",");
     if (lvl) opts.level = lvl;
     if (filterRequestId) opts.request_id = filterRequestId;
     if (filterTraceId) opts.trace_id = filterTraceId;
     const resp = await fetchDebugLogs(opts);
-    // Discard the response if a filter changed (epoch bumped) or
-    // the view was unmounted while the fetch was in flight.
+    // Discard if a filter changed or the view unmounted mid-flight.
     if (stopped || myEpoch !== epoch) return;
     lastTotalInBuffer = resp.total_in_buffer;
     if (resp.entries.length > 0) {
-      // Merge: dedupe by seq in case a poll overlap returned the
-      // same entries twice (e.g. after a network blip where the
-      // server processed the request but the client timed out
-      // and retried).
+      // Dedupe by seq: an overlapping poll can return the same entries
+      // twice after a blip where the server processed the request but the
+      // client timed out and retried.
       const seen: Set<number> = new Set(entries.map((e: DebugLogEntry) => e.seq));
       for (const e of resp.entries) {
         if (!seen.has(e.seq)) {
@@ -256,45 +234,38 @@ async function pollNow(): Promise<void> {
     sinceSeq = resp.latest_seq;
     lastPollFailed = false;
     pollErrorMessage = null;
-    // B1 (Bug 3): advance the debug-logs store's "viewed" cursor to
-    // the latest seq we just fetched, which clears the sidebar badge
-    // for unviewed WARN+ERROR entries. Subsequent entries arriving
-    // after this point will re-trigger the badge once the user
-    // navigates away.
+    // Advance the store's "viewed" cursor to the latest seq fetched,
+    // clearing the sidebar badge for unviewed WARN+ERROR entries. Later
+    // entries re-trigger it once the user navigates away.
     markDebugLogsViewed();
     requestUpdate();
   } catch (e: unknown) {
     if (stopped || myEpoch !== epoch) return;
     const msg: string = e instanceof Error ? e.message : String(e);
-    // Show the error inline only when the table is empty — if we
-    // already have entries, keep them visible and just toast.
+    // Inline error only when the table is empty; otherwise keep the
+    // existing rows visible and just toast.
     if (entries.length === 0) {
       pollErrorMessage = msg;
     }
-    // Suppress repeated toasts for consecutive failures — only
-    // toast on the first failure of a run so the operator isn't
-    // spammed every 2s while the server is down.
+    // Toast only on the first failure of a run, so a down server does
+    // not spam the operator every 2s.
     if (!lastPollFailed) {
       showToast(`Debug logs poll failed: ${msg}`, "error");
       lastPollFailed = true;
     }
     requestUpdate();
   } finally {
-    // Schedule the next poll. Only when the epoch still matches
-    // — if a filter change bumped the epoch, the new poll (kicked
-    // off by `onFilterChange`) is responsible for rescheduling.
+    // Reschedule only while the epoch still matches; after a filter
+    // change the poll started by onFilterChange owns the schedule.
     if (!stopped && myEpoch === epoch) {
       pollHandle = setTimeout(() => { void pollNow(); }, POLL_INTERVAL_MS);
     }
   }
 }
 
-// ---- Templates ----
 
-// Build a single table row for an entry. The request_id and
-// trace_id cells are rendered as <button> elements so they're
-// keyboard-focusable and announce as interactive; the @click
-// handler carries the value to copy.
+// The request_id and trace_id cells are <button> elements so they are
+// keyboard-focusable and announce as interactive; @click copies the value.
 function renderRow(entry: DebugLogEntry): TemplateResult {
   const lvlColor: string = levelColor(entry.level);
   const rid: string | null = entry.request_id;
@@ -323,8 +294,7 @@ function renderTbody(): TemplateResult {
     const msg: string = pollErrorMessage ? `Poll error: ${pollErrorMessage}` : "No debug log entries yet.";
     return html`<tr><td colspan="6" class="empty" style="text-align:center;padding:1rem;color:var(--color-text-muted);">${msg}</td></tr>`;
   }
-  // Server returns oldest-first; we show newest-first (reverse)
-  // and cap at MAX_ROWS so the DOM doesn't grow unbounded.
+  // Server returns oldest-first; show newest-first, capped at MAX_ROWS.
   const rows: DebugLogEntry[] = entries.slice().reverse().slice(0, MAX_ROWS);
   return html`${rows.map(renderRow)}`;
 }
@@ -381,18 +351,14 @@ function renderDebugLogs(): TemplateResult {
   `;
 }
 
-// ---- Mount ----
 //
-// Mount the Debug Logs view into `container`. Renders the header,
-// filter bar, and entries table; starts the 2s polling loop; and
-// returns a cleanup function that cancels the pending poll timer.
-//
-// The cleanup function is called by the router before the next
-// view mounts, so the polling loop doesn't leak across navigations.
+// Mount the Debug Logs view into `container`: renders the header, filter
+// bar and entries table, starts the 2s polling loop, and returns a cleanup
+// function. The router calls that cleanup before mounting the next view, so
+// the loop does not leak across navigations.
 export function mountDebugLogs(container: HTMLElement): () => void {
-  // Reset module-local state on every mount — the router calls
-  // cleanup of the previous view before mounting this one, so
-  // `stopped` is true coming in; flip it back to false here.
+  // The router runs the previous view's cleanup first, so `stopped`
+  // arrives true; flip it back.
   entries = [];
   sinceSeq = 0;
   pollHandle = null;
@@ -410,10 +376,9 @@ export function mountDebugLogs(container: HTMLElement): () => void {
   // Kick off the first poll immediately (no 2s delay on mount).
   void pollNow();
 
-  // Cleanup: cancel the pending poll timer. The in-flight fetch
-  // (if any) will short-circuit on the `stopped` check when it
-  // resolves. Also release the lit-html container so the next
-  // view's mountView doesn't race with our requestUpdate().
+  // Cancel the pending poll timer. An in-flight fetch short-circuits on
+  // `stopped` when it resolves. Release the lit-html container so the next
+  // view's mountView does not race with a late requestUpdate().
   return () => {
     stopped = true;
     if (pollHandle !== null) {

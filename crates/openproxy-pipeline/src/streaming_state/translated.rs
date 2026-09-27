@@ -69,7 +69,6 @@ impl ChunkProcessor<'_> {
         if chunk.stop_reason.is_some() {
             self.state.stop_reason = chunk.stop_reason.take();
         }
-        // If normalizer stage has residual buffered content or tool call, flush before the finish chunk
         if let Some(residual) = self.state.normalizer.finalize() {
             let sse_bytes = crate::sse::build_sse_frame(&residual);
             let _ = self.send_to_sink(ctx, sse_bytes).await;
@@ -117,7 +116,6 @@ impl ChunkProcessor<'_> {
             }
         }
 
-        // If PII stage has residual buffered content, flush before [DONE]
         if let Some(residual) = self.state.pii_stage.as_mut().and_then(|s| s.finalize()) {
             let sse_bytes = crate::sse::build_sse_frame(&residual);
             let _ = self.send_to_sink(ctx, sse_bytes).await;
@@ -206,7 +204,7 @@ impl ChunkProcessor<'_> {
         Ok(crate::streaming::ChunkEvent::Skip)
     }
 
-    /// Gemini / Anthropic SSE handler — translates to OpenAI shape, then forwards.
+    /// Gemini / Anthropic SSE handler. Translates to OpenAI shape, then forwards.
     pub(super) async fn process_translated_format(
         &mut self,
         ctx: &StreamContext<'_>,

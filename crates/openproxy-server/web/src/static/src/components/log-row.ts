@@ -1,5 +1,4 @@
-// components/log-row.ts — single row of the live-logs table.
-// Refactored to accept AttemptState from live-logs-store and render declaratively.
+// components/log-row.ts — single row of the live-logs table (declarative, takes AttemptState).
 
 import { html, type TemplateResult } from 'lit-html';
 import { formatContext } from "../lib/format.js";
@@ -150,7 +149,6 @@ function buildMobileCardView(
 
   const rawKind = (attempt.endpointKind || row?.endpoint_kind || "chat").toLowerCase();
   
-  // Format short time HH:MM:SS
   const fullTime = row?.created_at || (attempt.startedAtMs ? new Date(attempt.startedAtMs).toISOString() : "");
   let timeShort = "";
   if (fullTime) {
@@ -162,7 +160,6 @@ function buildMobileCardView(
     }
   }
 
-  // Tokens short formatted
   let tokensText = "—";
   if (row) {
     const ptEst = row.prompt_tokens_estimated ? "≈" : "";
@@ -172,13 +169,10 @@ function buildMobileCardView(
     tokensText = `${pt} ${ct}`;
   }
 
-  // Latency text
   const latencyText = `${attempt.elapsedMsAtEvent}ms`;
 
-  // Model & Provider
   const modelProv = `${attempt.providerId ? `${attempt.providerId} / ` : ""}${attempt.upstreamModelId || "—"}`;
 
-  // Optional badge: cache, compression or cost
   let extraBadge: TemplateResult | null = null;
   if (row && row.cached_tokens != null && row.cached_tokens > 0) {
     const promptTokens = row.prompt_tokens ?? 0;
@@ -225,7 +219,6 @@ export function renderLogRowHtml(
   visibleColumns: Set<string> | null,
   nowMs: number
 ): TemplateResult {
-  // Update live latency if not terminal
   if (!attempt.terminal) {
     attempt.elapsedMsAtEvent = Math.max(0, nowMs - attempt.startedAtMs);
   }

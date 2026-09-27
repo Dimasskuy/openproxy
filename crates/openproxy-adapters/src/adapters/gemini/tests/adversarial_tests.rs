@@ -1,9 +1,7 @@
 use super::super::*;
 use openproxy_types::{OpenAIMessage, OpenAIRequest, OpenAIResponse};
 
-// =====================================================================
 // ADVERSARIAL TESTS — dedup-antigravity-gemini refactor (D2 + D3)
-// =====================================================================
 
 #[test]
 fn serialize_gemini_request_empty_messages_succeeds() {

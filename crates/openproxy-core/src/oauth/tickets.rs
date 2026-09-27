@@ -1,26 +1,14 @@
 //! Persistent storage for OAuth Device Code flow tickets.
 //!
-//! LOW fix (#12): the Device Code flow is two-phase (POST
-//! `/device/code` then poll `/token` until authorized). Before this
-//! module, the `device_code` only lived in the HTTP response to the
-//! dashboard; a page refresh, server restart, or cache eviction
-//! between the two phases silently aborted the flow. We persist the
-//! ticket in the `oauth_device_tickets` table (see migration 000027)
-//! keyed by `device_code`, so the dashboard can look it up by either
-//! `device_code` or `user_code` if it loses one.
+//! The flow is two-phase (POST `/device/code`, then poll `/token` until
+//! authorized). The `device_code` lives in `oauth_device_tickets` (migration
+//! 000027) keyed by `device_code`, so a page refresh, server restart, or cache
+//! eviction between phases does not abort it, and the dashboard can look the
+//! ticket up by `user_code` if it loses the `device_code`.
 //!
-//! Lifecycle:
-//!   1. `oauth_device_code` HTTP handler calls
-//!      [`create_ticket`] with the upstream's `DeviceAuthorizationResponse`.
-//!   2. `oauth_device_poll` HTTP handler calls
-//!      [`lookup_active`] which returns [`TicketStatus::Active`] for
-//!      pending tickets, [`TicketStatus::Expired`] for past
-//!      `expires_at`, [`TicketStatus::Consumed`] for already-redeemed
-//!      ones, and [`TicketStatus::Unknown`] if no row exists.
-//!   3. On successful poll, the handler calls [`mark_consumed`] so
-//!      the same device_code can't be redeemed twice.
-//!   4. A periodic sweep (added to `start_refresh_scheduler`) calls
-//!      [`cleanup_expired`] to keep the table small.
+//! `oauth_device_code` creates the ticket, `oauth_device_poll` looks it up and
+//! marks it consumed, and a periodic sweep in `start_refresh_scheduler` cleans
+//! up expired rows.
 
 use crate::error::{CoreError, Result};
 use crate::ids::AccountId;
@@ -65,15 +53,12 @@ pub enum TicketStatus {
 /// the upstream forgot to enforce it.
 const HARD_TTL_SECS: i64 = 600; // 10 minutes
 
-/// Insert a new ticket. `expires_at` is computed from the upstream's
-/// `expires_in` clamped to [`HARD_TTL_SECS`] so a malicious upstream
-/// can't request a 30-day TTL. Returns the persisted row's `id`.
+/// Insert a ticket, clamping the upstream's `expires_in` to [`HARD_TTL_SECS`] so
+/// a malicious upstream cannot request a 30-day TTL. Returns the persisted
+/// row's `id`.
 ///
-/// Idempotency: if the same `(provider, device_code)` already exists,
-/// the existing row's id is returned unchanged. The upstream
-/// generates `device_code` with high entropy so a collision is
-/// effectively impossible in practice, but the uniqueness constraint
-/// + this branch make the call safe under retries.
+/// Idempotent on `device_code`: an existing row returns its id unchanged, which
+/// makes the call safe under retries.
 pub fn create_ticket(
     conn: &Connection,
     provider: &str,
@@ -88,9 +73,7 @@ pub fn create_ticket(
         .format("%Y-%m-%dT%H:%M:%SZ")
         .to_string();
 
-    // INSERT OR IGNORE + RETURNING id is the cleanest single-statement
-    // shape that survives a retry. If the row already exists we fall
-    // back to a SELECT to recover the id.
+    // upsert + RETURNING id in one statement so a retry keeps the same row
     let new_id: i64 = conn
         .query_row(
             "INSERT INTO oauth_device_tickets
@@ -106,11 +89,6 @@ pub fn create_ticket(
     Ok(new_id)
 }
 
-/// Look up a ticket by `device_code` and classify its status. The
-/// single-use invariant lives here: `consumed_at IS NOT NULL`
-/// short-circuits to `Consumed` before the `expires_at` check so a
-/// redeem-then-replay shows the same `Consumed` state regardless of
-/// whether the upstream's TTL has passed.
 fn map_ticket_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<DeviceTicket> {
     let account_id: Option<i64> = r.get(4)?;
     Ok(DeviceTicket {
@@ -134,11 +112,11 @@ fn classify_ticket_status(ticket: DeviceTicket) -> TicketStatus {
     }
 }
 
-/// Look up a ticket by `device_code` and classify its status. The
-/// single-use invariant lives here: `consumed_at IS NOT NULL`
-/// short-circuits to `Consumed` before the `expires_at` check so a
-/// redeem-then-replay shows the same `Consumed` state regardless of
-/// whether the upstream's TTL has passed.
+/// Look up a ticket by `device_code` and classify its status.
+///
+/// Single-use invariant: `consumed_at IS NOT NULL` short-circuits to `Consumed`
+/// before the `expires_at` check, so a redeem-then-replay reads as `Consumed`
+/// regardless of whether the upstream TTL has passed.
 pub fn lookup_active(conn: &Connection, device_code: &str) -> Result<TicketStatus> {
     let row = conn
         .query_row(
@@ -155,16 +133,13 @@ pub fn lookup_active(conn: &Connection, device_code: &str) -> Result<TicketStatu
     Ok(row.map_or(TicketStatus::Unknown, classify_ticket_status))
 }
 
-/// Mark a ticket as consumed. Returns the row id of the updated row
-/// (i.e. the same id `create_ticket` returned) so the caller can log
-/// it. Returns `Err(CoreError::NotFound)` if the `device_code` does
-/// not exist — the caller should treat that as a 404, not silently
-/// succeed.
+/// Mark a ticket consumed, returning its row id (the one [`create_ticket`]
+/// returned). A missing `device_code` is `Err(NotFound)`, which the handler
+/// surfaces as a 404.
 ///
-/// The WHERE clause asserts `consumed_at IS NULL` so a racing second
-/// poll cannot both observe the ticket as Active and then both
-/// succeed at marking it. The losing caller gets 0 rows updated and
-/// returns `Err(NotFound)`, which the handler surfaces as a 409.
+/// The WHERE clause asserts `consumed_at IS NULL` so two racing polls cannot
+/// both mark the ticket. The loser updates 0 rows and gets `Err(NotFound)`,
+/// which the handler surfaces as a 409.
 pub fn mark_consumed(conn: &Connection, device_code: &str) -> Result<i64> {
     let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let rows = conn
@@ -189,10 +164,9 @@ pub fn mark_consumed(conn: &Connection, device_code: &str) -> Result<i64> {
     Ok(id)
 }
 
-/// Delete tickets whose `expires_at` is older than `now()` OR whose
-/// `created_at` is older than the hard TTL (defense in depth — even
-/// if `expires_at` is malformed, the created_at cap will reclaim
-/// the row). Returns the number of deleted rows.
+/// Delete tickets past `expires_at` or older than the hard TTL. The
+/// `created_at` cap reclaims rows even when `expires_at` is malformed. Returns
+/// the deleted row count.
 pub fn cleanup_expired(conn: &Connection) -> Result<usize> {
     let now = chrono::Utc::now();
     let now_str = now.format("%Y-%m-%dT%H:%M:%SZ").to_string();
@@ -217,9 +191,7 @@ mod tests {
     use rusqlite::Connection;
 
     fn fresh_conn() -> Connection {
-        // Open a private :memory: DB so each test sees a clean schema
-        // without going through DbPool's writer guard (which holds
-        // the connection). Migrations run directly on this handle.
+        // private in-memory DB: bypasses DbPool's long-held writer guard
         let mut conn = Connection::open_in_memory().expect("in-memory rusqlite conn");
         openproxy_db::migrations::run(&mut conn).expect("migrations");
         conn
@@ -273,7 +245,6 @@ mod tests {
         let conn = fresh_conn();
         create_ticket(&conn, "kiro", &sample_dar("DEV-3", "USER-3")).expect("create");
         mark_consumed(&conn, "DEV-3").expect("consume");
-        // A second poll must NOT see Active.
         let status = lookup_active(&conn, "DEV-3").expect("lookup");
         let TicketStatus::Consumed = status else {
             panic!("expected Consumed, got {status:?}");
@@ -285,9 +256,9 @@ mod tests {
         let conn = fresh_conn();
         create_ticket(&conn, "kiro", &sample_dar("DEV-4", "USER-4")).expect("create");
         mark_consumed(&conn, "DEV-4").expect("first consume");
-        // Second call must return NotFound because the WHERE clause
-        // asserts consumed_at IS NULL.
         let res = mark_consumed(&conn, "DEV-4");
+        // The raw OAuth body reaches these helpers, so a missing parameter must
+    // reach the caller as a typed error rather than a panic.
         let Err(CoreError::NotFound { .. }) = res else {
             panic!("expected NotFound on double consume, got {res:?}");
         };
@@ -296,8 +267,8 @@ mod tests {
     #[test]
     fn expired_ticket_returns_expired_status() {
         let conn = fresh_conn();
-        // Bypass the create_ticket clamp by inserting directly with
-        // an expires_at in the past.
+        // bypass the create_ticket clamp by inserting directly with an
+        // expires_at in the past
         conn.execute(
             "INSERT INTO oauth_device_tickets
                  (provider, device_code, user_code, expires_at)
@@ -329,7 +300,6 @@ mod tests {
         .expect("insert");
         let n = cleanup_expired(&conn).expect("cleanup");
         assert_eq!(n, 2, "expected exactly the 2 expired rows deleted");
-        // The future row must still be present.
         assert!(matches!(
             lookup_active(&conn, "FUT-1").expect("lookup"),
             TicketStatus::Active(_)

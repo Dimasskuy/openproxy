@@ -2,11 +2,10 @@
 //!
 //! Inspired by headroom's DiffCompressor. Detects `git diff` output and
 //! compresses it by:
-//! 1. Capping hunks-per-file (default 10) — preferring hunks with
+//! 1. Capping hunks-per-file (default 10), preferring hunks with
 //!    additions/deletions.
-//! 2. Reducing context lines around changes (default 2 instead of git's
-//!    default 3).
-//! 3. Always preserving additions (`+`) and deletions (`-`) verbatim.
+//! 2. Reducing context lines around changes (default 2 instead of git's 3).
+//! 3. Preserving additions (`+`) and deletions (`-`) verbatim.
 //! 4. Capping total files (default 20).
 //!
 //! ## Safety
@@ -138,14 +137,12 @@ impl<'a> DiffLine<'a> {
     }
 }
 
-/// Compresses git diff output in tool results and assistant messages.
-///
-/// Detects `diff --git` or `@@` hunk headers and caps hunks/context/files.
-/// Returns the technique name once per message that was actually compressed.
+/// Compresses git diff output in tool results and assistant messages:
+/// caps hunks/context/files, returns [`TECHNIQUE`] once per message that was
+/// actually compressed.
 pub fn compress_diffs(msgs: &mut Messages) -> Vec<&'static str> {
     let mut applied = Vec::new();
     for msg in msgs.iter_mut() {
-        // Only tool results and assistant messages can contain diff output.
         if msg.role != "tool" && msg.role != "assistant" {
             continue;
         }
@@ -160,14 +157,10 @@ pub fn compress_diffs(msgs: &mut Messages) -> Vec<&'static str> {
     applied
 }
 
-/// Compress a single diff content string. Returns `Some((compressed, technique))`
-/// if compression applied, or `None` otherwise.
-///
-/// This is the per-string entry point that powers the content router. It
-/// delegates to the private `compress_diff_content` (which already enforces
-/// the `MIN_DIFF_LINES` floor, the git-diff shape check, and the
-/// "strictly smaller than input" guard) and tags the result with
-/// [`TECHNIQUE`].
+/// Per-string entry point powering the content router: delegates to
+/// `compress_diff_content` (which enforces the `MIN_DIFF_LINES` floor, the
+/// git-diff shape check and the "strictly smaller than input" guard) and tags
+/// the result with [`TECHNIQUE`].
 pub fn compress_diff_string(text: &str) -> Option<(String, &'static str)> {
     compress_diff_content(text).map(|c| (c, TECHNIQUE))
 }

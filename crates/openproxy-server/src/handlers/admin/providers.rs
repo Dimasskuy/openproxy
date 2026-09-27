@@ -29,9 +29,8 @@ pub const PROVIDER_REFRESH_DEFAULT_TTL_SECS: i64 = 3_600;
 pub struct ProviderRefreshQuery {
     /// Cache TTL in seconds for the discovered rows. Defaults to 1 hour.
     pub ttl_seconds: Option<i64>,
-    /// Account id whose API key will be used. Required when the provider
-    /// has more than one account; otherwise the first *healthy* account
-    /// wins.
+    /// Account id whose API key is used. Required when the provider has more than
+    /// one account; otherwise the first *healthy* account wins.
     pub account_id: Option<i64>,
 }
 
@@ -46,10 +45,9 @@ pub fn router() -> axum::Router<AppState> {
             axum::routing::post(refresh_provider_models),
         )
         .route("/{id}/active", axum::routing::post(set_provider_active))
-        // Persisted favicon blob. Lives inside this router so it inherits
-        // `admin_auth_middleware` like every other `/admin/api/*` route;
-        // the SPA fetches it with the Bearer header and feeds the `<img>`
-        // an object URL (see web `views/providers/shared.ts`).
+        // Inside this router so it inherits `admin_auth_middleware` like every
+        // other `/admin/api/*` route; the SPA fetches it with the Bearer header
+        // and feeds the `<img>` an object URL (web `views/providers/shared.ts`).
         .route("/{id}/icon", axum::routing::get(get_provider_icon))
         .route(
             "/{id}",
@@ -75,25 +73,22 @@ pub async fn list_providers(
     Ok(Json(enriched))
 }
 
-/// Run a sync SQLite write against `db_pool` off the async runtime
-/// worker, then trigger an in-memory adapter registry reload.
+/// Run a sync SQLite write against `db_pool` off the async runtime worker, then
+/// trigger an in-memory adapter registry reload.
 ///
-/// Mirrors the previous sync macro signature: the closure body
-/// receives a borrowed `&Connection` via the binding `$w` and must
-/// return `Result<_, CoreError>`. Internally the closure is moved
-/// into a blocking task, so the body is run on a thread-pool worker
-/// rather than the Tokio runtime.
+/// The closure body receives a borrowed `&Connection` via `$w` and must return
+/// `Result<_, CoreError>`; it is moved into a blocking task so the body runs on a
+/// thread-pool worker rather than the Tokio runtime.
 ///
-/// The macro clones the `Arc<DbPool>` so the writer mutex can be
-/// acquired off the async runtime worker (AGENTS §4.3). `JoinError`
-/// is mapped to `CoreError::Internal` so the operator sees a real
-/// 500 instead of a panic. On success the adapter registry is also
-/// rebuilt off-thread via a separate `spawn_blocking` call.
+/// The macro clones the `Arc<DbPool>` so the writer mutex is acquired off the
+/// async runtime worker (AGENTS §4.3). `JoinError` maps to `CoreError::Internal`
+/// so the operator sees a 500 instead of a panic. On success the adapter registry
+/// is also rebuilt off-thread via a separate `spawn_blocking` call.
 macro_rules! with_adapter_reload {
     ($state:expr, $pid:expr, $action:literal, |$w:ident| $body:expr) => {{
         let pool = std::sync::Arc::clone($state.db_pool());
-        // Clone to `String` so we don't hold a borrow on `$pid` while the
-        // `move ||` closure below captures the same local by value.
+        // `String` clone: the `move ||` closure below takes `$pid` by value while
+        // the outer binding is still needed.
         let pid_for_log = $pid.to_string();
         let join_err_msg = concat!(
             "spawn_blocking join error after ",
@@ -178,8 +173,8 @@ pub async fn get_provider_icon(
             axum::http::StatusCode::OK,
             [
                 (axum::http::header::CONTENT_TYPE, mime),
-                // `private`: the response is credential-gated, so shared
-                // caches must not serve it to other clients.
+                // `private`: the response is credential-gated, so shared caches
+                // must not serve it to other clients.
                 (
                     axum::http::header::CACHE_CONTROL,
                     "private, max-age=86400".to_string(),
@@ -196,10 +191,8 @@ pub async fn delete_provider(
     State(s): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    // Fast-fail on built-in ids before opening a writer. The
-    // message is the same one the service layer would produce
-    // so the dashboard's error toast is consistent regardless
-    // of which path the rejection took.
+    // Fast-fail on built-in ids before opening a writer, reusing the service
+    // layer's message so the dashboard's error toast is identical either way.
     if seed::is_builtin(&id) {
         return Err(ApiError(CoreError::Validation(format!(
             "provider '{id}' is a built-in and cannot be deleted. Use POST \
@@ -208,8 +201,7 @@ pub async fn delete_provider(
         ))));
     }
     let pid = ProviderId::new(&id);
-    // Clone `pid` so the `spawn_blocking` closure can move its own copy;
-    // the outer `pid` is needed afterwards to render the success response.
+    // Clone for the `spawn_blocking` closure; the outer `pid` renders the response.
     let pid_for_body = pid.clone();
     with_adapter_reload!(s, pid.as_str(), "delete_provider", |w| {
         core_admin::delete_provider(&w, &pid_for_body)
@@ -332,8 +324,7 @@ fn spawn_favicon_fetch_if_needed(s: &AppState, provider: &ProviderId) {
     let upstream_clone = std::sync::Arc::clone(s.upstream_client());
     let pool_clone = std::sync::Arc::clone(s.db_pool());
     tokio::spawn(async move {
-        // Read the provider row on a blocking thread so the synchronous
-        // SQLite call never lands on a Tokio worker.
+        // Blocking thread: the sync SQLite read must not land on a Tokio worker.
         let p_opt = {
             let pool = std::sync::Arc::clone(&pool_clone);
             let pid = pid_clone.clone();
@@ -444,7 +435,7 @@ fn enrich_provider_with_oauth(
 
     let metadata = adapters.iter().find(|a| a.id() == &p.id).map_or_else(
         || {
-            // Fallback for custom providers that aren't loaded in the adapter registry yet
+            // Fallback for custom providers missing from the adapter registry.
             let built_in = openproxy_core::providers::is_builtin(p.id.as_str());
             let mut meta = openproxy_core::providers::ProviderMetadata::custom_default();
             meta.built_in = built_in;

@@ -1,9 +1,6 @@
 import type { RecentUsageRow, StageEvent } from "../lib/types/api.js";
 import { api } from "../lib/api.js";
 
-// ----------------------------------------------------------------------------
-// Types
-// ----------------------------------------------------------------------------
 
 export type StageName =
   | "started"
@@ -68,10 +65,6 @@ export interface AttemptEventPayload {
   endpoint_kind?: string;
 }
 
-// ----------------------------------------------------------------------------
-// Helpers
-// ----------------------------------------------------------------------------
-
 const STAGE_RANK = {
   started: 0,
   connecting: 1,
@@ -105,12 +98,10 @@ function deriveTerminalKind(stage: string, statusCode: number | null | undefined
   return "failed"; // fallback for terminal with unknown stage
 }
 
-/** Monotonic counter for insertion order — used as a stable tiebreaker
- *  when multiple attempts share the same startedAtMs. */
+/** Insertion-order tiebreaker for attempts sharing a `startedAtMs`. */
 let insertionCounter = 0;
 
-// Extend AttemptState at runtime with a hidden ordering field.
-// Not in the interface because it's store-internal.
+// Store-internal ordering field, kept off the interface.
 const insertionOrder = new WeakMap<AttemptState, number>();
 
 function getInsertionOrder(a: AttemptState): number {
@@ -118,10 +109,6 @@ function getInsertionOrder(a: AttemptState): number {
 }
 
 export const MAX_STORED_ROWS = 2000;
-
-// ----------------------------------------------------------------------------
-// Store
-// ----------------------------------------------------------------------------
 
 class LiveLogsStore {
   public attemptsByKey = new Map<string, AttemptState>();
@@ -176,9 +163,6 @@ class LiveLogsStore {
     }
   }
 
-  // --------------------------------------------------------------------------
-  // Actions
-  // --------------------------------------------------------------------------
 
   public dispatch(envelope: unknown) {
     const v2 = this.normalizeWsEnvelope(envelope);
@@ -218,10 +202,6 @@ class LiveLogsStore {
     }
   }
 
-  // --------------------------------------------------------------------------
-  // Reducers
-  // --------------------------------------------------------------------------
-
   private applySnapshot(snapshot: Extract<LiveLogEnvelopeV2, { type: "snapshot" }>) {
     this.lastAppliedCursor = snapshot.cursor;
     this.lastServerNow = snapshot.server_now;
@@ -234,9 +214,7 @@ class LiveLogsStore {
     this.requestGroups.clear();
     this.attemptKeyRedirects.clear();
 
-    // Hydrate server-side inflight attempts into proper AttemptState objects.
-    // The server sends InflightAttempt with camelCase keys that mostly match,
-    // but `row` is missing and must be set to null.
+    // Server InflightAttempt keys match, except `row`, which it never sends.
     for (const raw of snapshot.attempts) {
       const a: AttemptState = {
         attemptKey: raw.attemptKey || "",
@@ -272,21 +250,19 @@ class LiveLogsStore {
     this.enforceCapacity();
   }
 
-  /** Merge authoritative inflight state from server (sent on broadcast lag).
-   *  Unlike applySnapshot, this does NOT clear finished rows — it only
-   *  replaces the inflight set with the server's truth. */
+  /** Merge authoritative inflight state from the server. Unlike
+   *  applySnapshot, finished rows survive. */
   private applyInflightSync(sync: Extract<LiveLogEnvelopeV2, { type: "inflight_sync" }>) {
     this.clockOffsetMs = Date.now() - sync.server_now;
 
-    // Collect current inflight keys
+    // Current inflight keys.
     const oldInflight = new Set<string>();
     for (const [key, a] of this.attemptsByKey) {
       if (!a.terminal) oldInflight.add(key);
     }
 
-    // Add/update server-authoritative inflight attempts. When the client
-    // already has a DB-anchored terminal entry for a key (broadcast lag),
-    // preserve its terminal fields; only overwrite the live phase fields.
+    // A client entry already anchored to a DB row keeps its terminal fields
+    // (broadcast lag); only the live phase fields are overwritten.
     const serverKeys = new Set<string>();
     for (const raw of sync.attempts) {
       const key = raw.attemptKey || "";
@@ -336,7 +312,7 @@ class LiveLogsStore {
       this.trackRequestGroup(a.requestId, key);
     }
 
-    // Remove stale inflight entries that the server no longer has
+    // Evict inflight entries the server no longer lists.
     for (const key of oldInflight) {
       if (!serverKeys.has(key)) {
         const a = this.attemptsByKey.get(key);
@@ -347,7 +323,8 @@ class LiveLogsStore {
   }
 
   private applyAttemptEvent(event: AttemptEventPayload) {
-    // Redirect unknown-keyed attempts when trace_id arrives
+    // An attempt first seen without a trace_id is keyed `<request_id>:unknown`;
+    // re-key it once the trace_id arrives.
     if (event.trace_id) {
       const unknownKey = `${event.request_id}:unknown`;
       if (this.attemptsByKey.has(unknownKey) && unknownKey !== event.attempt_key) {
@@ -372,13 +349,13 @@ class LiveLogsStore {
 
     const existing = this.attemptsByKey.get(event.attempt_key);
 
-    // If we already have a DB row for this attempt, skip phase updates
+    // A DB-anchored attempt is already final; later phase events are noise.
     if (existing && existing.rowId) return;
 
     // Terminal attempts stay terminal
     if (existing && existing.terminal && !event.terminal) return;
 
-    // Out-of-order guard: only accept forward progression
+    // Accept forward progression only.
     const eventRank = event.stage_rank;
     if (existing && !event.terminal) {
       if (existing.stageRank > eventRank) return;
@@ -410,7 +387,6 @@ class LiveLogsStore {
       endpointKind: event.endpoint_kind ?? null,
     };
 
-    // Merge into existing
     if (existing) {
       a.updatedAtMs = event.event_time;
       a.stage = event.stage as StageName;
@@ -537,15 +513,11 @@ class LiveLogsStore {
     this.requestGroups.get(requestId)!.add(attemptKey);
   }
 
-  // --------------------------------------------------------------------------
-  // Normalization (legacy WS envelopes → V2)
-  // --------------------------------------------------------------------------
 
   private normalizeWsEnvelope(env: unknown): LiveLogEnvelopeV2 | null {
     if (typeof env !== "object" || env === null) return null;
     const e = env as Record<string, unknown>;
 
-    // Already V2
     if (e["type"] === "snapshot" || e["type"] === "inflight_sync" || e["type"] === "attempt_event" || e["type"] === "usage_row" || e["type"] === "gap") {
       return env as LiveLogEnvelopeV2;
     }
@@ -610,7 +582,7 @@ class LiveLogsStore {
       return { type: "error", message: String(e["message"]) };
     }
 
-    // Legacy lag/resync — log but don't crash
+    // lag_warning / resync have no V2 equivalent.
     if (e["type"] === "lag_warning" || e["type"] === "resync") {
       console.warn("[openproxy] WS lag/resync:", e);
       return null;
@@ -619,11 +591,7 @@ class LiveLogsStore {
     return null;
   }
 
-  // --------------------------------------------------------------------------
-  // Selectors
-  // --------------------------------------------------------------------------
-
-  /** Stable sort comparator: startedAtMs desc, then insertion order desc */
+  /** startedAtMs desc, then insertion order desc. */
   private stableSort(a: AttemptState, b: AttemptState): number {
     const dt = b.startedAtMs - a.startedAtMs;
     if (dt !== 0) return dt;
@@ -642,7 +610,7 @@ class LiveLogsStore {
 
     for (const a of this.attemptsByKey.values()) {
       if (a.terminal) continue;
-      // Safety net: auto-expire stale inflight after 30m (1800s)
+      // Auto-expire inflight entries untouched for 30m.
       if (a.updatedAtMs > 1_000_000_000_000 && (nowMs - a.updatedAtMs > 1_800_000)) {
         a.terminal = true;
         a.terminalKind = "failed";
@@ -697,7 +665,7 @@ class LiveLogsStore {
         return true;
       }
     } catch {
-      // Ignored
+      // Detail is optional; the row view already has what it needs.
     }
     return false;
   }

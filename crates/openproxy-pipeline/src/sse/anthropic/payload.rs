@@ -5,10 +5,8 @@ use openproxy_types::error::{CoreError, Result};
 use openproxy_types::message::{OpenAIUsage, PromptTokensDetails};
 use serde_json::Value;
 
-/// Translate a single Anthropic SSE payload (event_type + data JSON) into
-/// an OpenAI-compatible SSE chunk string.
-///
-/// The payload format is "event_type\njson_data".
+/// Translate one `"event_type\njson_data"` payload into an
+/// OpenAI-compatible SSE chunk.
 pub(crate) fn build_anthropic_message_start_chunk(
     chunk_id: &str,
     created: u64,

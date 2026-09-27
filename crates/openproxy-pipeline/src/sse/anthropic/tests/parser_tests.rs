@@ -63,7 +63,6 @@ fn anthropic_translate_message_start() {
         "assistant"
     );
     assert_eq!(chunk.payload["id"].as_str().unwrap(), "chunk-1");
-    // message_start is metadata-only (role announcement, no tokens).
     assert!(
         !chunk.has_content,
         "message_start must have has_content=false"
@@ -84,7 +83,6 @@ fn anthropic_translate_content_block_delta() {
             .unwrap(),
         "Hello"
     );
-    // content_block_delta with text carries real content.
     assert!(
         chunk.has_content,
         "content_block_delta (text) must have has_content=true"
@@ -106,7 +104,6 @@ fn anthropic_translate_message_delta_with_stop() {
         "stop"
     );
     assert_eq!(chunk.stop_reason.as_deref(), Some("end_turn"));
-    // message_delta is a lifecycle stop signal, not generated content.
     assert!(
         !chunk.has_content,
         "message_delta must have has_content=false"
@@ -200,8 +197,6 @@ fn anthropic_translate_message_delta_root_level_stop_reason() {
     assert_eq!(chunk.stop_reason.as_deref(), Some("tool_use"));
 }
 
-// ---- H4 fix: Anthropic streaming usage extraction ----
-
 #[test]
 fn anthropic_streaming_message_start_extracts_usage() {
     let json_str = r#"{
@@ -225,7 +220,6 @@ fn anthropic_streaming_message_start_extracts_usage() {
     let data: serde_json::Value = serde_json::from_str(json_str).unwrap();
     let chunk = build_anthropic_message_start_chunk("chunk-1", 1234567890, "claude-test", &data);
     let usage = chunk.usage.expect("message_start must carry usage");
-    // prompt_tokens = 450 + 50 + 172 = 672
     assert_eq!(usage.prompt_tokens, 672);
     assert_eq!(usage.completion_tokens, 1);
     assert_eq!(usage.total_tokens, 673);
@@ -251,7 +245,6 @@ fn anthropic_streaming_message_start_without_usage_emits_none() {
 
 #[test]
 fn anthropic_streaming_message_delta_classic_preserves_prompt() {
-    // Classic format: only `output_tokens` in message_delta.
     let json_str = r#"{
         "type": "message_delta",
         "delta": {
@@ -265,7 +258,8 @@ fn anthropic_streaming_message_delta_classic_preserves_prompt() {
     let data: serde_json::Value = serde_json::from_str(json_str).unwrap();
     let chunk = translate_anthropic_message_delta(&data, "chunk-1", 1234567890, "claude-test");
     let usage = chunk.usage.expect("message_delta must carry usage");
-    // prompt_tokens is emitted as 0 (sentinel) so downstream merge preserves start count
+    // 0 is a sentinel, not a count: it tells merge_usage to keep the
+    // message_start prompt count.
     assert_eq!(usage.prompt_tokens, 0);
     assert_eq!(usage.completion_tokens, 89);
     assert_eq!(usage.total_tokens, 0);
@@ -273,7 +267,6 @@ fn anthropic_streaming_message_delta_classic_preserves_prompt() {
 
 #[test]
 fn anthropic_streaming_message_delta_with_input_tokens_takes_both() {
-    // Newer format: both input and output in message_delta.
     let json_str = r#"{
         "type": "message_delta",
         "delta": {
@@ -314,10 +307,9 @@ fn anthropic_streaming_message_delta_without_usage_emits_none() {
 
 #[test]
 fn merge_usage_preserves_prompt_from_zero_sentinel() {
-    // When the classic message_delta arrives (prompt_tokens = 0
-    // sentinel, total_tokens = 0) after message_start carried the
-    // real prompt count, the merge must keep the prompt and total
-    // from the earlier chunk while adopting the new completion count.
+    // A classic message_delta (prompt_tokens and total_tokens at the 0
+    // sentinel) must not clobber the counts message_start already
+    // carried.
     let existing = OpenAIUsage {
         prompt_tokens: 622,
         completion_tokens: 2,
@@ -379,10 +371,8 @@ fn merge_usage_takes_max_of_newer_counts() {
 
 #[test]
 fn anthropic_translate_message_stop() {
-    // H4 fix: `message_stop` is the closing handshake after
-    // `message_delta` already emitted the `done: true` chunk.
-    // Returning `Ok(None)` here prevents a duplicate end-of-
-    // stream signal in the downstream SSE stream.
+    // message_delta already emitted the `done: true` chunk. Emitting
+    // one here too would send a duplicate terminal frame downstream.
     let payload = "message_stop\n{}";
     let result = translate_anthropic_sse_payload(payload, "chunk-1", 1000, "claude-3").unwrap();
     assert!(result.is_none());

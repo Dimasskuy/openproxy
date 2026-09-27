@@ -315,10 +315,8 @@ mod tests {
         let p2: Provider = serde_json::from_str(legacy_json).expect("deserialize legacy json");
         assert!(!p2.has_favicon);
 
-        // Verify that has_favicon is a single-byte boolean field with no heap string allocation
         assert_eq!(std::mem::size_of_val(&p.has_favicon), 1);
 
-        // Serialized representation should include "has_favicon" and NOT "favicon_base64"
         let serialized = serde_json::to_string(&p).expect("serialize provider");
         assert!(serialized.contains(r#""has_favicon":true"#));
         assert!(!serialized.contains("favicon_base64"));

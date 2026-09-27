@@ -6,66 +6,52 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-/// `POST /v1/responses` request body.
-///
-/// Mirrors the public OpenAI Responses API shape: a list of `input` items
-/// (each tagged with its `type`), an optional `instructions` string
-/// prepended as a system message, and pass-through `tools` / `tool_choice`
-/// fields that share the OpenAI function-calling shape verbatim.
+/// `POST /v1/responses` request body: `input` items tagged with their `type`,
+/// an `instructions` string prepended as a system message, and `tools` /
+/// `tool_choice` passed through in the OpenAI function-calling shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResponsesRequest {
-    /// Model name to route through the pipeline.
     pub model: String,
-    /// Optional system instructions (prepended as a `system` message).
     #[serde(default)]
     pub instructions: Option<String>,
-    /// Ordered list of input items.
     #[serde(default, deserialize_with = "deserialize_responses_input")]
     pub input: Vec<ResponsesInputItem>,
-    /// Tools (pass-through; Responses and OpenAI share the
-    /// `{type:"function", function:{...}}` shape).
     #[serde(default)]
     pub tools: Option<Vec<Value>>,
     #[serde(default)]
     pub tool_choice: Option<Value>,
     #[serde(default)]
     pub stream: bool,
-    /// Responses max output tokens, maps to OpenAI max_tokens.
     #[serde(default)]
     pub max_output_tokens: Option<u32>,
     #[serde(default)]
     pub temperature: Option<f32>,
     #[serde(default)]
     pub top_p: Option<f32>,
-    /// Stored-response chain. Not implemented in MVP — we log a warning
-    /// and proceed without it.
+    /// Stored-response chain. Not implemented: logged as a warning and ignored.
     #[serde(default)]
     pub previous_response_id: Option<String>,
-    /// Unknown fields are preserved verbatim so the proxy can pass them
-    /// to upstreams that understand them.
+    /// Unknown fields pass through to upstreams that understand them.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
 
-/// One entry in the `input[]` array.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ResponsesInputItem {
-    /// A plain chat-style message (`role` + `content`).
     Message {
         role: String,
         content: ResponsesContent,
     },
-    /// Assistant-side function call emission (re-injected into the
-    /// conversation history to restore assistant tool-call state).
+    /// Assistant function call, re-injected to restore tool-call state.
     FunctionCall {
         call_id: String,
         name: String,
         arguments: String,
     },
-    /// Tool-side function result (re-injected to restore tool results).
+    /// Tool result, re-injected to restore tool results.
     FunctionCallOutput { call_id: String, output: String },
-    /// Reasoning block (re-injected into multi-turn conversations).
+    /// Reasoning block, re-injected on multi-turn conversations.
     Reasoning {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,
@@ -76,8 +62,7 @@ pub enum ResponsesInputItem {
         #[serde(flatten)]
         extra: Map<String, Value>,
     },
-    /// Forward-compatible: new item types the proxy doesn't know
-    /// about are dropped (with a debug log).
+    /// Item type this build does not know. Dropped with a debug log.
     Unknown,
 }
 
@@ -176,7 +161,6 @@ impl<'de> Deserialize<'de> for ResponsesInputItem {
                     }
                     Some(_) => ResponsesInputItem::Unknown,
                     None => {
-                        // Inferred variants without explicit "type":
                         if let Some(role_val) = map.get("role").and_then(|v| v.as_str()) {
                             let role = role_val.to_string();
                             let content = map
@@ -260,7 +244,6 @@ impl<'de> Deserialize<'de> for ResponsesInputItem {
 }
 
 impl ResponsesInputItem {
-    /// Extracts the combined reasoning text from a `Reasoning` item, if present.
     pub fn reasoning_text(&self) -> Option<String> {
         match self {
             ResponsesInputItem::Reasoning {
@@ -324,7 +307,6 @@ impl ResponsesInputItem {
     }
 }
 
-/// Helper deserializer for `ResponsesRequest.input` supporting both a bare string or an array of items.
 pub fn deserialize_responses_input<'de, D>(
     deserializer: D,
 ) -> std::result::Result<Vec<ResponsesInputItem>, D::Error>
@@ -365,8 +347,8 @@ where
     deserializer.deserialize_any(InputVisitor)
 }
 
-/// Message content can be a plain string OR an array of parts
-/// (e.g. `[{type:"input_text", text:"hi"}, {type:"input_image", ...}]`).
+/// A plain string or an array of parts, e.g.
+/// `[{type:"input_text", text:"hi"}, {type:"input_image", ...}]`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ResponsesContent {

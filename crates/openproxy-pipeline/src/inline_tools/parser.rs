@@ -1,13 +1,8 @@
 use super::types::ParsedToolCall;
 
-/// Trait for an inline tool call parser strategy.
-///
-/// Implementations recognize and parse specific syntax variations
-/// (e.g. MiniMax XML, Hermes JSON, etc.).
+/// A syntax-specific inline tool call parser (MiniMax XML, Hermes JSON).
 pub trait InlineToolParser: Send + Sync {
-    /// Attempts to parse tool calls from a recognized block of text.
-    ///
-    /// Returns `Some(vec)` if the block matches this parser's syntax and contains
-    /// at least one valid tool call. Returns `None` if the syntax is not recognized.
+    /// `Some` when the block matches this parser's syntax and yields at
+    /// least one valid tool call, `None` when the syntax is not recognized.
     fn parse_block(&self, block: &str) -> Option<Vec<ParsedToolCall>>;
 }

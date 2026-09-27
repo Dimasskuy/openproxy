@@ -3,13 +3,10 @@ use openproxy_core::api_keys as core_api_keys;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-/// Who is calling an admin endpoint, as resolved by
-/// [`admin_auth_middleware`]. Stored in the request extensions so
-/// handlers can bind derived credentials (WS tickets) to the key and
-/// write attributable audit records for secret reads.
-///
-/// `key` is `None` only when the debug-build dev bypass admitted the
-/// request without credentials.
+/// Who is calling an admin endpoint, as resolved by [`admin_auth_middleware`],
+/// stored in request extensions so handlers can bind derived credentials (WS
+/// tickets) to the key and write attributable audit records for secret reads.
+/// `key` is `None` only under the debug-build dev bypass.
 #[derive(Clone, Debug)]
 pub struct AdminIdentity {
     pub key: Option<Arc<core_api_keys::ApiKey>>,
@@ -24,14 +21,14 @@ impl AdminIdentity {
 }
 
 /// Extractor alias for handlers: the identity resolved by
-/// [`admin_auth_middleware`]. `Option` because a handler might be mounted
-/// outside the middleware in tests; production admin routes always have it.
+/// [`admin_auth_middleware`]. `Option` because a handler may be mounted outside
+/// the middleware in tests; production admin routes always have it.
 pub(crate) type Identity = Option<axum::Extension<AdminIdentity>>;
 
-/// Write an attributable audit record every time an admin endpoint hands
-/// out (or writes to disk) a decrypted secret. Emitted at WARN on the
-/// dedicated `openproxy::security::audit` target so operators can route
-/// it to a separate sink and alert on unexpected `key_id`/`ip` pairs.
+/// Audit record written whenever an admin endpoint hands out (or writes to disk) a
+/// decrypted secret. WARN on the dedicated `openproxy::security::audit` target so
+/// operators can route it to a separate sink and alert on unexpected
+/// `key_id`/`ip` pairs.
 pub(crate) fn audit_secret_read(identity: &Identity, secret_kind: &str, subject: &str) {
     let id = identity.as_ref().map(|axum::Extension(i)| i);
     tracing::warn!(
@@ -95,12 +92,11 @@ fn check_dev_auth_bypass(
 
 /// Pull the Bearer token out of the `Authorization` header.
 ///
-/// SEC-01: credentials are accepted from headers ONLY. Query-string
-/// tokens are never honoured — not even for WebSocket upgrades — because
-/// every reverse proxy logs the request line and the long-lived key
-/// would land in plaintext in access logs. Browsers that cannot set
-/// headers on `new WebSocket()` use the single-use ticket flow instead
-/// (see [`authenticate_admin_ws`] and `state::WsTicketStore`).
+/// Credentials are accepted from headers ONLY — never query-string tokens, not
+/// even for WebSocket upgrades, because every reverse proxy logs the request line
+/// and a long-lived key would land in plaintext in access logs. Browsers that
+/// cannot set headers on `new WebSocket()` use the single-use ticket flow
+/// ([`authenticate_admin_ws`], `state::WsTicketStore`).
 fn extract_bearer_token(headers: &HeaderMap) -> Result<Option<&str>, ApiError> {
     let Some(raw) = headers
         .get("authorization")

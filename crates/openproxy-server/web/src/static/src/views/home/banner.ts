@@ -4,8 +4,7 @@ import { html, type TemplateResult } from "lit-html";
 import { t } from "../../i18n/index.js";
 import type { LiveConnectionState } from "./types.js";
 
-/** Connection state banner — shown above the KPIs. Hidden when connected
- *  (the green dot in the header is enough). */
+/** Connection banner above the KPIs. Hidden when connected (the header dot suffices). */
 export function renderConnectionBanner(state: LiveConnectionState): TemplateResult {
   if (state === "connected") return html``;
   if (state === "connecting") {
@@ -21,8 +20,7 @@ export function renderConnectionBanner(state: LiveConnectionState): TemplateResu
   </div>`;
 }
 
-/** Header dot — green when connected, yellow when connecting, red when
- *  disconnected. Rendered inline in the page header. */
+/** Header dot: green connected, yellow connecting, red disconnected. */
 export function renderConnectionDot(state: LiveConnectionState): TemplateResult {
   const cls: string = state === "connected"
     ? "home-conn-dot home-conn-dot-ok"

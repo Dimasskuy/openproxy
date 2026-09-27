@@ -4,15 +4,13 @@ use openproxy_types::message::{OpenAIUsage, PromptTokensDetails};
 
 /// Merge two `OpenAIUsage` snapshots from successive SSE chunks.
 ///
-/// Token counts in streamed responses are delivered incrementally:
-/// `message_start` carries `prompt_tokens` (with cache contributions)
-/// but `output_tokens` is still ~0; later `message_delta` carries the
-/// final `output_tokens`. Newer Anthropic streams include
-/// `input_tokens` in the `message_delta.usage` block too, but the
-/// classic format omits it. This helper preserves the maximum seen
-/// value per field so that a zero-sentinel chunk (e.g. message_delta
-/// with `output_tokens: 89, prompt_tokens: 0`) does not clobber the
-/// prompt count extracted from `message_start`.
+/// Anthropic delivers token counts incrementally: `message_start` carries
+/// `prompt_tokens` (with cache contributions) while `output_tokens` is ~0,
+/// and `message_delta` carries the final `output_tokens`. The classic
+/// `message_delta.usage` block omits `input_tokens` and sends a `0`
+/// sentinel, so each field keeps the maximum seen so far rather than
+/// overwriting. Losing the `message_start` prompt count would understate
+/// usage for the whole request.
 pub(crate) fn merge_usage(existing: OpenAIUsage, new: OpenAIUsage) -> OpenAIUsage {
     use std::cmp::max;
 

@@ -1,6 +1,5 @@
-// views/home/charts.ts — main uPlot charts (throughput, status codes, latency)
-// and the race outcomes card. Provides creation, destruction, data preparation
-// functions and the window selector template.
+// views/home/charts.ts — main uPlot charts (throughput, status, latency),
+// the race outcomes card, and the window selector.
 
 import { html, type TemplateResult } from "lit-html";
 import type uPlot from "uplot";
@@ -20,9 +19,7 @@ import {
 } from "../../components/uplot-chart/index.js";
 import { formatCompact, formatLatency } from "./kpis.js";
 
-// ==========
 // Data preparation for uPlot
-// ==========
 
 /** Convert throughput points into `[time, requests/s, tokens/s]`. */
 export function throughputData(points: ThroughputPoint[]): uPlot.AlignedData {
@@ -70,9 +67,7 @@ export function latencyData(points: LatencyPoint[]): uPlot.AlignedData {
   return [xs, p50, p95, p99];
 }
 
-// ==========
 // Chart card template
-// ==========
 
 function renderChartCard(title: string, subtitle: string, id: string, stat: string): TemplateResult {
   return html`<section class="card home-chart-card">
@@ -81,14 +76,10 @@ function renderChartCard(title: string, subtitle: string, id: string, stat: stri
   </section>`;
 }
 
-// ==========
 // Race outcomes card
-// ==========
 
-/** Race outcomes card — 3 stat blocks (Won via race / Lost race / Single-
- *  target) with percentages. Uses option (c) from the spec: 3 stat
- *  blocks instead of a donut chart (uPlot is time-series focused; a
- *  half-baked donut would be worse than clean stat blocks). */
+/** Race outcomes card — 3 stat blocks (Won / Lost / Single-target) with
+ *  percentages. Stat blocks, not a donut: uPlot is time-series focused. */
 function renderRaceOutcomesCard(snapshot: Snapshot | null): TemplateResult {
   const won: number = snapshot ? snapshot.raceOutcomes.won : 0;
   const lost: number = snapshot ? snapshot.raceOutcomes.lost : 0;
@@ -125,9 +116,7 @@ export function renderChartsGrid(
   </div>`;
 }
 
-// ==========
 // Window selector
-// ==========
 
 /** Window selector — segmented control with 1m / 5m / 30m buttons. */
 export function renderWindowSelector(
@@ -151,12 +140,9 @@ export function renderWindowSelector(
   </div>`;
 }
 
-// ==========
 // Chart lifecycle (create / destroy / push data)
-// ==========
 
-/** Create the 3 main uPlot charts + ResizeObservers. Returns charts and
- *  a disposer array. Called after the first lit-html render. */
+/** Create the 3 main uPlot charts + ResizeObservers. Called after the first render. */
 export function createMainCharts(): {
   charts: uPlot[];
   disposers: Array<() => void>;

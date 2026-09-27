@@ -1,13 +1,14 @@
 //! OpenCode canonical header propagation and synthesis.
 //!
-//! Propagates and translates downstream client sessions, project, and User-Agent
-//! into OpenCode canonical request headers. Ensures the 4 upstream Console
-//! free-tier header gates are always satisfied:
-//! 1. User-Agent: valid opencode version (>= 1.17.0, defaults to canonical OPENCODE_UA)
-//! 2. x-opencode-client: cli
-//! 3. x-opencode-project: global
-//! 4. x-opencode-session: ses_... (canonical descending format)
-//! 5. x-opencode-request: msg_... (canonical ascending format)
+//! Propagates and translates downstream client sessions, project and
+//! User-Agent into OpenCode canonical request headers. The upstream Console
+//! free tier gates on all five:
+//! 1. User-Agent: valid opencode version (>= 1.17.0, defaults to canonical
+//!    OPENCODE_UA)
+//! 2. `x-opencode-client: cli`
+//! 3. `x-opencode-project: global`
+//! 4. `x-opencode-session: ses_...` (canonical descending format)
+//! 5. `x-opencode-request: msg_...` (canonical ascending format)
 
 use openproxy_adapters::spoofer::{generate_request_id, has_valid_opencode_version};
 
@@ -46,11 +47,11 @@ pub fn propagate_opencode_headers(
             .map(|(_, v)| v.as_str())
     };
 
-    // 1. Session affinity: downstream session or canonical derivation translated for OpenCode
+    // 1. Session affinity: downstream session, or canonical derivation.
     let canonical = resolve_canonical_session(request_headers, openai_req);
     OpenCodeSessionTranslator.apply_session(headers, &canonical);
 
-    // 2. Request ID: downstream request or ensure msg_... is present
+    // 2. Request ID: downstream id, else ensure msg_... is present.
     let downstream_req = get_header("x-opencode-request")
         .or_else(|| get_header("x-request-id"))
         .filter(|s| !s.trim().is_empty());
@@ -65,7 +66,6 @@ pub fn propagate_opencode_headers(
         upsert_header(headers, "x-opencode-request", generate_request_id());
     }
 
-    // 2b. Parent session: forward if downstream supplied it
     if let Some(parent_session) = get_header("x-parent-session-id").filter(|s| !s.trim().is_empty())
     {
         upsert_header(
@@ -75,32 +75,26 @@ pub fn propagate_opencode_headers(
         );
     }
 
-    // 2c. Anthropic beta: forward if downstream supplied it
     if let Some(beta) = get_header("anthropic-beta").filter(|s| !s.trim().is_empty()) {
         upsert_header(headers, "anthropic-beta", beta.trim().to_string());
     }
 
-    // 3. Client: preserve downstream if non-empty, else ensure "cli"
     let client = get_header("x-opencode-client")
         .filter(|s| !s.trim().is_empty())
         .unwrap_or("cli");
     upsert_header(headers, "x-opencode-client", client.to_string());
 
-    // 4. Project: preserve downstream if non-empty, else ensure "global"
     let project = get_header("x-opencode-project")
         .filter(|s| !s.trim().is_empty())
         .unwrap_or("global");
     upsert_header(headers, "x-opencode-project", project.to_string());
 
-    // 5. User-Agent: preserve downstream only if valid opencode version (>= 1.17.0),
-    // else ensure current dynamic OpenCode UA
     let cur_ua = openproxy_adapters::spoofer::current_opencode_ua();
     let ua = get_header("user-agent")
         .filter(|u| has_valid_opencode_version(u))
         .unwrap_or(&cur_ua);
     upsert_header(headers, "User-Agent", ua.to_string());
 
-    // 6. Forward custom x-opencode-* headers (extensions, debugging, dynamic flags)
     for (k, v) in request_headers {
         if starts_with_ignore_ascii_case(k, "x-opencode-")
             && !k.eq_ignore_ascii_case("x-opencode-session")
@@ -113,10 +107,9 @@ pub fn propagate_opencode_headers(
     }
 }
 
-/// Propagate downstream client headers for Google Antigravity.
-///
-/// Forwards trace IDs, custom client extension headers, and safe x-goog-* headers
-/// while strictly preserving machine identity, auth, and preventing bot-triggering headers.
+/// Forwards trace IDs, custom client extension headers and safe `x-goog-*`
+/// headers for Google Antigravity, while preserving machine identity and
+/// auth and dropping bot-triggering headers.
 pub fn propagate_antigravity_headers(
     headers: &mut Vec<(String, String)>,
     request_headers: &std::collections::BTreeMap<String, String>,
@@ -133,11 +126,10 @@ pub fn propagate_antigravity_headers(
     });
 }
 
-/// Propagate downstream client headers for MiniMax Coding / Mavis.
-///
-/// Forwards `anthropic-beta` (for prompt caching & extended output), `x-mavis-*`,
-/// `minimax-*`, and custom client headers while strictly preserving auth credentials.
-/// If downstream passes session or conversation IDs, formats and preserves `x-mavis-session-id`.
+/// Forwards `anthropic-beta` (prompt caching and extended output),
+/// `x-mavis-*`, `minimax-*` and custom client headers for MiniMax Coding /
+/// Mavis, preserving auth credentials. A downstream session or conversation
+/// id is formatted into `x-mavis-session-id`.
 pub fn propagate_minimax_headers(
     headers: &mut Vec<(String, String)>,
     request_headers: &std::collections::BTreeMap<String, String>,
@@ -149,7 +141,6 @@ pub fn propagate_minimax_headers(
             || starts_with_ignore_ascii_case(k, "minimax-")
     });
 
-    // Dynamic session continuity: if downstream supplies session or conversation ID, bind to x-mavis-session-id
     let session_val = get_header_val(request_headers, "x-conversation-id")
         .or_else(|| get_header_val(request_headers, "x-session-id"))
         .or_else(|| get_header_val(request_headers, "session-id"));
@@ -159,11 +150,10 @@ pub fn propagate_minimax_headers(
     }
 }
 
-/// Propagate downstream client headers for Cline.
-///
-/// Forwards `x-cline-*`, `cline-*`, and canonical IDE context headers (`x-platform`,
-/// `x-platform-version`, `x-client-version`, `x-client-type`, `x-core-version`, `x-is-multiroot`)
-/// so live Cline extensions dynamically override defaults while strictly preserving auth credentials.
+/// Forwards `x-cline-*`, `cline-*` and canonical IDE context headers
+/// (`x-platform`, `x-platform-version`, `x-client-version`, `x-client-type`,
+/// `x-core-version`, `x-is-multiroot`) so live Cline extensions override the
+/// defaults, preserving auth credentials.
 pub fn propagate_cline_headers(
     headers: &mut Vec<(String, String)>,
     request_headers: &std::collections::BTreeMap<String, String>,
@@ -180,10 +170,9 @@ pub fn propagate_cline_headers(
     });
 }
 
-/// Propagate downstream client headers for Kilocode.
-///
-/// Forwards `x-kilocode-*`, `kilocode-*`, and client identity headers (`x-client-version`,
-/// `x-client-type`, `x-title`, `http-referer`) so live Kilocode tools dynamically override defaults.
+/// Forwards `x-kilocode-*`, `kilocode-*` and client identity headers
+/// (`x-client-version`, `x-client-type`, `x-title`, `http-referer`) so live
+/// Kilocode tools override the defaults.
 pub fn propagate_kilocode_headers(
     headers: &mut Vec<(String, String)>,
     request_headers: &std::collections::BTreeMap<String, String>,
@@ -198,13 +187,11 @@ pub fn propagate_kilocode_headers(
     });
 }
 
-/// Propagate downstream client headers for Codex.
-///
-/// Forwards `x-codex-*`, `codex-*`, `chatgpt-account-id`, and CLI identity headers
-/// (`originator`, `version`, `origin`) while strictly preserving auth credentials.
-/// Also extracts or synthesizes session affinity (`session-id`, `x-session-id`,
-/// `x-conversation-id`, `x-codex-session`) so upstream load balancers route
-/// requests for the same conversation to the same GPU worker node for prompt caching.
+/// Forwards `x-codex-*`, `codex-*`, `chatgpt-account-id` and CLI identity
+/// headers (`originator`, `version`, `origin`), preserving auth credentials.
+/// Session affinity (`session-id`, `x-session-id`, `x-conversation-id`,
+/// `x-codex-session`) is extracted or synthesized so the upstream load
+/// balancer pins a conversation to one GPU worker for prompt caching.
 pub fn propagate_codex_headers(
     headers: &mut Vec<(String, String)>,
     request_headers: &std::collections::BTreeMap<String, String>,
@@ -233,12 +220,11 @@ pub fn propagate_codex_headers(
     CodexSessionTranslator.apply_session(headers, &canonical);
 }
 
-/// Propagate downstream client headers for Kiro AI (AWS CodeWhisperer).
-///
-/// Forwards `x-kiro-*`, `kiro-*`, `anthropic-beta`, `x-amzn-bedrock-cache-control`,
-/// `amz-sdk-invocation-id`, `amz-sdk-request`, `tokentype`, and client identity headers
-/// (`x-amz-user-agent`). Extracts session affinity from `x-conversation-id`, `x-session-id`,
-/// or `session-id`.
+/// Forwards `x-kiro-*`, `kiro-*`, `anthropic-beta`,
+/// `x-amzn-bedrock-cache-control`, `amz-sdk-invocation-id`, `amz-sdk-request`,
+/// `tokentype` and `x-amz-user-agent` for Kiro AI (AWS CodeWhisperer).
+/// Session affinity comes from `x-conversation-id`, `x-session-id` or
+/// `session-id`.
 pub fn propagate_kiro_headers(
     headers: &mut Vec<(String, String)>,
     request_headers: &std::collections::BTreeMap<String, String>,
@@ -263,11 +249,10 @@ pub fn propagate_kiro_headers(
     }
 }
 
-/// Propagate downstream client headers for Command Code Go.
-///
-/// Forwards `x-command-code-*`, `command-code-*`, `cmd-*`, `x-cli-environment`,
-/// `x-project-slug`, `x-taste-learning`, and `x-command-code-version`. Extracts
-/// session continuity from `x-conversation-id`, `x-session-id`, or `session-id`.
+/// Forwards `x-command-code-*`, `command-code-*`, `cmd-*`,
+/// `x-cli-environment`, `x-project-slug`, `x-taste-learning` and
+/// `x-command-code-version`. Session continuity comes from
+/// `x-conversation-id`, `x-session-id` or `session-id`.
 pub fn propagate_commandcode_headers(
     headers: &mut Vec<(String, String)>,
     request_headers: &std::collections::BTreeMap<String, String>,
@@ -298,10 +283,8 @@ pub fn propagate_commandcode_headers(
     CommandCodeSessionTranslator.apply_session(headers, &session_id);
 }
 
-/// Dispatches downstream client header propagation to the appropriate provider adapter.
-///
-/// Centralizes all provider-specific header translation and session affinity mapping
-/// so callers do not duplicate cascading checks.
+/// Dispatches header propagation to the provider adapter, so callers do not
+/// duplicate the provider-specific translation and session affinity mapping.
 pub fn propagate_provider_target_headers(
     headers: &mut Vec<(String, String)>,
     provider_id: &str,
@@ -342,13 +325,12 @@ pub fn propagate_provider_target_headers(
     apply_provider_session_affinity(headers, provider_id, adapter_id, req_headers, openai_req);
 }
 
-/// Propagate downstream client headers for CodeBuddy.
-///
-/// Forwards `x-codebuddy-*`, `codebuddy-*`, and client identity headers
-/// (`x-ide-type`, `x-ide-name`, `x-ide-version`, `x-product`, `x-agent-intent`, `x-codebuddy-request`).
-/// Preserves downstream CodeBuddy User-Agent and extracts or derives session continuity
-/// (`X-Conversation-ID`) to ensure Tencent Cloud load balances multi-turn conversations
-/// to the same GPU worker node for automatic prefix KV cache hits.
+/// Forwards `x-codebuddy-*`, `codebuddy-*` and client identity headers
+/// (`x-ide-type`, `x-ide-name`, `x-ide-version`, `x-product`,
+/// `x-agent-intent`, `x-codebuddy-request`), preserving the downstream
+/// CodeBuddy User-Agent. Session continuity (`X-Conversation-ID`) is extracted
+/// or derived so Tencent Cloud load balances a multi-turn conversation onto
+/// one GPU worker for prefix KV cache hits.
 pub fn propagate_codebuddy_headers(
     headers: &mut Vec<(String, String)>,
     request_headers: &std::collections::BTreeMap<String, String>,

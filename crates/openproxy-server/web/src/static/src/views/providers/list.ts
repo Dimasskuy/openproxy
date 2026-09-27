@@ -1,10 +1,5 @@
-// views/providers/list.ts — providers grid view (the index
-// `mountProviders({detailId: undefined})` path).
-//
-// Renders a card grid for every provider in `state.providers`,
-// with a header (Refresh all + Add provider), an empty state,
-// and an error banner when the fetch failed. The cards link to
-// `#/providers/:id`, which mounts the detail view.
+// views/providers/list.ts — card grid for every provider, with a refresh-all
+// header, empty state, and error banner. Cards link to `#/providers/:id`.
 
 import { html, type TemplateResult } from 'lit-html';
 import { state } from '../../state/index.js';
@@ -17,7 +12,6 @@ import { t } from '../../i18n/index.js';
 import type { Account, Provider } from '../../lib/types/api.js';
 import { loadError, renderProviderIcon } from './shared.js';
 
-// ---- Handlers: grid ----
 
 async function onRefreshAllProviders(): Promise<void> {
   try {
@@ -41,7 +35,6 @@ function onShowCreateProvider(): void {
   showCreateProvider();
 }
 
-// ---- Templates ----
 
 function renderProviderCard(p: Provider, accounts: Account[]): TemplateResult {
   const unhealthyAccs = accounts.filter((a) => a.health_status === 'unhealthy').length;

@@ -1,21 +1,15 @@
-// handlers/combo-handlers.test.ts — unit tests for buildComboBodyFromForm().
+// handlers/combo-handlers.test.ts — unit tests for buildComboBodyFromForm(), the pure
+// form→JSON payload builder extracted from `createCombo`. The surrounding async handler is
+// deliberately not exercised (network + `requestUpdate` are not the builder's job).
 //
-// Scope: the pure form→JSON payload builder extracted from `createCombo`.
-// We DO NOT exercise the surrounding async handler (network +
-// `requestUpdate` are not the builder's responsibility).
-//
-// Covering here:
-//   - defaults when every field is blank
-//   - omitting optional params when the user left them blank
-//   - parsing `parseFloat` / `parseInt` for the conditional fields
-//   - NaN fallback (junk in the box → field dropped)
-//   - checkbox semantics: `preventive_rate_limit` only true when "on"
+// Covering: defaults when every field is blank; optional params omitted when left blank;
+// `parseFloat` / `parseInt` parsing of the conditional fields; NaN fallback (junk in the box →
+// field dropped); checkbox semantics (`preventive_rate_limit` true only when "on").
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { buildComboBodyFromForm } from "./combo-handlers.js";
 
-/** Build a minimal create-combo form. The defaults mirror the
- *  template rendered by `createComboTemplate()`. */
+/** Build a minimal create-combo form. Defaults mirror `createComboTemplate()`. */
 function makeComboForm(fields: {
   name?: string;
   strategy?: string;

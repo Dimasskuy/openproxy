@@ -1,6 +1,5 @@
-//! openproxy-core: headless LLM proxy library.
-//!
-//! See docs/architecture.md and docs/mvp-spec.md for the full spec.
+//! openproxy-core: headless LLM proxy library. See docs/architecture.md and
+//! docs/mvp-spec.md.
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
@@ -54,10 +53,8 @@ pub mod token_estimate;
 pub mod rate_limit;
 pub mod usage;
 
-// Gate 0: hyper-based upstream client. See `upstream/mod.rs` for the
-// architecture and the `upstream-hyper` feature flag in `Cargo.toml`.
-// This module coexists with the existing hyper-based call sites;
-// Gate 0 does NOT migrate any call site.
+// Gate 0: hyper-based upstream client (`upstream-hyper` feature) coexists with
+// existing hyper call sites; it migrates none of them.
 
 pub use config::AppConfig;
 
@@ -68,22 +65,14 @@ pub use validation::Validatable;
 
 /// Install the rustls process-level crypto provider.
 ///
-/// Mandatory since rustls 0.23. Without this, the first TLS
-/// handshake to an upstream HTTPS endpoint panics with
-/// `Could not automatically determine the process-level
-/// CryptoProvider`.
+/// rustls 0.23+ panics on the first HTTPS handshake without it
+/// (`Could not automatically determine the process-level CryptoProvider`), so
+/// the server binary calls this at the top of `main`, before any tokio worker
+/// sees a request. `install_default` is idempotent (process-level `OnceLock`).
 ///
-/// `install_default` is idempotent (it populates a
-/// `process-level OnceLock`); a second call is a no-op. The
-/// server binary calls this at the very top of `main` so
-/// the install is in place before any tokio worker
-/// processes an inbound request.
-///
-/// ponytail: choosing `ring` over `aws-lc-rs` because it's
-/// pure-Rust, smaller in binary size, and has no native
-/// build step. `aws-lc-rs` is also pulled in transitively
-/// by `UpstreamClient` (for the OAuth admin HTTPS calls) but
-/// rustls only accepts a single provider per process.
+/// `ring` over `aws-lc-rs`: pure Rust, no native build step. `UpstreamClient`
+/// pulls in `aws-lc-rs` transitively, but rustls accepts one provider per
+/// process.
 #[cfg(feature = "upstream-hyper")]
 pub fn install_rustls_crypto_provider() {
     let _ = rustls::crypto::ring::default_provider().install_default();

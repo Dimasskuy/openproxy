@@ -79,7 +79,8 @@ async fn run_warmup_cycle(
     upstream: &Arc<UpstreamClient>,
     master_key: &Arc<MasterKey>,
 ) {
-    // Extract necessary data so we can drop the DB lock before the network call
+    // Read the account list inside spawn_blocking so no DB guard is held across the
+    // network calls below.
     let account_list: Vec<(i64, String, String, String)> = {
         let db_pool = Arc::clone(db_pool);
         let master_key = Arc::clone(master_key);
@@ -135,7 +136,7 @@ async fn run_warmup_cycle(
             None => continue,
         };
 
-        // Persist the fresh quota so the UI / frontend sees it
+        // Persist the fresh quota so the UI sees it
         {
             let db_pool = Arc::clone(db_pool);
             let quota = quota.clone();
@@ -150,7 +151,6 @@ async fn run_warmup_cycle(
             .await;
         }
 
-        // Check if 100% capacity
         let is_100_percent = matches!(
             (quota.session_used, quota.session_limit),
             (Some(0), Some(limit)) if limit > 0
@@ -178,7 +178,6 @@ async fn run_warmup_cycle(
 
             let history_key = format!("{account_id_str}:{true_model_id}");
 
-            // Check cooldown
             let last_ts = {
                 let db_pool = Arc::clone(db_pool);
                 let history_key_check = history_key.clone();
@@ -231,15 +230,15 @@ async fn run_warmup_cycle(
                 .await;
             }
 
-            // Pequeña pausa entre modelos para no acribillar la API
+            // Pausa entre modelos para no acribillar la API
             tokio::time::sleep(Duration::from_secs(6)).await;
         }
 
-        // Pausa entre cuentas para ser sigilosos (anti-DDoS/bot detection)
+        // Pausa entre cuentas: evita detección anti-DDoS/bot
         tokio::time::sleep(Duration::from_secs(15)).await;
     }
 
-    // Cleanup history older than 24h to prevent table growth
+    // Limpia historial de más de 24h para acotar el crecimiento de la tabla
     let cutoff = now - 86_400;
     {
         let db_pool = Arc::clone(db_pool);

@@ -3,8 +3,8 @@ import { api, fetchDebugLogs } from "./api.js";
 import { clearToken } from "../state/auth.js";
 import { state } from "../state/index.js";
 
-// Must match `STORAGE_KEY` in `state/auth.ts` — the prompt's
-// `openproxy:adminToken` (colon) is not the key the auth store reads.
+// Must match `STORAGE_KEY` in `state/auth.ts` — the prompt's `openproxy:adminToken` (colon) is
+// not the key the auth store reads.
 const TOKEN_KEY = "openproxy_admin_token";
 
 function response(body: string, status = 200, contentType?: string): Response {
@@ -87,8 +87,8 @@ describe("api", () => {
   });
 
   it("returns null for a 204 response without reading its body", async () => {
-    // A 204 must be constructed with a null body (the fetch spec
-    // rejects `new Response(body, { status: 204 })`).
+    // A 204 must be constructed with a null body (the fetch spec rejects
+    // `new Response(body, { status: 204 })`).
     const r = new Response(null, { status: 204 });
     const textSpy = vi.spyOn(r, "text");
     fetchSpy.mockResolvedValue(r);
@@ -141,13 +141,11 @@ describe("api", () => {
     expect(fetchSpy.mock.calls[0]?.[0]).toBe("/admin/api/debug/logs?level=WARN");
   });
 
-  // NOTE: the JSDoc on `FetchDebugLogsOpts.since` says "Omit (or pass
-  // 0) to fetch the whole buffer". That equivalence is SERVER-side:
-  // seqs start at 1 and the handler takes the full-snapshot branch
-  // for any `since <= 0` (crates/openproxy-server/src/handlers/admin/
-  // debug.rs:56). The client serializes `since=0` verbatim — this
-  // test pins that serialization so a future change either way is a
-  // conscious decision, not an accident.
+  // NOTE: the JSDoc on `FetchDebugLogsOpts.since` says "Omit (or pass 0) to fetch the whole
+  // buffer". That equivalence is SERVER-side: seqs start at 1 and the handler takes the
+  // full-snapshot branch for any `since <= 0` (crates/openproxy-server/src/handlers/admin/
+  // debug.rs:56). The client serializes `since=0` verbatim — this test pins that serialization so
+  // a future change is a conscious decision, not an accident.
   it("serializes since=0 verbatim into the query string", async () => {
     fetchSpy.mockResolvedValue(response("{}", 200, "application/json"));
 

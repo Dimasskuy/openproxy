@@ -3,18 +3,14 @@
 //! Regression test for the Gemini probe struct's handling of the
 //! `role` sibling field inside `content`.
 //!
-//! Real-world Gemini chunks include `"role":"model"` inside `content`,
-//! alongside `parts`. The probe must skip this unknown field without
-//! erroring. The existing sse::tests did not cover this case because
-//! their test fixtures omitted `role`.
+//! Real-world Gemini chunks carry `"role":"model"` inside `content` next to
+//! `parts`, an unknown field that `GeminiContentProbe` must skip without erroring.
 
 use openproxy_pipeline::sse::parse_gemini_sse_line;
 
 #[test]
 fn gemini_probe_handles_role_sibling_in_content() {
-    // Real-world Gemini chunk: `content` has BOTH `parts` and `role`.
-    // The probe's `GeminiContentProbe` only declares `parts`, so serde
-    // must skip `role` (which it does by default for unknown fields).
+    // `content` carries both `parts` and the unknown `role` field
     let line = r#"data: {"candidates":[{"content":{"parts":[{"text":"Hello"}],"role":"model"}}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":1,"totalTokenCount":11}}"#;
     let chunk = parse_gemini_sse_line(line, "test-id", 0, "gemini-pro")
         .expect("probe should handle `role` sibling field")
@@ -31,8 +27,7 @@ fn gemini_probe_handles_role_sibling_in_content() {
 
 #[test]
 fn gemini_probe_handles_role_with_comma_text() {
-    // Text containing a comma — ensures the probe doesn't misparse
-    // commas inside JSON string values.
+    // a comma inside a JSON string value must not shift the parse
     let line = r#"data: {"candidates":[{"content":{"parts":[{"text":", "}],"role":"model"}}]}"#;
     let chunk = parse_gemini_sse_line(line, "test-id", 0, "gemini-pro")
         .expect("probe should handle comma text")

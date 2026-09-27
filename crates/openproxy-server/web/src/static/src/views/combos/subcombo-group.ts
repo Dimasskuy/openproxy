@@ -1,5 +1,5 @@
-// views/combos/subcombo-group.ts — Sub-combo accordion, nested targets, and in-place editor.
-// Provides a distinct, collapsible grouped visual abstraction for combos embedded in combos.
+// views/combos/subcombo-group.ts — sub-combo accordion with nested targets and an
+// in-place editor, for combos embedded in other combos.
 
 import { html, render, type TemplateResult } from 'lit-html';
 import { api } from "../../state/api.js";
@@ -161,7 +161,6 @@ export async function refreshSubCombo(subComboId: number, onUpdate: () => void):
   await loadSubComboData(subComboId, onUpdate);
 }
 
-// ---- Sub-Combo Inline Target Actions ----
 
 async function onToggleNestedTargetActive(
   subComboId: number,
@@ -269,7 +268,6 @@ async function onTestNestedTarget(
   }
 }
 
-// ---- Edit Sub-Combo Modal ----
 
 export async function showEditSubComboModal(
   subComboId: number,
@@ -536,7 +534,6 @@ export async function showEditSubComboModal(
   renderModal();
 }
 
-// ---- Sub-Combo Accordion Panel Renderer ----
 
 export function renderSubComboAccordion(
   target: ComboTargetWithModel,

@@ -1,5 +1,4 @@
 // components/key-display.ts — shows plaintext key modal.
-// Migrated to lit-html.
 
 import { html, render } from 'lit-html';
 import { showToast } from "./toast.js";

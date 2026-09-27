@@ -1,7 +1,6 @@
-//! Dispatch streaming SSE: ciclo de vida completo desde el pre-flight
-//! disconnect check hasta `record_streaming_success`. Contiene el método
-//! principal (`dispatch_upstream_streaming`, 239 LOC) y sus helpers de
-//! fallo (`fail_stream_*`, `fail_on_sink_send_error`).
+//! Dispatch streaming SSE: del pre-flight disconnect check a
+//! `record_streaming_success`. Contiene `dispatch_upstream_streaming` y los
+//! helpers de fallo (`fail_stream_*`, `fail_on_sink_send_error`).
 
 use super::UpstreamDispatcher;
 use super::types::{
@@ -16,14 +15,6 @@ use openproxy_types::error::CoreError;
 use std::time::Instant;
 
 impl UpstreamDispatcher {
-    /// Entry point streaming. Pasos:
-    /// 1. Verifica que `req.stream_sink` exista (sino → Internal error).
-    /// 2. Pre-flight disconnect check.
-    /// 3. `upstream_client.call` con cancel token (race-aware si está).
-    /// 4. Si error → `handle_upstream_error`. Si non-2xx → `handle_streaming_non_2xx`.
-    /// 5. Loop SSE via `state.run_stream_loop`.
-    /// 6. Post-loop: si client disconnected → `fail_stream_client_disconnected`.
-    /// 7. Stream vacío → fail; sino → `record_streaming_success`.
     pub(super) async fn dispatch_upstream_streaming(
         &self,
         params: StreamDispatchParams<'_>,
@@ -246,8 +237,8 @@ impl UpstreamDispatcher {
             });
         }
 
-        // If stream ended without [DONE], flush any pending normalizer/PII restoration stage buffer to client,
-        // and unconditionally emit terminal [DONE] for this successfully completed stream.
+        // A stream that ended without [DONE] still completes successfully:
+        // flush the normalizer and PII buffers, then send the terminal frame.
         if !state.done_sent {
             if let Some(residual_json) = state.normalizer.finalize() {
                 let sse_bytes = crate::sse::build_sse_frame(&residual_json);
@@ -289,7 +280,6 @@ impl UpstreamDispatcher {
         )
     }
 
-    /// Helper: marca accumulator como partial y delega a record_and_fail.
     fn fail_stream_with_error(
         &self,
         err: CoreError,
@@ -322,13 +312,9 @@ impl UpstreamDispatcher {
         })
     }
 
-    /// Si el upstream había enviado un error inline (SSE chunk con code+msg)
-    /// antes de que el cliente se desconectara, lo atribuimos a error
-    /// upstream. Si no, cancel puro (o `UpstreamConnection` si hubo
-    /// contenido parcial).
-    ///
-    /// Visibilidad `pub(crate)`: invocado por `streaming_state.rs`
-    /// (cross-module).
+    /// Un error inline del upstream (chunk SSE con code+msg) emitido antes
+    /// de la desconexión se atribuye al upstream. Sin él, es cancel puro,
+    /// o `UpstreamConnection` si el cliente ya había recibido contenido.
     pub(crate) fn fail_stream_client_disconnected(
         &self,
         fctx: StreamFailureContext<'_>,
@@ -370,12 +356,9 @@ impl UpstreamDispatcher {
         self.fail_stream_with_error(err, fctx, Some(499))
     }
 
-    /// Distingue `Lost` (otra race lane ganó) vs `Closed` (cliente/proxy
-    /// caído). En el segundo caso, si hubo error inline upstream, lo
-    /// propagamos; sino construimos un `UpstreamConnection`.
-    ///
-    /// Visibilidad `pub(crate)`: invocado por `streaming_state.rs`
-    /// (cross-module).
+    /// `Lost` significa que otra race lane ganó. `Closed` significa que
+    /// el cliente o el proxy cayeron, y entonces se propaga el error inline
+    /// del upstream o se construye un `UpstreamConnection`.
     pub(crate) fn fail_on_sink_send_error(
         &self,
         e: crate::race_sink::StreamSinkError,
@@ -437,9 +420,7 @@ impl UpstreamDispatcher {
         self.fail_stream_with_error(err, fctx, None)
     }
 
-    /// Pre-flight guard: si el cliente ya está desconectado antes de enviar,
-    /// devuelve un `PipelineResult` de cancelación. Usado por la rama
-    /// streaming.
+    /// Corta antes de enviar si el cliente ya se desconectó.
     fn check_preflight_stream_disconnect(
         &self,
         req: &crate::PipelineRequest,
@@ -473,8 +454,8 @@ impl UpstreamDispatcher {
         None
     }
 
-    /// Maneja la rama streaming non-2xx: extrae `retry-after` del header,
-    /// lee el body con timeout de 5s y delega en `handle_non_2xx_response`.
+    /// Extrae `retry-after`, lee el body con timeout de 5s y delega en
+    /// `handle_non_2xx_response`.
     async fn handle_streaming_non_2xx(
         &self,
         args: StreamingNon2xxArgs<'_>,
@@ -510,9 +491,9 @@ impl UpstreamDispatcher {
         .await
     }
 
-    /// Persiste el stream exitoso en el `UsageTracker` y construye el
-    /// `PipelineResult`. Si el sink era `Discard` (race lane perdedora),
-    /// materializamos el `final_response` desde el accumulator.
+    /// Un sink `Discard` (race lane perdedora) no dejó respuesta en el
+    /// cliente, así que el `final_response` se materializa desde el
+    /// accumulator.
     fn record_streaming_success(
         &self,
         params: StreamDispatchParams<'_>,

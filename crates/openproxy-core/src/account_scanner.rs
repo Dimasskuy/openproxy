@@ -1,42 +1,39 @@
 //! Scan the Antigravity-CLI credential file.
 //!
-//! Conservative: solo lee `~/.gemini/antigravity-cli/antigravity-oauth-token`
-//! (path hard-coded bajo `std::env::var_os("HOME")`). No camina el filesystem
-//! recursivamente. El parser extrae los tokens OAuth (access/refresh) y el
-//! email del archivo — el mismo formato que `write_antigravity_token_file`
-//! emite en sentido inverso (`handlers/admin/accounts.rs`).
+//! Conservative: lee solo `~/.gemini/antigravity-cli/antigravity-oauth-token`,
+//! hard-coded bajo `std::env::var_os("HOME")`, sin recorrer el filesystem. Extrae los
+//! tokens OAuth (access/refresh) y el email del archivo, el mismo formato que
+//! `write_antigravity_token_file` emite en sentido inverso
+//! (`handlers/admin/accounts.rs`).
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Resolve the user's home directory without dragging in a new dep.
-///
-/// `std::env::var_os("HOME")` is the stdlib equivalent of `dirs::home_dir()`
-/// on Linux/macOS (AGENTS §1.4 / §4.1: stdlib > new dependency). Returns
-/// `None` on Windows / headless containers with no `HOME` set.
+/// Home directory via `std::env::var_os("HOME")`, the stdlib equivalent of
+/// `dirs::home_dir()` on Linux/macOS (AGENTS §1.4 / §4.1: stdlib over a new
+/// dependency). `None` on Windows or in a headless container with no `HOME`.
 fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveredAccount {
-    /// Siempre `"antigravity"` en esta iteración.
+    /// Siempre `"antigravity"` por ahora.
     pub provider_id: String,
     /// Label sugerida, p.ej. `"antigravity-cli@alice@example.com"`.
     pub label: String,
     /// Access token OAuth crudo (se cifra en DB al importar).
     pub access_token: String,
-    /// Refresh token OAuth (necesario para el refresh en background).
+    /// Refresh token OAuth, necesario para el refresh en background.
     pub refresh_token: Option<String>,
     /// Email del usuario si el archivo lo incluye.
     pub email: Option<String>,
-    /// Path del archivo que produjo esta entry (audit / skip duplicados).
+    /// Path del archivo de origen (audit / skip de duplicados).
     pub source_path: PathBuf,
 }
 
-/// Scan el token file del agy-cli. Devuelve `Some` si el archivo existe,
-/// es parseable y tiene un `access_token`. Cualquier fallo (missing,
-/// permisos, JSON inválido, sin access_token) → `None` con un `warn`
+/// `Some` si el token file del agy-cli existe, se parsea y trae `access_token`.
+/// Cualquier fallo (ausente, permisos, JSON inválido, sin access_token) → `None` con un `warn`
 /// log; el caller decide.
 pub fn scan_antigravity_cli() -> Option<DiscoveredAccount> {
     let path = home_dir()?
@@ -101,8 +98,8 @@ pub fn scan_antigravity_cli() -> Option<DiscoveredAccount> {
     })
 }
 
-/// Scan el archivo de credenciales `~/.gemini/oauth_creds.json` sincronizado por
-/// herramientas como Antigravity-Manager y CLI en sesiones SSH/contenedores.
+/// Escanea `~/.gemini/oauth_creds.json`, sincronizado por Antigravity-Manager y la
+/// CLI en sesiones SSH/contenedores.
 pub fn scan_antigravity_oauth_creds() -> Option<DiscoveredAccount> {
     let home = home_dir()?;
     let path = home.join(".gemini").join("oauth_creds.json");
@@ -141,7 +138,7 @@ pub fn scan_antigravity_oauth_creds() -> Option<DiscoveredAccount> {
         .and_then(|s| s.as_str())
         .map(str::to_string);
 
-    // Intentar leer el email activo de ~/.gemini/google_accounts.json
+    // email activo de ~/.gemini/google_accounts.json
     let mut email = None;
     let accounts_path = home.join(".gemini").join("google_accounts.json");
     if let Ok(acc_bytes) = std::fs::read(&accounts_path)
@@ -154,7 +151,7 @@ pub fn scan_antigravity_oauth_creds() -> Option<DiscoveredAccount> {
             .map(str::to_string);
     }
 
-    // Fallback: extraer email de claims del JWT id_token si existe
+    // fallback: claims del JWT id_token
     if email.is_none()
         && let Some(id_tok) = v.get("id_token").and_then(|s| s.as_str())
         && let Some(claims) = crate::oauth::decode_jwt_payload(id_tok)
@@ -181,8 +178,8 @@ pub fn scan_antigravity_oauth_creds() -> Option<DiscoveredAccount> {
     })
 }
 
-/// Punto de entrada del endpoint. Escanea tanto el token file de agy-cli como
-/// el archivo oauth_creds.json compartido con Antigravity-Manager.
+/// Entrada del endpoint: escanea el token file de agy-cli y el oauth_creds.json
+/// compartido con Antigravity-Manager.
 pub fn scan_external_accounts() -> Vec<DiscoveredAccount> {
     let mut accounts = Vec::new();
     if let Some(cli_acc) = scan_antigravity_cli() {
@@ -203,22 +200,20 @@ pub fn scan_external_accounts() -> Vec<DiscoveredAccount> {
 
 #[cfg(test)]
 mod tests {
-    // `unwrap()` / `expect()` are allowed in tests by the crate-level
-    // `#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]`
-    // on `lib.rs` — no per-module override needed.
+    // `unwrap` / `expect` are allowed in tests by the crate-level
+    // `cfg_attr(test, allow(...))` on lib.rs
 
     use super::*;
     use std::sync::Mutex;
 
-    /// Serializa la mutación de `HOME` entre tests paralelos
-    /// (AGENTS §4.3 + P3-4 de la spec).
+    /// Serializa la mutación de `HOME` entre tests paralelos (AGENTS §4.3).
     pub(super) static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     pub(super) fn lock() -> std::sync::MutexGuard<'static, ()> {
         TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// RAII guard que setea `HOME` y lo restaura al drop (incluso en panic).
+    /// RAII guard que setea `HOME` y lo restaura al drop, incluso en panic.
     struct HomeGuard {
         prev: Option<std::ffi::OsString>,
     }
@@ -287,7 +282,7 @@ mod tests {
     fn test_scanner_skips_missing_and_corrupt_files() {
         let tmp = tempdir();
 
-        // (a) HOME vacío → ningún archivo.
+        // (a) HOME vacío
         {
             let _guard = lock();
             let _home = HomeGuard::set(tmp.path());
@@ -295,7 +290,7 @@ mod tests {
             assert!(found.is_empty(), "expected no entries from empty home");
         }
 
-        // (b) Archivo corrupto → no debe surfear como entry.
+        // (b) archivo corrupto
         let target = tmp
             .path()
             .join(".gemini")
@@ -310,7 +305,7 @@ mod tests {
             assert!(found.is_empty(), "corrupt file must not surface as entry");
         }
 
-        // (c) Archivo sin access_token → no debe surfear como entry.
+        // (c) archivo sin access_token
         let body = serde_json::json!({
             "token": { "token_type": "Bearer" },
             "auth_method": "consumer"
@@ -389,7 +384,7 @@ mod tests {
         let cli_token = cli_dir.join("antigravity-oauth-token");
         let creds_target = gemini.join("oauth_creds.json");
 
-        // CLI token has rotated access token "ya-new-access", but same refresh token
+        // el access token rotó, el refresh token es el mismo
         let cli_body = serde_json::json!({
             "token": {
                 "access_token": "ya-new-access",
@@ -440,7 +435,7 @@ mod tests {
         });
         std::fs::write(&creds_target, serde_json::to_vec(&creds_body).unwrap()).unwrap();
 
-        // active email is whitespace-only
+        // el email activo es solo whitespace
         let accounts_body = serde_json::json!({
             "active": "   ",
             "old": []
@@ -465,15 +460,12 @@ mod tests {
     }
 }
 
-// ============================================================
-// GAP-7: Adversarial tests for antigravity-cli account scanner
-// ============================================================
 #[cfg(test)]
 mod adversarial_tests {
     use super::tests::tempdir;
     use super::*;
 
-    /// Serializes HOME mutations across all scanner tests using the shared lock.
+    /// Serializes HOME mutations using the shared lock.
     fn lock() -> std::sync::MutexGuard<'static, ()> {
         super::tests::lock()
     }
@@ -502,8 +494,6 @@ mod adversarial_tests {
         }
     }
 
-    // --- JSON with unexpected schema ---
-
     #[test]
     fn adv_file_with_valid_json_wrong_schema() {
         // JSON is valid but has wrong shape (no token.access_token).
@@ -523,8 +513,6 @@ mod adversarial_tests {
             "wrong schema must return None"
         );
     }
-
-    // --- File with nested wrong types ---
 
     #[test]
     fn adv_file_with_token_wrong_types() {
@@ -551,8 +539,6 @@ mod adversarial_tests {
         );
     }
 
-    // --- File without user.email ---
-
     #[test]
     fn adv_file_without_email_uses_default_label() {
         let tmp = tempdir();
@@ -568,7 +554,6 @@ mod adversarial_tests {
                 "refresh_token": "1//refresh"
             },
             "auth_method": "consumer"
-            // No "user" key
         });
         std::fs::write(&target, serde_json::to_vec(&body).expect("ser")).expect("write");
 
@@ -580,8 +565,6 @@ mod adversarial_tests {
         assert_eq!(account.access_token, "ya-token");
     }
 
-    // --- HOME to non-existent directory ---
-
     #[test]
     fn adv_home_nonexistent_returns_none() {
         let _guard = lock();
@@ -589,23 +572,17 @@ mod adversarial_tests {
         let fake = "/tmp/surely-nonexistent-dir-2026-01-01";
         unsafe { std::env::set_var("HOME", fake) };
         let result = scan_antigravity_cli();
-        // HOME exists but .gemini/... doesn't → None (NotFound path)
         assert!(result.is_none(), "non-existent HOME → None");
-        // Restore
         match &prev {
             Some(v) => unsafe { std::env::set_var("HOME", v) },
             None => unsafe { std::env::remove_var("HOME") },
         }
     }
 
-    // --- HOME with unreadable token file ---
-
     #[test]
     fn adv_unreadable_token_file_returns_none() {
-        // This test is environment-dependent: in containers running as
-        // root, mode 000 is bypassed by the kernel, so the file IS
-        // read. We check the result is SOME (root) or NONE (non-root).
-        // Either way the function must not panic.
+        // root ignora el modo 000 y lee el archivo: se acepta Some o None
+        // (EACCES); el requisito es que no haya panic.
         let tmp = tempdir();
         let target = tmp
             .path()
@@ -614,22 +591,17 @@ mod adversarial_tests {
             .join("antigravity-oauth-token");
         std::fs::create_dir_all(target.parent().expect("parent")).expect("mkdir");
         std::fs::write(&target, r#"{"token":{"access_token":"x"}}"#).expect("write");
-        // Remove read permissions
         std::fs::set_permissions(&target, std::os::unix::fs::PermissionsExt::from_mode(0o000))
             .expect("set perms");
 
         let _guard = lock();
         let _home = HomeGuard::set(tmp.path());
         let result = scan_antigravity_cli();
-        // Either root bypassed perms (result=Some) or EACCES was raised
-        // (result=None). Both are acceptable; the requirement is "no panic".
         assert!(
             result.is_some() || result.is_none(),
             "scan must return Some or None, not panic"
         );
     }
-
-    // --- Valid token file without refresh_token ---
 
     #[test]
     fn adv_file_without_refresh_token() {
@@ -656,8 +628,6 @@ mod adversarial_tests {
         );
     }
 
-    // --- scan_external_accounts returns vec ---
-
     #[test]
     fn adv_scan_external_accounts_returns_vec() {
         let result = scan_external_accounts();
@@ -666,8 +636,6 @@ mod adversarial_tests {
             "scan_external_accounts returns a Vec (never panics)"
         );
     }
-
-    // --- File with deeply nested valid JSON but no access_token ---
 
     #[test]
     fn adv_deeply_nested_json_without_token() {
@@ -689,14 +657,11 @@ mod adversarial_tests {
 
         let _guard = lock();
         let _home = HomeGuard::set(tmp.path());
-        // access_token is an object, not a string → as_str() returns None
         assert!(
             scan_antigravity_cli().is_none(),
             "nested object access_token must return None"
         );
     }
-
-    // --- Zero-byte file ---
 
     #[test]
     fn adv_zero_byte_file_returns_none() {
@@ -717,8 +682,6 @@ mod adversarial_tests {
         );
     }
 
-    // --- File with just whitespace ---
-
     #[test]
     fn adv_whitespace_only_file_returns_none() {
         let tmp = tempdir();
@@ -737,8 +700,6 @@ mod adversarial_tests {
             "whitespace-only file must return None"
         );
     }
-
-    // --- DiscoveredAccount preserves source_path ---
 
     #[test]
     fn adv_source_path_matches_actual_file() {

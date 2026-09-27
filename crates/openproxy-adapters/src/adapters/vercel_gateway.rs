@@ -1,6 +1,4 @@
-// =====================================================================
 // Vercel AI Gateway
-// =====================================================================
 
 declare_openai_adapter!(
     /// Adapter for Vercel AI Gateway (<https://ai-gateway.vercel.sh>).

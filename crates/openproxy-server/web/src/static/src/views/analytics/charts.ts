@@ -1,9 +1,4 @@
-// views/analytics/charts.ts — chart instances + lifecycle, preset selector
-// toolbar, and the chart/data-binding glue. uPlot daily-usage chart and
-// the time-range preset buttons live here. The view-local `charts`
-// reference is held in `shared.ts`; this module owns the
-// create/destroy cycle and the post-render `requestAnimationFrame` call
-// that re-creates the chart when the data refreshes.
+// views/analytics/charts.ts — uPlot instances + lifecycle, preset/toolbar templates.
 
 import { html, type TemplateResult } from "lit-html";
 import {
@@ -24,16 +19,13 @@ import {
   type AnalyticsCharts,
 } from "./shared.js";
 
-/** Create the uPlot chart instance after the first data-bearing
- *  render. Idempotent — no-op if `charts` is already set. */
+/** Create the uPlot chart instance after the first data-bearing render. Idempotent. */
 export function createAnalyticsCharts(): void {
   if (charts) return;
 
   const dailyEl: HTMLElement | null = document.getElementById("chart-daily-usage");
   if (!dailyEl) {
-    // Containers not in the DOM yet — the loading state hasn't
-    // cleared, or the render hasn't committed. The caller should
-    // defer via requestAnimationFrame.
+    // Containers absent: the render hasn't committed. Caller defers via rAF.
     return;
   }
 
@@ -44,12 +36,10 @@ export function createAnalyticsCharts(): void {
   const instance: AnalyticsCharts = { dailyUsage, resizeDisposers };
   setCharts(instance);
 
-  // Push the current data into the new chart immediately.
   dailyUsage.setData(dailyUsageData(byDay));
 }
 
-/** Destroy all uPlot instances + disconnect their ResizeObservers.
- *  Called on view unmount. */
+/** Destroy all uPlot instances + disconnect their ResizeObservers. */
 export function destroyAnalyticsCharts(): void {
   if (!charts) return;
   for (const disposer of charts.resizeDisposers) {

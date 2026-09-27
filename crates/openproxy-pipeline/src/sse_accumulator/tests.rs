@@ -436,7 +436,6 @@ fn test_adversarial_exact_256k_boundary_and_overfill() {
     );
     assert!(v_exact["choices"][0]["message"].get("truncated").is_none());
 
-    // Next 1 byte should trigger truncation
     acc.append_openai_raw(r#"{"choices":[{"delta":{"content":"b"}}]}"#);
     assert!(acc.is_truncated());
     assert_eq!(acc.content_text().len(), 262_144);
@@ -464,7 +463,6 @@ fn test_adversarial_single_oversized_chunk_1mib() {
 #[test]
 fn test_adversarial_multibyte_utf8_exact_and_overflow() {
     let mut acc = ResponseAccumulator::new();
-    // '🦀' is 4 bytes in UTF-8. 262,144 / 4 = 65,536 crabs.
     let crabs = "🦀".repeat(65_536);
     acc.append_openai_raw(&format!(
         r#"{{"choices":[{{"delta":{{"content":"{crabs}"}}}}]}}"#
@@ -472,7 +470,6 @@ fn test_adversarial_multibyte_utf8_exact_and_overflow() {
     assert!(!acc.is_truncated());
     assert_eq!(acc.content_text().len(), 262_144);
 
-    // Adding another crab should exceed cap
     acc.append_openai_raw(r#"{"choices":[{"delta":{"content":"🦀"}}]}"#);
     assert!(acc.is_truncated());
     assert_eq!(acc.content_text().len(), 262_144);
@@ -498,7 +495,6 @@ fn test_adversarial_incremental_chunks_boundary() {
     }
     assert_eq!(acc.content_text().len(), 262_144);
 
-    // 257th chunk (1 byte)
     acc.append_openai_raw(r#"{"choices":[{"delta":{"content":"!"}}]}"#);
     assert!(acc.is_truncated());
     assert_eq!(acc.content_text().len(), 262_144);
@@ -518,7 +514,6 @@ fn test_adversarial_content_plus_reasoning_boundary() {
     acc.append_reasoning(&half_reasoning);
     assert!(!acc.is_truncated());
 
-    // Adding 1 byte of reasoning
     acc.append_reasoning("x");
     assert!(acc.is_truncated());
 

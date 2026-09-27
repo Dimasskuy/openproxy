@@ -1,30 +1,15 @@
-// components/render-op-modal.ts — reusable render function for
-// operation modals (create/edit/delete flows). Plain lit-html
-// template + DOM handle; not a Web Component.
+// components/render-op-modal.ts — reusable render function for operation modals
+// (create/edit/delete). Plain lit-html template + DOM handle, not a Web Component:
+// every consumer already renders via `render(template, container)`, so a LitElement
+// would add ~30KB for no benefit (REFACTOR_SPEC.md Q7).
 //
-// Per REFACTOR_SPEC.md Q7 the codebase standardised on
-// `export function xxx(props): TemplateResult` (see the original
-// `components/modal.ts`) instead of `<op-modal>` LitElement. Forcing
-// LitElement would have added ~30KB to the bundle for zero benefit
-// since every consumer is already rendering via `render(template,
-// container)` from the lit-html package.
+// Returns `{ el, close }`: `el` is the wrapper `<div>` appended to `#modal-root` (or
+// `document.body`) that form-submit handlers can `remove()`, and `close()` tears down
+// the wrapper, drops the global keydown listener, fires `onClose`, and is idempotent.
 //
-// The function returns `{ el, close }`:
-//   - `el` is the wrapper `<div>` appended to `#modal-root` (or
-//     `document.body` as a fallback) that the caller can target
-//     from form-submit handlers via `wrapper.remove()`.
-//   - `close()` tears down the wrapper, removes the global
-//     keydown listener, fires `onClose`, and is idempotent (safe
-//     to call multiple times).
-//
-// Behavior contract (REFACTOR_SPEC §4.1):
-//   - Focus trap: Tab/Shift+Tab cycle within the modal.
-//   - Escape closes the modal (calls `onClose`, removes DOM).
-//   - Backdrop click closes the modal (target === .modal-bg).
-//   - ARIA: `role="dialog"`, `aria-modal="true"`, header has the
-//     labelled-by id.
-//   - `prefers-reduced-motion` is respected via the existing CSS
-//     animation rule on `.modal` (no extra JS hook needed).
+// Contract (REFACTOR_SPEC §4.1): focus trap on Tab/Shift+Tab; Escape and backdrop click
+// close the modal; `role="dialog"` + `aria-modal="true"` + labelled header;
+// `prefers-reduced-motion` handled by the existing `.modal` CSS animation rule.
 
 import { html, render, type TemplateResult } from "lit-html";
 import { ensureModalRoot } from "../lib/ui-utils.js";
@@ -37,7 +22,7 @@ export interface OpModalProps {
   onClose?: () => void;
 }
 
-/** Returned handle to a mounted modal. */
+/** Handle to a mounted modal. */
 export interface OpModalHandle {
   /** The wrapper `<div>` containing the rendered `.modal-bg`. */
   el: HTMLElement;
@@ -45,16 +30,10 @@ export interface OpModalHandle {
   close: () => void;
 }
 
-/**
- * Render a modal into `#modal-root` and return a handle.
- *
- * The caller can pass the returned `el` to their form-submit handler
- * and call `el.remove()` (or `handle.close()`) on success, which is
- * the same pattern the rest of the dashboard already uses with its
- * ad-hoc `wrapper` divs. The only difference is that this version
- * also wires the escape key, backdrop click, and focus trap so the
- * caller doesn't have to.
- */
+/** Render a modal into `#modal-root` and return a handle. Callers pass the returned `el`
+ *  to their submit handler and call `el.remove()` (or `close()`) — the same wrapper-div
+ *  pattern the rest of the dashboard uses; this version also wires escape key, backdrop
+ *  click and focus trap. */
 export function renderOpModal(props: OpModalProps): OpModalHandle {
   const { title, body, actions, danger = false, onClose } = props;
 
@@ -90,8 +69,7 @@ export function renderOpModal(props: OpModalProps): OpModalHandle {
       aria-modal="true"
       aria-labelledby=${titleId}
       @click=${(e: Event) => {
-        // Backdrop click only — `.modal` stops propagation in its
-        // own @click handler below.
+        // Backdrop click only — `.modal` stops propagation in its own @click below.
         if (e.target === e.currentTarget) close();
       }}
     >
@@ -116,8 +94,7 @@ export function renderOpModal(props: OpModalProps): OpModalHandle {
   render(template, wrapper);
   window.addEventListener("keydown", onKeydown, true);
 
-  // Focus the first focusable element inside the modal so keyboard
-  // users land on a real control rather than the backdrop.
+  // Focus the first focusable so keyboard users land on a real control, not the backdrop.
   const firstFocusable = wrapper.querySelector<HTMLElement>(
     'input, select, textarea, button, a[href], [tabindex]:not([tabindex="-1"])',
   );
@@ -126,29 +103,21 @@ export function renderOpModal(props: OpModalProps): OpModalHandle {
   return { el: wrapper, close };
 }
 
-/**
- * Focus trap: keep Tab/Shift+Tab cycling within the modal. We
- * resolve the live focusable list on every event because the body
- * (e.g. dynamically rendered scopes in the key modal) can change
- * the candidate set between keystrokes.
- */
+/** Focus trap: Tab/Shift+Tab cycle within the modal. The focusable list is resolved per
+ *  event because the body (e.g. the key modal's dynamic scopes) can change the candidate
+ *  set between keystrokes. */
 function trapFocus(e: KeyboardEvent): void {
   const modal = (e.currentTarget as Window | null) ?? null;
-  // We can't read `wrapper` from here, so we re-derive from the
-  // active element: the keydown listener is bound to `window`, so
-  // we walk up from `document.activeElement` to the nearest
-  // `.modal-bg`. That is the modal the user is interacting with.
+  // `wrapper` isn't reachable from here (listener is bound to `window`), so walk up from
+  // `document.activeElement` to the nearest `.modal-bg` — the modal being interacted with.
   const active = document.activeElement;
   const modalBg = active instanceof Element ? active.closest(".modal-bg") : null;
   const root = modalBg ?? document.querySelector(".modal-bg");
   if (!root) return;
   void modal;
-  // We deliberately skip the `offsetParent !== null` check (used by
-  // the spec for visibility filtering) because jsdom — where most
-  // of the dashboard's unit tests run — does not implement
-  // layout, so every `offsetParent` is `null`. We trust the
-  // CSS `:disabled`/`:hidden` selectors instead; that is also
-  // closer to the user-visible truth.
+  // No `offsetParent !== null` visibility filter: jsdom (where most dashboard unit tests
+  // run) has no layout, so every `offsetParent` is null. The CSS `:disabled`/`:hidden`
+  // selectors are also closer to user-visible truth.
   const focusables = Array.from(
     root.querySelectorAll<HTMLElement>(
       'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',

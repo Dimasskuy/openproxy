@@ -1,6 +1,5 @@
 //! Compile-time static set of stopwords for PII heuristics.
 
-/// Alphabetically sorted static array of stopwords for O(log N) lookup.
 const STOPWORDS: &[&str] = &[
     "about",
     "above",
@@ -337,7 +336,6 @@ const STOPWORDS: &[&str] = &[
     "your",
 ];
 
-/// Checks whether a word is in the stopwords set (case-insensitive, zero-alloc when already lowercase).
 #[inline]
 pub fn is_stopword(word: &str) -> bool {
     if word.bytes().all(|b| !b.is_ascii_uppercase()) {

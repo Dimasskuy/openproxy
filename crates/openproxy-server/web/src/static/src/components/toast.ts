@@ -1,6 +1,5 @@
-// components/toast.ts — short-lived non-blocking notification.
-// Migrated to lit-html + container stacking: toasts stack vertically
-// in #toast-container with individual dismiss controls and hover pause.
+// components/toast.ts — short-lived non-blocking notification. Toasts stack vertically
+// in #toast-container with per-toast dismiss controls and hover pause.
 
 import { html, render } from "lit-html";
 import { icons } from "../lib/icons.js";

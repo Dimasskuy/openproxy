@@ -231,7 +231,7 @@ impl OAuthProvider for MiniMaxOAuthProvider {
             },
         );
 
-        // Also track user_code in case polling uses user_code
+        // polling may key on user_code instead
         PENDING_AUTH.insert(
             user_code.clone(),
             PendingDeviceAuth {
@@ -294,7 +294,7 @@ impl OAuthProvider for MiniMaxOAuthProvider {
         let (status, body_bytes) =
             poll_token_request(upstream_client, &endpoint, code_key, code_val, &verifier).await?;
 
-        // If 400 with invalid_request, try alternative parameter key (user_code <-> device_code)
+        // 400 invalid_request: retry with the other parameter key
         let (status, body_bytes) = if status.as_u16() == 400 {
             if let Ok(err_json) = serde_json::from_slice::<serde_json::Value>(&body_bytes) {
                 let error = err_json.get("error").and_then(serde_json::Value::as_str);
@@ -316,7 +316,7 @@ impl OAuthProvider for MiniMaxOAuthProvider {
             (status, body_bytes)
         };
 
-        // 400 or 428 standard pending responses
+        // 400 / 428 is the standard pending response
         if status.as_u16() == 400 || status.as_u16() == 428 {
             if let Ok(err_json) = serde_json::from_slice::<serde_json::Value>(&body_bytes) {
                 let error = err_json.get("error").and_then(serde_json::Value::as_str);
@@ -518,7 +518,7 @@ impl OAuthProvider for MiniMaxOAuthProvider {
             .as_deref()
             .map_or_else(resolve_default_region, MiniMaxRegion::parse_str);
 
-        // 1. Resolve user identity (real_user_id + email + display_name)
+        // user identity first
         let identity = resolve_user_identity(upstream, &access_token, region).await;
 
         let real_user_id = current_meta
@@ -532,7 +532,7 @@ impl OAuthProvider for MiniMaxOAuthProvider {
             current_meta.email = Some(em.clone());
         }
 
-        // 2. Perform initial checkin right upon login (claims points if claimable)
+        // checkin immediately so claimed points count toward the next read
         if let Ok(summary) =
             checkin::execute_daily_checkin(upstream, &access_token, &real_user_id, region).await
         {
@@ -548,7 +548,7 @@ impl OAuthProvider for MiniMaxOAuthProvider {
                 Some(chrono::Utc::now().format("%Y-%m-%d").to_string());
         }
 
-        // 3. Resolve op_group_id, workspace tier & credits (after checkin so newly claimed points are included)
+        // workspace tier and credits after checkin
         if let Some((op_group_id, tier, credits)) =
             resolve_membership_info(upstream, &access_token, &real_user_id, region).await
         {
@@ -561,7 +561,7 @@ impl OAuthProvider for MiniMaxOAuthProvider {
             }
         }
 
-        // 4. Save updated metadata, email, and display label to DB
+        // persist metadata, email and display label
         let meta_json = serde_json::to_string(&current_meta)
             .map_err(|e| CoreError::Parse(format!("serialize meta: {e}")))?;
 

@@ -19,11 +19,11 @@ export function looksLikeApiKey(token: string): boolean {
   const cleaned = cleanApiKeyToken(token);
   if (cleaned.length < 8) return false;
 
-  // 1. Google AI Studio (AIzaSy...) & Vertex OAuth/refresh (AQ.Ab...)
+  // 1. Google AI Studio (AIzaSy…) and Vertex OAuth/refresh (AQ.Ab…)
   if (/^AIza[0-9A-Za-z\-_]{30,}$/.test(cleaned)) return true;
   if (/^AQ\.[a-zA-Z0-9_\-\.]{20,}$/.test(cleaned)) return true;
 
-  // 2. JWT tokens (eyJh...)
+  // 2. JWTs (eyJh…)
   if (/^eyJh[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+$/.test(cleaned)) return true;
 
   // 3. UUIDs: 8-4-4-4-12
@@ -31,12 +31,12 @@ export function looksLikeApiKey(token: string): boolean {
     return true;
   }
 
-  // 4. Hex strings >= 32 chars (support 32 up to 128 hex chars)
+  // 4. Hex strings ≥ 32 chars (32–128)
   if (/^[0-9a-f]{32,128}$/i.test(cleaned)) {
     return true;
   }
 
-  // 5. Generalized prefixed keys: 2-10 alphanumeric prefix + '-' or '_' + >= 12 chars token
+  // 5. Prefixed keys: 2–10 alphanumeric prefix + '-' or '_' + a ≥ 12 char token
   if (/^[a-zA-Z0-9]{2,10}[-_][a-zA-Z0-9_\-\.]{12,}$/.test(cleaned)) {
     const hasDigit = /[0-9]/.test(cleaned);
     const hasMixed = /[a-z]/.test(cleaned) && /[A-Z]/.test(cleaned);
@@ -199,7 +199,7 @@ export function parseBulkApiKeys(rawText: string): ParsedKeyEntry[] {
         }
       }
     } catch {
-      // Fall through
+      // Fall through.
     }
   }
 
@@ -210,7 +210,7 @@ export function parseBulkApiKeys(rawText: string): ParsedKeyEntry[] {
     let line = rawLine.trim();
     if (!line) continue;
 
-    // Check if line is purely a comment (starts with # or //)
+    // Whole-line comment (starts with # or //)
     if (/^(?:#|\/\/)/.test(line)) {
       const strippedComment = line.replace(/^(?:#|\/\/)\s*/, "").trim();
       if (looksLikeApiKey(strippedComment) || (!strippedComment.includes(" ") && strippedComment.length >= 8)) {
@@ -227,7 +227,7 @@ export function parseBulkApiKeys(rawText: string): ParsedKeyEntry[] {
     // Strip markdown list markers: "1. ", "- ", "* ", "• ", "[1] "
     line = line.replace(/^(?:[-*+•]|\d+[\.\)]|\[\d+\])\s+/, "").trim();
 
-    // Check for inline comment: "key # label" or "key // label"
+    // Inline comment: "key # label" or "key // label"
     let inlineComment: string | undefined;
     const commentIdx = line.search(/\s+(?:#|\/\/)\s+/);
     if (commentIdx !== -1) {
@@ -235,7 +235,7 @@ export function parseBulkApiKeys(rawText: string): ParsedKeyEntry[] {
       line = line.slice(0, commentIdx).trim();
     }
 
-    // Check for env var syntax: export KEY="val" or KEY="val"
+    // Env var syntax: export KEY="val" or KEY="val"
     const envMatch = line.match(/^(?:export\s+)?([A-Za-z0-9_]+)\s*=\s*(.+)$/);
     if (envMatch && envMatch[1] && envMatch[2]) {
       const varName = envMatch[1];
@@ -249,7 +249,7 @@ export function parseBulkApiKeys(rawText: string): ParsedKeyEntry[] {
       }
     }
 
-    // Check for delimiter `:` or `=` or `|` or `\t` (e.g. "Label: sk-...")
+    // Label delimiter `:` `=` `|` or tab (e.g. "Label: sk-...")
     if (!line.startsWith("http://") && !line.startsWith("https://")) {
       const delimMatch = line.match(/^([^:=|\t]+)\s*[:=|\t]\s*(.+)$/);
       if (delimMatch && delimMatch[1] && delimMatch[2]) {
@@ -275,7 +275,7 @@ export function parseBulkApiKeys(rawText: string): ParsedKeyEntry[] {
       }
     }
 
-    // Strip Bearer prefix if present
+    // Strip a Bearer prefix if present
     if (/^bearer\s+/i.test(line)) {
       line = cleanApiKeyToken(line.replace(/^bearer\s+/i, ""));
     }
@@ -283,8 +283,7 @@ export function parseBulkApiKeys(rawText: string): ParsedKeyEntry[] {
     // Strip outer quotes
     line = cleanApiKeyToken(line);
 
-    // If line has no spaces and is >= 6 characters:
-    // It's a clean 1-key-per-line entry
+    // No spaces and ≥ 6 chars: a clean one-key-per-line entry
     if (!line.includes(" ") && line.length >= 6) {
       entries.push({
         key: line,
@@ -293,7 +292,7 @@ export function parseBulkApiKeys(rawText: string): ParsedKeyEntry[] {
       continue;
     }
 
-    // If line has multiple comma or semicolon separated tokens
+    // Comma/semicolon separated tokens
     if (line.includes(",") || line.includes(";")) {
       const parts = line.split(/[,;]/).map(cleanApiKeyToken).filter(Boolean);
       const allLookLikeKeys =

@@ -1,6 +1,3 @@
-/* ============================================
-   BASE — reset, html, body, typography
-   ============================================ */
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -136,15 +133,9 @@ hr {
 .empty { color: var(--color-text-muted); font-style: italic; }
 .loading { color: var(--color-text-muted); padding: var(--space-4); }
 
-/* ==========
-   ACCESSIBILITY — prefers-reduced-motion, focus-visible
-   ========== */
-
-/* Suppress all animation/transition for users who opt out of
-   motion via their OS setting. The class is toggled by
-   motion-provider.ts which reads matchMedia("prefers-reduced-motion").
-   High specificity (.reduced-motion *) ensures these overrides
-   win in the cascade against per-element rules. */
+/* .reduced-motion is set by motion-provider.ts from
+   matchMedia("prefers-reduced-motion"). The high specificity keeps these
+   overrides winning against per-element rules. */
 .reduced-motion,
 .reduced-motion * {
   animation-duration: 0.01ms !important;
@@ -153,8 +144,7 @@ hr {
   scroll-behavior: auto !important;
 }
 
-/* Focus-visible: visible ring only for keyboard navigation.
-   Mouse / touch clicks get no outline (smoother UX). */
+/* Ring for keyboard navigation only. */
 :focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;

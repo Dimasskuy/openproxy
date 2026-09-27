@@ -2,11 +2,10 @@
 //! response into the OpenAI Responses envelope expected by
 //! `POST /v1/responses` clients.
 //!
-//! Lives here (and not in `openproxy-types`) because the conversion is
-//! wire-format policy specific to the pipeline layer; the types crate
-//! stays pure data per AGENTS.md §2.
-//!
-//! See `docs/specs/antigravity-gaps-p2.md` §3.3.4 (GAP-2 N1 fix).
+//! Lives here rather than in `openproxy-types` because the conversion is
+//! wire-format policy specific to the pipeline layer, and the types crate stays
+//! pure data (AGENTS.md §2). Rationale in
+//! `docs/specs/antigravity-gaps-p2.md` §3.3.4.
 
 use openproxy_types::OpenAIResponse;
 use serde_json::{Value, json};
@@ -14,9 +13,9 @@ use serde_json::{Value, json};
 /// Extension trait for [`OpenAIResponse`] that produces the wire shape
 /// expected by the `/v1/responses` endpoint.
 pub trait ResponseExt {
-    /// Build the Responses-shaped JSON envelope from the internal
-    /// chat-completion response. Pure function; allocates a fresh
-    /// `serde_json::Value` (one `Vec` per choice + one `Value::Object`).
+    /// Build the Responses-shaped JSON envelope from the internal chat-completion
+    /// response. Pure; allocates a fresh `Value` (one `Vec` per choice + one
+    /// `Value::Object`).
     fn to_responses_envelope(&self) -> Value;
 }
 

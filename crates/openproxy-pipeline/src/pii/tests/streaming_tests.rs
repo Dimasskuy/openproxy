@@ -171,7 +171,6 @@ fn test_streaming_person_name_restoration_first_and_full() {
 
     let mut sse = PiiRestorationStage::new(&session);
 
-    // 1. First name only in streaming: "¡Hola " + "Alex" + "! ¿Cómo estás?"
     assert_eq!(
         sse.process_frame("data: {\"choices\":[{\"delta\":{\"content\":\"¡Hola \"}}]}\n\n"),
         "data: {\"choices\":[{\"delta\":{\"content\":\"¡Hola \"}}]}\n\n"
@@ -185,7 +184,6 @@ fn test_streaming_person_name_restoration_first_and_full() {
         "data: {\"choices\":[{\"delta\":{\"content\":\"Miguel! ¿Cómo estás?\"}}]}\n\n"
     );
 
-    // 2. Full name across chunks: "Alex" + " Vance"
     assert_eq!(
         sse.process_frame("data: {\"choices\":[{\"delta\":{\"content\":\"Bienvenido \"}}]}\n\n"),
         "data: {\"choices\":[{\"delta\":{\"content\":\"Bienvenido \"}}]}\n\n"

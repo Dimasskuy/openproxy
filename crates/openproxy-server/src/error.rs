@@ -135,18 +135,16 @@ impl IntoResponse for ApiError {
     }
 }
 
-/// Maximum length, in bytes, of the `error.message` we ship back to
-/// our client. Matches the `redact_error_msg` cap used for the DB
-/// (`cost.rs`), so the API response and the persisted row never
-/// disagree on how big an error message can be.
+/// Maximum length, in bytes, of the `error.message` returned to the client.
+/// Matches the `redact_error_msg` cap in `cost.rs` so the API response and the
+/// persisted row never disagree on message size.
 const API_ERROR_MESSAGE_MAX: usize = 2048;
 
 pub(crate) fn truncate_error_message(raw: &str) -> std::borrow::Cow<'_, str> {
     if raw.len() <= API_ERROR_MESSAGE_MAX {
         return std::borrow::Cow::Borrowed(raw);
     }
-    // Walk back to a valid UTF-8 boundary so we never slice a code
-    // point in half. `is_char_boundary` is O(1) so this stays cheap.
+    // Walk back to a UTF-8 boundary so no code point is split (O(1) per check).
     let mut idx = API_ERROR_MESSAGE_MAX;
     while idx > 0 && !raw.is_char_boundary(idx) {
         idx -= 1;
@@ -183,8 +181,8 @@ mod tests {
 
     #[test]
     fn truncate_error_message_respects_utf8_boundaries() {
-        // Multi-byte chars at the cap boundary. The truncation must
-        // land on a char boundary, not split a code point.
+        // Multi-byte chars straddling the cap: the cut must land on a char
+        // boundary, never mid code point.
         let mut s = String::new();
         while s.len() < API_ERROR_MESSAGE_MAX + 10 {
             s.push('\u{2603}'); // 3-byte snowman

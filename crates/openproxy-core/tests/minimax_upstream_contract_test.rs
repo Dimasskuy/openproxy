@@ -23,7 +23,6 @@ fn test_minimax_golden_contract_spec_parity() {
         .expect("lock minimax test lock");
     openproxy_adapters::spoofer::reset_dynamic_minimax_overrides();
 
-    // 1. OAuth client identity
     assert_eq!(CLIENT_ID, "mcode-public");
     assert_eq!(SCOPE, "agent.default");
     assert_eq!(AUDIENCE, "agent-backend");
@@ -32,7 +31,6 @@ fn test_minimax_golden_contract_spec_parity() {
         "urn:ietf:params:oauth:grant-type:device_code"
     );
 
-    // 2. Region origins
     assert_eq!(
         MiniMaxRegion::Global.account_origin(),
         "https://account.minimax.io"
@@ -58,7 +56,6 @@ fn test_minimax_golden_contract_spec_parity() {
         "https://platform.minimaxi.com"
     );
 
-    // 3. Attribution query parameters for verification URL
     let url =
         build_complete_verification_uri("https://account.minimax.io/oauth-authorize", "LRAR-BW2A");
     assert!(
@@ -74,13 +71,11 @@ fn test_minimax_golden_contract_spec_parity() {
         "must attribute download_source=mcode-internal"
     );
 
-    // 4. Sign-in day status codes
     assert_eq!(SigninDayStatus::Upcoming as u8, 1);
     assert_eq!(SigninDayStatus::Claimable as u8, 2);
     assert_eq!(SigninDayStatus::Claimed as u8, 3);
     assert_eq!(SigninDayStatus::Disabled as u8, 4);
 
-    // 5. Model discovery & catalog parity for OAuth (golden contract spec)
     let builtin_models = openproxy_adapters::adapters::minimax::minimax_builtin_models();
     let model_map: std::collections::HashMap<_, _> = builtin_models
         .iter()
@@ -92,7 +87,7 @@ fn test_minimax_golden_contract_spec_parity() {
         })
         .collect();
 
-    // Upstream MiniMax-M3.1-Flash-Preview spec: 1M context, 128k output, Anthropic format
+    // upstream M3.1-Flash-Preview: 1M context, 128k output, Anthropic format
     assert_eq!(
         model_map.get("MiniMax-M3.1-Flash-Preview"),
         Some(&(
@@ -101,7 +96,7 @@ fn test_minimax_golden_contract_spec_parity() {
             openproxy_types::TargetFormat::Anthropic
         ))
     );
-    // Upstream MiniMax-M3 spec: 1M context, 128k output, Anthropic format
+    // upstream M3: 1M context, 128k output, Anthropic format
     assert_eq!(
         model_map.get("MiniMax-M3"),
         Some(&(
@@ -110,7 +105,7 @@ fn test_minimax_golden_contract_spec_parity() {
             openproxy_types::TargetFormat::Anthropic
         ))
     );
-    // Upstream MiniMax-M2.7-highspeed spec: 200k context, 128k output, Anthropic format
+    // upstream M2.7-highspeed: 200k context, 128k output, Anthropic format
     assert_eq!(
         model_map.get("MiniMax-M2.7-highspeed"),
         Some(&(
@@ -119,7 +114,7 @@ fn test_minimax_golden_contract_spec_parity() {
             openproxy_types::TargetFormat::Anthropic
         ))
     );
-    // Upstream MiniMax-M2.7 spec: 200k context, 128k output, Anthropic format
+    // upstream M2.7: 200k context, 128k output, Anthropic format
     assert_eq!(
         model_map.get("MiniMax-M2.7"),
         Some(&(
@@ -129,7 +124,6 @@ fn test_minimax_golden_contract_spec_parity() {
         ))
     );
 
-    // 6. Agent inference headers parity (golden contract spec)
     let adapter = openproxy_adapters::adapters::minimax::MiniMaxAdapter::new();
     let model = openproxy_types::ModelId::new("MiniMax-M3");
     let headers = adapter.build_headers(
@@ -153,14 +147,14 @@ fn test_minimax_golden_contract_spec_parity() {
     assert_eq!(find_hdr("x-api-key"), None);
     assert_eq!(find_hdr("Content-Type"), Some("application/json"));
 
-    // 7. Chat URL parity for managed-login preset
+    // managed-login preset chat URL
     assert_eq!(
         adapter.build_chat_url(openproxy_types::TargetFormat::Anthropic, &model),
         "https://agent.minimax.io/mavis/api/v1/llm/v1/messages",
         "MiniMax Coding adapter must default to managed-login agent endpoint"
     );
 
-    // 8. BYOK API key header parity (sk-... expects X-Api-Key)
+    // BYOK: sk-... keys go out as X-Api-Key
     let headers_byok = adapter.build_headers(
         "sk-secret123",
         openproxy_types::TargetFormat::Anthropic,
@@ -182,7 +176,7 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
     let raw_base = "https://raw.githubusercontent.com/MiniMax-AI/minimax-code/main";
     let client = UpstreamClient::new();
 
-    // Probe connectivity first with a lightweight HEAD/GET
+    // connectivity probe before the full fetch
     let probe_url = format!("{raw_base}/packages/oauth-core/src/contracts.ts");
     let req = UpstreamRequest::get(&probe_url);
     let cancel = CancellationToken::new();
@@ -205,7 +199,6 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
     let contracts_bytes = resp.collect().await.expect("read contracts.ts body");
     let contracts_ts = String::from_utf8_lossy(&contracts_bytes);
 
-    // 1. Verify OAuth contract constants against upstream contracts.ts
     assert!(
         contracts_ts.contains(&format!("'{CLIENT_ID}'")),
         "Upstream contracts.ts diverged from CLIENT_ID = {CLIENT_ID}"
@@ -219,7 +212,6 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
         "Upstream contracts.ts diverged from AUDIENCE = {AUDIENCE}"
     );
 
-    // 2. Verify endpoints from endpoint-config.ts
     let endpoint_cfg_url = format!("{raw_base}/packages/oauth-core/src/endpoint-config.ts");
     let resp = client
         .call(
@@ -249,7 +241,6 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
         "Upstream endpoint-config.ts missing CN account origin"
     );
 
-    // 3. Verify TUI attribution query parameters from authorization-url.ts
     let auth_url_ts_url = format!("{raw_base}/packages/tui/src/auth/authorization-url.ts");
     let resp = client
         .call(
@@ -274,7 +265,6 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
         "Upstream authorization-url.ts diverged from download_source=mcode-internal"
     );
 
-    // 4. Verify checkin paths from http-gateway.ts
     let http_gateway_url = format!("{raw_base}/packages/tui/src/checkin/http-gateway.ts");
     let resp = client
         .call(
@@ -296,7 +286,6 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
         "Upstream http-gateway.ts missing /minimax-cloud/api/v1/signin/claim"
     );
 
-    // 5. Verify signin statuses from daily-signin.ts
     let daily_signin_url = format!("{raw_base}/packages/shared/src/daily-signin.ts");
     let resp = client
         .call(
@@ -326,7 +315,6 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
         "Upstream daily-signin.ts status enum diverged for Disabled"
     );
 
-    // 6. Verify Matrix attribution signatures, secrets, and paths from matrix-account-client.ts
     let matrix_client_url = format!("{raw_base}/packages/tui/src/account/matrix-account-client.ts");
     let resp = client
         .call(
@@ -384,7 +372,6 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
         "Upstream matrix-account-client.ts missing x-timestamp header"
     );
 
-    // 7. Verify LLM inference format and base URL from minimax-api.ts
     let llm_api_url =
         format!("{raw_base}/packages/local-runtime/src/model-provider/minimax-api.ts");
     let resp = client
@@ -411,7 +398,6 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
         "Upstream minimax-api.ts missing China API base URL"
     );
 
-    // 8. Verify model catalog constants and managed-login preset from config.ts
     let config_ts_url = format!("{raw_base}/packages/config/src/config.ts");
     let resp = client
         .call(
@@ -433,7 +419,6 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
         .expect("find end of MINIMAX_MODELS");
     let models_block = &config_ts[start_idx..end_idx];
 
-    // Verify upstream defines the 3 managed models with exact specs
     assert!(
         models_block.contains("\"MiniMax-M3\":"),
         "upstream missing MiniMax-M3"
@@ -459,7 +444,7 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
         "context limit for M2.7 models diverged"
     );
 
-    // Cross-check 1:1 against OpenProxy's builtin catalog
+    // cross-check against OpenProxy's builtin catalog
     let builtin_models = openproxy_adapters::adapters::minimax::minimax_builtin_models();
     let m3 = builtin_models
         .iter()
@@ -482,14 +467,12 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
     assert_eq!(m27.context_length, Some(200_000));
     assert_eq!(m27.max_output_tokens, Some(128_000));
 
-    // Verify dynamic model absorption from upstream config.ts
     let dynamically_parsed = openproxy_adapters::adapters::minimax::parse_minimax_config_ts(&config_ts)
         .expect("dynamically parse upstream MINIMAX_MODELS");
     assert!(dynamically_parsed.iter().any(|m| m.model_id.as_str() == "MiniMax-M3"));
     assert!(dynamically_parsed.iter().any(|m| m.model_id.as_str() == "MiniMax-M2.7-highspeed"));
     assert!(dynamically_parsed.iter().any(|m| m.model_id.as_str() == "MiniMax-M2.7"));
 
-    // Preset managed login routing check
     assert!(
         config_ts.contains("authMode: \"managed-login\""),
         "Upstream config.ts missing authMode: managed-login preset"
@@ -503,7 +486,7 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
         "Upstream config.ts missing China managed preset base URL"
     );
 
-    // 9. Dynamic header scanner: verify ALL agent inference headers from model-resolver-helpers.ts
+    // all agent inference headers from model-resolver-helpers.ts must exist in our adapter
     let helpers_ts_url = format!(
         "{raw_base}/packages/local-runtime-v2/src/service/model-system/resolution/model-resolver-helpers.ts"
     );
@@ -538,7 +521,7 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
         &model,
     );
 
-    // Extract all string literal header keys from buildLocalProviderHeaders
+    // string literal header keys inside buildLocalProviderHeaders
     let mut scanned_headers = Vec::new();
     for line in fn_body.lines() {
         let trimmed = line.trim();
@@ -578,7 +561,7 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
         "Scanner must find User-Agent"
     );
 
-    // Fail if upstream ever introduces a new header in buildLocalProviderHeaders that OpenProxy lacks
+    // any header upstream adds to buildLocalProviderHeaders must exist in our adapter
     for upstream_header in &scanned_headers {
         assert!(
             our_headers
@@ -588,7 +571,7 @@ async fn test_minimax_remote_upstream_live_contract_parity() {
         );
     }
 
-    // 10. Verify live chat URL parity against upstream managed-login preset
+    // live chat URL parity against the upstream managed-login preset
     assert_eq!(
         adapter.build_chat_url(openproxy_types::TargetFormat::Anthropic, &model),
         "https://agent.minimax.io/mavis/api/v1/llm/v1/messages",
@@ -612,7 +595,6 @@ fn test_minimax_dynamic_spoofer_and_endpoint_resolution() {
     let _guard = MINIMAX_TEST_LOCK.lock().expect("lock minimax test lock");
     reset_dynamic_minimax_overrides();
 
-    // 1. Default MiniMaxSpoofer contract verification
     let spoofer = MiniMaxSpoofer;
     let headers = spoofer.headers();
     let find_hdr = |k: &str| {
@@ -631,7 +613,6 @@ fn test_minimax_dynamic_spoofer_and_endpoint_resolution() {
         "MiniMaxSpoofer must generate a valid session ID"
     );
 
-    // 2. Dynamic in-memory spoofer overrides verification
     set_dynamic_minimax_ua("MiniMaxAgent-Custom/2.5");
     set_dynamic_minimax_anthropic_version("2024-01-01");
     set_dynamic_minimax_extra_header("X-Mavis-Agent-Id", "openproxy-worker");
@@ -652,20 +633,17 @@ fn test_minimax_dynamic_spoofer_and_endpoint_resolution() {
 
     reset_dynamic_minimax_overrides();
 
-    // 3. Dynamic endpoint and origin resolution verification
     let region = MiniMaxRegion::Global;
     assert_eq!(region.account_origin(), "https://account.minimax.io");
     assert_eq!(region.gateway_origin(), "https://agent.minimax.io");
 
-    // Default without env vars returns canonical origins
     assert_eq!(
         region.resolved_account_origin(),
         "https://account.minimax.io"
     );
     assert_eq!(region.resolved_gateway_origin(), "https://agent.minimax.io");
 
-    // With dynamic env vars set, resolved origins redirect seamlessly
-    // SAFETY: Single-threaded scope in isolated unit test
+    // SAFETY: env var mutation is serialized by MINIMAX_TEST_LOCK
     unsafe {
         std::env::set_var(
             "OPENPROXY_MINIMAX_ACCOUNT_BASE_URL",

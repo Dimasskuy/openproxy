@@ -28,9 +28,7 @@ use openproxy_core::oauth::codex::{
 };
 use openproxy_core::oauth::refresh::refresh_lead_seconds;
 
-// ============================================================================
 // 1. Upstream Repository Code Drift Parity (Remote HTTP + Local Fallback)
-// ============================================================================
 
 #[tokio::test]
 async fn test_cline_upstream_code_parity() {
@@ -52,7 +50,6 @@ async fn test_cline_upstream_code_parity() {
     let _guard = CLINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     reset_dynamic_cline_overrides();
 
-    // 1. Verify endpoint constants match OpenProxy's Cline constants
     assert_eq!(CLINE_DEFAULT_BASE_URL, "https://api.cline.bot");
     assert!(
         auth_src.contains(CLINE_AUTH_AUTHORIZE_PATH),
@@ -67,7 +64,7 @@ async fn test_cline_upstream_code_parity() {
         "Upstream cline.ts must define refresh endpoint '{CLINE_AUTH_REFRESH_PATH}'"
     );
 
-    // 2. Verify refresh lead time: DEFAULT_REFRESH_BUFFER_MS = 5 * 60 * 1000 (300s)
+    // DEFAULT_REFRESH_BUFFER_MS = 5 * 60 * 1000 (300s)
     assert!(
         auth_src.contains("DEFAULT_REFRESH_BUFFER_MS = 5 * 60 * 1000"),
         "Upstream cline.ts buffer must be 5 min (300s)"
@@ -78,11 +75,10 @@ async fn test_cline_upstream_code_parity() {
         "OpenProxy refresh lead time for cline must be 300 seconds"
     );
 
-    // 3. Verify WorkOS device auth endpoints match
     assert!(auth_src.contains("/user_management/authorize/device"));
     assert!(auth_src.contains("/user_management/authenticate"));
 
-    // 4. Verify client headers from EnvUtils.ts
+    // client headers from EnvUtils.ts
     if let Some(env_src) = env_src_opt {
         let expected_headers = [
             "X-PLATFORM",
@@ -107,7 +103,6 @@ async fn test_cline_upstream_code_parity() {
         }
     }
 
-    // 5. Verify ClineSpoofer header generation
     let headers = ClineSpoofer.headers();
     let find_hdr = |name: &str| {
         headers
@@ -144,13 +139,11 @@ async fn test_codex_upstream_code_parity() {
     let _guard = CODEX_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     reset_dynamic_codex_overrides();
 
-    // 1. Verify client ID
     assert!(
         auth_src.contains(&format!("clientId: \"{CODEX_CLIENT_ID}\"")),
         "Upstream codex.ts client_id diverged from CODEX_CLIENT_ID = {CODEX_CLIENT_ID}"
     );
 
-    // 2. Verify token and authorization endpoints
     assert_eq!(
         CODEX_VERIFICATION_URI,
         "https://auth.openai.com/codex/device"
@@ -164,7 +157,6 @@ async fn test_codex_upstream_code_parity() {
         "Upstream codex.ts authorizationEndpoint diverged"
     );
 
-    // 3. Verify scopes
     for &scope in CODEX_SCOPES {
         assert!(
             auth_src.contains(scope),
@@ -172,7 +164,7 @@ async fn test_codex_upstream_code_parity() {
         );
     }
 
-    // 4. Verify refresh buffer: 5 * 60 * 1000 ms (300s)
+    // refreshBufferMs: 5 * 60 * 1000 ms (300s)
     assert!(
         auth_src.contains("refreshBufferMs: 5 * 60 * 1000"),
         "Upstream codex.ts refresh buffer must be 5 minutes"
@@ -183,7 +175,6 @@ async fn test_codex_upstream_code_parity() {
         "OpenProxy refresh lead time for codex must be 300 seconds"
     );
 
-    // 5. Verify CodexSpoofer output
     let headers = CodexSpoofer.headers();
     let find_hdr = |name: &str| {
         headers
@@ -198,16 +189,13 @@ async fn test_codex_upstream_code_parity() {
     assert_eq!(find_hdr("user-agent"), Some(current_codex_ua().as_str()));
 }
 
-// ============================================================================
 // 2. Remote Live Upstream Code Drift Detection (via GitHub raw without cloning)
-// ============================================================================
 
 #[tokio::test]
 async fn test_cline_remote_upstream_repo_code_drift_detection() {
     let client = UpstreamClient::new();
     let cancel = CancellationToken::new();
 
-    // 1. Probe upstream cline.ts on GitHub
     let auth_url =
         "https://raw.githubusercontent.com/cline/cline/main/sdk/packages/core/src/auth/cline.ts";
     let req = UpstreamRequest::get(auth_url);
@@ -232,7 +220,6 @@ async fn test_cline_remote_upstream_repo_code_drift_detection() {
     let body_bytes = resp.collect().await.expect("read cline.ts body");
     let cline_ts = String::from_utf8_lossy(&body_bytes);
 
-    // Assert endpoints match canonical OpenProxy constants
     assert!(
         cline_ts.contains(&format!("authorize: \"{CLINE_AUTH_AUTHORIZE_PATH}\"")),
         "Upstream Cline diverged in authorize endpoint"
@@ -250,7 +237,6 @@ async fn test_cline_remote_upstream_repo_code_drift_detection() {
         "Upstream Cline diverged in refresh lead time"
     );
 
-    // 2. Probe upstream EnvUtils.ts on GitHub for new X- headers
     let env_url =
         "https://raw.githubusercontent.com/cline/cline/main/apps/vscode/src/services/EnvUtils.ts";
     let env_req = UpstreamRequest::get(env_url);
@@ -277,7 +263,6 @@ async fn test_codex_remote_upstream_repo_code_drift_detection() {
     let client = UpstreamClient::new();
     let cancel = CancellationToken::new();
 
-    // Probe upstream codex.ts on GitHub
     let codex_url =
         "https://raw.githubusercontent.com/cline/cline/main/sdk/packages/core/src/auth/codex.ts";
     let req = UpstreamRequest::get(codex_url);
@@ -299,7 +284,6 @@ async fn test_codex_remote_upstream_repo_code_drift_detection() {
     let body_bytes = resp.collect().await.expect("read codex.ts body");
     let codex_ts = String::from_utf8_lossy(&body_bytes);
 
-    // Assert client ID and token endpoint match OpenProxy constants
     assert!(
         codex_ts.contains(&format!("clientId: \"{CODEX_CLIENT_ID}\"")),
         "Upstream codex.ts clientId diverged from CODEX_CLIENT_ID = {CODEX_CLIENT_ID}"
@@ -349,7 +333,7 @@ async fn test_codex_remote_upstream_models_json_drift_detection() {
     let static_ids: std::collections::HashSet<&str> =
         static_models.iter().map(|m| m.model_id.as_str()).collect();
 
-    // Assert every visible (visibility == "list") model from upstream is in our catalog
+    // upstream models with visibility == "list" must exist in our catalog
     for m in models_array {
         let slug = m["slug"].as_str().expect("slug");
         let visibility = m["visibility"].as_str().unwrap_or_default();
@@ -367,7 +351,6 @@ async fn test_kilocode_remote_upstream_repo_code_drift_detection() {
     let client = UpstreamClient::new();
     let cancel = CancellationToken::new();
 
-    // Probe upstream Kilocode VSCode extension package.json on GitHub
     let pkg_url = "https://raw.githubusercontent.com/Kilo-Org/kilocode/main/packages/kilo-vscode/package.json";
     let req = UpstreamRequest::get(pkg_url);
     let resp = match client.call(req, TimeoutProfile::OAuth, cancel).await {
@@ -399,7 +382,6 @@ async fn test_kilocode_remote_upstream_repo_code_drift_detection() {
         "Upstream displayName must contain 'Kilo Code'"
     );
 
-    // Verify KilocodeSpoofer outputs expected headers matching upstream
     let _guard_k = KILOCODE_TEST_LOCK.lock().unwrap();
     reset_dynamic_kilocode_overrides();
     let headers = KilocodeSpoofer.headers();
@@ -438,7 +420,6 @@ fn test_cline_codex_kilocode_dynamic_spoofer_overrides() {
     let _guard_codex = CODEX_TEST_LOCK.lock().unwrap();
     let _guard_kilo = KILOCODE_TEST_LOCK.lock().unwrap();
 
-    // 1. Dynamic Cline spoofer
     reset_dynamic_cline_overrides();
     set_dynamic_cline_version("3.8.0");
     set_dynamic_cline_extra_header("user-agent", "Cline-Bot-Runner/3.8.0");
@@ -458,7 +439,6 @@ fn test_cline_codex_kilocode_dynamic_spoofer_overrides() {
     assert_eq!(find_cline("x-custom-engine"), Some("fast"));
     reset_dynamic_cline_overrides();
 
-    // 2. Dynamic Codex spoofer
     reset_dynamic_codex_overrides();
     set_dynamic_codex_version("0.160.0");
     set_dynamic_codex_extra_header("user-agent", "Codex-CLI-Mock/0.160.0");
@@ -476,7 +456,6 @@ fn test_cline_codex_kilocode_dynamic_spoofer_overrides() {
     assert_eq!(find_codex("chatgpt-account-id"), Some("acc-enterprise-99"));
     reset_dynamic_codex_overrides();
 
-    // 3. Dynamic Kilocode spoofer
     reset_dynamic_kilocode_overrides();
     set_dynamic_kilocode_version("0.18.0");
     set_dynamic_kilocode_extra_header("user-agent", "KiloCode-Editor/0.18.0");
@@ -501,7 +480,6 @@ async fn test_codex_dynamic_version_remote_refresh_and_header_validation() {
     let _guard = CODEX_ASYNC_TEST_LOCK.lock().await;
     reset_dynamic_codex_overrides();
 
-    // 1. Version validation predicate parity
     assert!(has_valid_codex_version(
         "codex-cli/0.156.1 (Windows 10.0.26200; x64)"
     ));
@@ -512,7 +490,6 @@ async fn test_codex_dynamic_version_remote_refresh_and_header_validation() {
     ));
     assert!(!has_valid_codex_version("curl/7.68.0"));
 
-    // 2. Header map upgrade vs preservation
     let mut hdrs_outdated = http::HeaderMap::new();
     hdrs_outdated.insert(
         http::header::USER_AGENT,
@@ -536,7 +513,6 @@ async fn test_codex_dynamic_version_remote_refresh_and_header_validation() {
         "0.156.1"
     );
 
-    // 3. Remote live auto-refresh simulation via local HTTP mock
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -584,7 +560,6 @@ fn test_oauth_dynamic_endpoint_resolution_generic_and_kiro() {
         kiro_device_auth_url, kiro_register_url, kiro_social_token_url, kiro_token_url,
     };
 
-    // 1. GenericOAuthProvider Antigravity resolution
     let spec = OAuthSpec {
         id: "antigravity",
         flow: OAuthFlow::AuthorizationCode,
@@ -607,7 +582,7 @@ fn test_oauth_dynamic_endpoint_resolution_generic_and_kiro() {
         "https://oauth2.googleapis.com/token"
     );
 
-    // SAFETY: isolated test verification
+    // SAFETY: env var mutation without a lock is sound only in this single-threaded test
     unsafe {
         std::env::set_var(
             "OPENPROXY_ANTIGRAVITY_TOKEN_URL",
@@ -623,7 +598,7 @@ fn test_oauth_dynamic_endpoint_resolution_generic_and_kiro() {
         "https://oauth2.googleapis.com/token"
     );
 
-    // 2. Kiro dynamic URL resolution
+    // Kiro dynamic URL resolution
     assert_eq!(
         kiro_register_url(None),
         "https://oidc.us-east-1.amazonaws.com/client/register"

@@ -1,5 +1,4 @@
-// views/notifications/index.ts — mount entry point for the notifications
-// tray view. Re-exports mountNotifications() as the public API.
+// views/notifications/index.ts — mount entry point for the tray view.
 
 import { mountView, requestUpdate } from "../../state/reactive.js";
 import { onUnreadCountChange } from "../../state/notifications-store.js";
@@ -21,11 +20,9 @@ export async function mountNotifications(): Promise<(() => void) | void> {
   const main: HTMLElement | null = document.getElementById("main");
   if (!main) return;
 
-  // Reset view-local state on every mount.
   resetListState();
   resetDndState();
 
-  // Wire the DnD → list hook so drop handlers can mark as read.
   setDndOnMarkAsRead((id) => { void markAsRead(id); });
 
   const cleanupReactive: () => void = mountView(main, renderView);

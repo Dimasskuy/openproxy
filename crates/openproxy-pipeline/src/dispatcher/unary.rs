@@ -1,7 +1,4 @@
 //! Dispatch no-streaming: ciclo de vida de una respuesta unary completa.
-//! Contiene 4 funciones libres (poblado de headers, traducción de body,
-//! chequeo de respuesta vacía) más 3 métodos (`collect_non_streaming_body`,
-//! `record_non_streaming_success`, `dispatch_upstream_non_streaming`).
 
 use super::types::{DispatchContext, DispatchParams, NonStreamingSuccessArgs};
 use super::{Dispatcher, UpstreamDispatcher};
@@ -14,9 +11,8 @@ use openproxy_adapters::upstream::{UpstreamError, UpstreamRequest};
 use openproxy_types::error::CoreError;
 use std::time::Instant;
 
-/// Inserta en `upstream_request.headers` los pares (k, v) que parseen
-/// correctamente como `HeaderName`/`HeaderValue`. Los pares malformados
-/// se descartan silenciosamente.
+/// Inserta los pares (k, v) que parseen como `HeaderName`/`HeaderValue`.
+/// Los malformados se descartan.
 pub(super) fn populate_upstream_headers(
     upstream_request: &mut UpstreamRequest,
     headers: &[(String, String)],
@@ -32,9 +28,8 @@ pub(super) fn populate_upstream_headers(
     }
 }
 
-/// Construye un `OpenAIResponse` minimalista extrayendo `choices[0].message.content`
-/// del body crudo (formato simple usado por adapters que aún no producen
-/// OpenAI nativo).
+/// `OpenAIResponse` minimalista desde `choices[0].message.content` del body
+/// crudo, para adapters que no producen OpenAI nativo.
 pub(super) fn translate_simple_text_response(
     response_body_raw: &serde_json::Value,
     model_name: String,
@@ -75,9 +70,8 @@ pub(super) fn translate_simple_text_response(
     }
 }
 
-/// Despacha `response_body_raw` al `OpenAIResponse` correcto según el
-/// `target_format`. Los adapters Gemini delega a su propia traducción;
-/// Atomesus cae al fallback simple.
+/// Traduce el body según `target_format`. Gemini delega en su propia
+/// traducción; Atomesus cae al fallback simple.
 pub(super) fn translate_non_streaming_body(
     target_format: openproxy_types::TargetFormat,
     response_body_raw: &serde_json::Value,
@@ -123,9 +117,8 @@ pub(super) fn translate_non_streaming_body(
     }
 }
 
-/// `true` cuando la respuesta 200 no tiene contenido útil: `content=null`,
-/// `finish_reason=null`/vacío, sin `tool_calls`, sin `reasoning_content`.
-/// Tratamos esto como error para forzar retry.
+/// `true` cuando la respuesta 200 no trae contenido útil. Se trata como
+/// error para forzar el retry.
 pub(crate) fn is_empty_response(resp: &OpenAIResponse) -> bool {
     resp.choices.first().is_some_and(|c| {
         let msg = &c.message;
@@ -144,10 +137,8 @@ pub(crate) fn is_empty_response(resp: &OpenAIResponse) -> bool {
 }
 
 impl UpstreamDispatcher {
-    /// Lee el body con un deadline total (calculado desde `params.started`
-    /// sumado a `resolved_timeouts.total`). Si el status es non-2xx acota el
-    /// read a 5s para no penalizar retries. Cualquier error se traduce a
-    /// `Box<PipelineResult>` para cortar la cadena del caller.
+    /// Lee el body con deadline total desde `params.started`. Un status
+    /// non-2xx acota el read a 5s para no penalizar los retries.
     pub(super) async fn collect_non_streaming_body(
         &self,
         response: openproxy_adapters::upstream::UpstreamResponse,
@@ -273,9 +264,8 @@ impl UpstreamDispatcher {
         }
     }
 
-    /// Persiste una respuesta 2xx en el `UsageTracker` y construye el
-    /// `PipelineResult` final. El builder es no-fatal: cualquier error
-    /// se loguea como warn y devuelve `usage_tuple=None`.
+    /// El builder de usage es no-fatal: un fallo se loguea como warn y
+    /// devuelve `usage_tuple=None`.
     pub(super) fn record_non_streaming_success(
         &self,
         params: DispatchParams<'_>,
@@ -353,13 +343,6 @@ impl UpstreamDispatcher {
         }
     }
 
-    /// Entry point no-streaming. Pasos:
-    /// 1. Pre-flight disconnect check.
-    /// 2. `upstream_client.call(...)`.
-    /// 3. `handle_upstream_error` o `collect_non_streaming_body`.
-    /// 4. Si non-2xx → `handle_non_2xx_response`.
-    /// 5. Parse + translate + is_empty check.
-    /// 6. `record_non_streaming_success`.
     pub(super) async fn dispatch_upstream_non_streaming(
         &self,
         params: DispatchParams<'_>,

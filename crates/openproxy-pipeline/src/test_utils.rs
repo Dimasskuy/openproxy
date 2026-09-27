@@ -82,7 +82,7 @@ pub fn fresh_pool() -> (DbPool, Arc<parking_lot::Mutex<Connection>>, PathBuf) {
 }
 
 /// A reasonable default `PipelineConfig` for tests: no real adapters
-/// (the tests only exercise the routing/usage path, not the HTTP path).
+/// (tests exercise the routing/usage path, not the HTTP path).
 pub fn test_config(master_key: Arc<MasterKey>) -> PipelineConfig {
     let defaults = Timeouts::from_config(&TimeoutsConfig::default());
     PipelineConfig {
@@ -92,27 +92,15 @@ pub fn test_config(master_key: Arc<MasterKey>) -> PipelineConfig {
         max_attempts: 1,
         master_key,
         adapters: Arc::new(Vec::new()),
-        // A vanilla HTTP client is fine for tests: nothing in the
-        // routing path actually fires a request.
-        // 60s default cooldown for tests; individual tests that
-        // exercise the cooldown path can pass a shorter value
-        // through a local `PipelineConfig` override.
+        // Routing never fires a request; 60s cooldown, overridable per test.
         cooldown_secs: 60,
         cooldown_max_secs: 3600,
         cooldown_factor: 2,
-        // Hyper-based upstream client. The default production
-        // connector (rustls HTTPS) is fine for tests that don't
-        // exercise the HTTP path; tests that DO need a real
-        // upstream should rebuild the config with a test
-        // connector.
         upstream_client: UpstreamClient::new(),
         oauth_provider_registry: None,
-        // Tests use the default Off mode so the production
-        // compression behavior is opt-in; individual tests
-        // that exercise compression override these.
+        // Production compression is opt-in; tests that need it override this.
         compression_mode: openproxy_compression::CompressionMode::Off,
-        // Default matches the production default in
-        // state.rs; tests don't need to flip this.
+        // Matches the production default in state.rs.
         idle_chunk_retryable: true,
         quota_protection: openproxy_types::config::QuotaProtectionConfig::default(),
         pii_config: openproxy_types::config::PiiConfig::default(),
@@ -212,10 +200,8 @@ pub fn make_request(
             extra: serde_json::Map::new(),
         }),
         client_disconnected: dis_rx,
-        // Use Discard sink for non-streaming test requests. The
-        // pipeline forces stream=true to the upstream, but SSE
-        // chunks are discarded — the pipeline accumulates the
-        // response internally via ResponseAccumulator.
+        // Discard sink: the pipeline forces stream=true upstream but the SSE
+        // chunks are dropped, since it accumulates via ResponseAccumulator.
         stream_sink: Some(crate::race_sink::StreamSink::Discard),
         api_key_id: None,
         combo_override: None,

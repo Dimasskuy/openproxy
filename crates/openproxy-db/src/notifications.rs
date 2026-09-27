@@ -4,7 +4,6 @@ use openproxy_types::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-/// A notification row, as returned by [`list`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NotificationRow {
     pub id: i64,
@@ -48,13 +47,12 @@ impl crate::crud::FromRow for NotificationRow {
     }
 }
 
-/// Insert a notification row. Uses `INSERT OR IGNORE` so the dedup unique
-/// index silently drops duplicates within the same UTC day.
+/// Insert a notification row. `INSERT OR IGNORE` lets the dedup unique index
+/// drop duplicates within the same UTC day.
 ///
-/// Returns the row id (`Some`) if a new row was inserted, or `None` if the
-/// insert was ignored due to dedup *and* no matching existing row could be
-/// located. When the insert is deduped, the function attempts to look up
-/// the existing row's id and returns `Some(existing_id)`.
+/// Returns the new row id, or the id of the deduped row when the lookup finds
+/// it. `None` means the insert was ignored and no existing row could be
+/// located.
 pub fn insert(
     conn: &Connection,
     kind: &str,
@@ -248,8 +246,8 @@ fn process_notification_chunk(
     Ok(())
 }
 
-/// Insert multiple notification rows. Uses `INSERT OR IGNORE` and batching.
-/// Returns a Vec of `(id, payload)` matching the inserted/deduped rows.
+/// Batched `INSERT OR IGNORE`. Returns `(id, payload)` per inserted or deduped
+/// row.
 pub fn insert_many(
     conn: &Connection,
     kind: &str,
@@ -270,7 +268,6 @@ pub fn insert_many(
     Ok(all_results)
 }
 
-/// Get created_at timestamp for a notification ID.
 pub fn get_created_at(conn: &Connection, id: i64) -> Result<Option<String>> {
     conn.query_row(
         notification_created_at_select!("WHERE id = ?1"),
@@ -283,19 +280,15 @@ pub fn get_created_at(conn: &Connection, id: i64) -> Result<Option<String>> {
     ))
 }
 
-/// List notifications, most recent first (by descending id).
+/// List notifications, most recent first (by descending id). Archived rows are
+/// always excluded, as is anything older than [`RETENTION_DAYS`] so the tray
+/// never shows entries [`prune`] is about to delete.
 ///
-/// - `unread_only`: if `true`, filter to `read_at IS NULL`.
-/// - `limit`: max rows to return, clamped to `[1, 200]`.
-/// - `before_id`: for cursor pagination — only return rows with `id < before_id`.
+/// `unread_only` filters to `read_at IS NULL`; `limit` is clamped to
+/// `[1, 200]`; `before_id` is the cursor for `id < before_id`.
 ///
-/// Archived rows (`archived_at IS NOT NULL`) are always excluded.
-///
-/// W1 retention window: rows older than [`RETENTION_DAYS`] are also
-/// excluded so the tray never shows entries the prune job is about to
-/// delete. `created_at` is stored as `datetime('now')` (UTC,
-/// `YYYY-MM-DD HH:MM:SS`), which compares correctly against
-/// `datetime('now', '-1 day')`.
+/// `created_at` is stored as `datetime('now')` (UTC, `YYYY-MM-DD HH:MM:SS`),
+/// which compares correctly against `datetime('now', '-1 day')`.
 pub fn list(
     conn: &Connection,
     unread_only: bool,
@@ -327,9 +320,8 @@ pub fn list(
     )
 }
 
-/// Count unread, non-archived notifications inside the W1 retention
-/// window, so the dashboard badge matches what [`list`] can actually
-/// return (a badge counting rows the tray no longer shows would lie).
+/// Unread, non-archived notifications inside the retention window, so the badge
+/// matches what [`list`] can return.
 pub fn unread_count(conn: &Connection) -> Result<i64> {
     let count: Option<i64> = crate::db_query_one!(
         conn,
@@ -343,24 +335,19 @@ pub fn unread_count(conn: &Connection) -> Result<i64> {
     Ok(count.unwrap_or(0))
 }
 
-/// W1 fixed retention: prune only archived-or-read notifications older
-/// than this many days. Unread active rows are NEVER deleted (the user
-/// hasn't seen them yet), so the tray can't silently lose a pending
-/// alert. `created_at` is `datetime('now')` — same format as
-/// `datetime('now', <offset>)`, so the comparison is a plain string
-/// compare on UTC timestamps.
+/// Unread, unarchived rows are never pruned, however old, so the tray cannot
+/// silently lose a pending alert. `created_at` and
+/// `datetime('now', <offset>)` share a format, so the comparison is a plain
+/// string compare on UTC timestamps.
 pub const RETENTION_DAYS: i64 = 1;
 
-/// SQLite modifier passed to `datetime('now', ...)` for [`RETENTION_DAYS`].
-/// Kept as a constant so `list`/`unread_count`/`prune` can never drift
-/// apart: the visual window and the delete window must be identical.
+/// Modifier for `datetime('now', ...)`. A constant so the visual window in
+/// `list`/`unread_count` cannot drift from the delete window in [`prune`].
 pub const RETENTION_OFFSET: &str = "-1 day";
 
-/// Delete notifications older than [`RETENTION_DAYS`] **only** when they
-/// are archived or read. Returns the number of rows deleted.
-///
-/// Safety contract (W1): a row with `archived_at IS NULL AND read_at IS
-/// NULL` is never touched, no matter how old it is.
+/// Delete notifications older than [`RETENTION_DAYS`] that are archived or
+/// read. A row with `archived_at IS NULL AND read_at IS NULL` is never
+/// touched, no matter how old it is.
 pub fn prune(conn: &Connection) -> Result<usize> {
     crate::db_execute!(
         conn,
@@ -372,7 +359,6 @@ pub fn prune(conn: &Connection) -> Result<usize> {
     )
 }
 
-/// Mark a single notification as read (sets `read_at` to now). Idempotent.
 pub fn mark_read(conn: &Connection, id: i64) -> Result<()> {
     crate::db_execute!(
         conn,
@@ -383,7 +369,6 @@ pub fn mark_read(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
-/// Mark all unread, non-archived notifications as read. Returns the number of rows updated.
 pub fn mark_all_read(conn: &Connection) -> Result<usize> {
     crate::db_execute!(
         conn,
@@ -394,8 +379,6 @@ pub fn mark_all_read(conn: &Connection) -> Result<usize> {
     )
 }
 
-/// Archive all non-archived notifications (sets `archived_at` to now).
-/// Returns the number of rows updated.
 pub fn archive_all(conn: &Connection) -> Result<usize> {
     crate::db_execute!(
         conn,
@@ -406,7 +389,6 @@ pub fn archive_all(conn: &Connection) -> Result<usize> {
     )
 }
 
-/// Archive a single notification (sets `archived_at` to now).
 pub fn archive(conn: &Connection, id: i64) -> Result<()> {
     crate::db_execute!(
         conn,
@@ -418,7 +400,6 @@ pub fn archive(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
-/// Permanently delete a notification.
 pub fn delete(conn: &Connection, id: i64) -> Result<bool> {
     let changed = crate::db_execute!(
         conn,

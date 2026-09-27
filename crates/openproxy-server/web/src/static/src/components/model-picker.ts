@@ -1,11 +1,11 @@
-// components/model-picker.ts — search + multi-select modal for
-// the Keys view's "Allowed models" and "Blacklisted models" fields. Singleton.
+// components/model-picker.ts — search + multi-select modal for the Keys view's
+// "Allowed models" and "Blacklisted models" fields. Singleton.
 
 import { html, render, type TemplateResult } from "lit-html";
 import { state } from "../state/index.js";
 import { ensureModalRoot } from "../lib/ui-utils.js";
 
-// The wrapper that hosts the singleton modal.
+// Wrapper hosting the singleton modal.
 let modalWrapper: HTMLDivElement | null = null;
 let activeTarget: "allowed_models" | "blacklisted_models" = "allowed_models";
 

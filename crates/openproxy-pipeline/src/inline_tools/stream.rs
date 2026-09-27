@@ -20,22 +20,15 @@ const TOOL_TAG_CANDIDATES: &[(&str, &str)] = &[
 
 const MAX_TOOL_BUFFER_BYTES: usize = 262_144; // 256 KiB safety cap
 
-/// Streaming state machine that intercepts inline `<tool_call>` blocks
-/// emitted in chunk `content` deltas and converts them into structured
-/// `tool_calls` SSE chunks.
+/// Intercepts inline `<tool_call>` blocks arriving in `content` deltas and
+/// converts them into structured `tool_calls` SSE chunks.
 #[derive(Debug, Default, Clone)]
 pub struct InlineToolStreamExtractor {
-    /// True while buffering inside a tool call block.
     pub inside_tool_call: bool,
-    /// The expected closing tag string for the current block (e.g. "</tool_call>", "</invoke>", etc.).
     pub expected_close_tag: Option<String>,
-    /// Accumulated text of the current tool call block.
     pub tool_buffer: String,
-    /// Trailing partial tag prefix buffer across chunk boundaries (e.g. "<tool_").
     pub partial_tag_buffer: String,
-    /// True if we have emitted at least one structured tool call in this stream.
     pub emitted_tool_call: bool,
-    /// Running index for streamed tool calls.
     pub tool_call_index: u32,
 }
 
@@ -67,7 +60,6 @@ impl InlineToolStreamExtractor {
 
 impl StreamingChunkStage for InlineToolStreamExtractor {
     fn process_chunk(&mut self, payload: &str) -> StreamAction {
-        // Fast path: if idle, empty buffer, and no tool markers or partial tags
         if !self.inside_tool_call
             && self.tool_buffer.is_empty()
             && self.partial_tag_buffer.is_empty()
@@ -107,7 +99,6 @@ impl StreamingChunkStage for InlineToolStreamExtractor {
             return StreamAction::Passthrough;
         };
 
-        // Check finish_reason
         let is_stop = chunk_val
             .get("choices")
             .and_then(Value::as_array)
@@ -301,7 +292,6 @@ impl StreamingChunkStage for InlineToolStreamExtractor {
             return None;
         }
 
-        // Try parsing whatever is left
         if let Some(calls) = parse_tool_block(&residual) {
             self.emitted_tool_call = true;
             let tc_array = self.build_tool_calls_value(calls);
@@ -317,7 +307,6 @@ impl StreamingChunkStage for InlineToolStreamExtractor {
             return serde_json::to_string(&chunk).ok();
         }
 
-        // If unparseable, flush remaining buffer as plain content
         let chunk = serde_json::json!({
             "choices": [{
                 "index": 0,

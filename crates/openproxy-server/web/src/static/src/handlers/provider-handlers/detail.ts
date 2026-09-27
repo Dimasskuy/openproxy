@@ -1,8 +1,6 @@
-// handlers/provider-handlers/detail.ts — provider detail view operations.
-//
-// Contains: extra-headers editor, account health/quota operations.
-// These are the handlers invoked from the provider detail page,
-// not the list/grid.
+// handlers/provider-handlers/detail.ts — provider detail view operations: the extra-headers
+// editor and account health/quota operations (the handlers the detail page invokes, not the
+// list/grid).
 
 import { state } from "../../state/index.js";
 import { api } from "../../state/api.js";
@@ -13,7 +11,7 @@ import { showConfirm } from "../../lib/show-confirm.js";
 import { showToast } from "../../components/toast.js";
 import { navigate } from "../../state/router.js";
 
-// ===== Extra headers editor =====
+// ── Extra headers editor ───────────────────────────────────────────────────
 
 interface HeaderRow {
   key: string;
@@ -39,7 +37,7 @@ export function showEditProviderHeaders(
         }));
       }
     } catch {
-      // Ignored: fallback to empty visual rows
+      // Ignored: fall back to empty visual rows.
     }
   }
 
@@ -374,7 +372,7 @@ export function editProviderHeadersPrompt(
   showEditProviderHeaders(providerId, currentHeadersJson);
 }
 
-// ===== Account health / quota =====
+// ── Account health / quota ─────────────────────────────────────────────────
 
 // POST /admin/accounts/:id/health — force-set the health flag.
 export async function setHealth(id: number, e: Event | null): Promise<void> {

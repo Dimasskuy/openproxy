@@ -89,7 +89,6 @@ pub trait PipelineRepository: Send + Sync {
     ) -> Result<Vec<(String, String)>>;
     fn get_proxy_status_by_url(&self, url: &str) -> Option<String>;
 
-    // Batch Loading
     fn get_models_by_row_ids(&self, model_row_ids: &[ModelRowId]) -> Result<HashMap<i64, Model>>;
     fn get_accounts_meta(&self, account_ids: &[AccountId]) -> Result<AccountsMetaMaps>;
     fn get_antigravity_projects(&self, account_ids: &[i64]) -> Result<HashMap<i64, Box<str>>>;
@@ -99,7 +98,6 @@ pub trait PipelineRepository: Send + Sync {
     ) -> Result<HashMap<String, String>>;
     fn update_antigravity_project_id(&self, account_id: i64, new_project_id: &str) -> Result<()>;
 
-    // Routing Logic
     fn resolve_combo_to_targets(
         &self,
         combo_id: ComboId,

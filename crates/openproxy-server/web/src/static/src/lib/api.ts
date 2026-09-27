@@ -1,21 +1,14 @@
-// lib/api.ts — thin fetch wrapper. Throws `new Error("<status>: <body>")`
-// on non-2xx so call sites can pull a human message out with
-// `extractApiErrorMessage(e)`.
+// lib/api.ts — thin fetch wrapper. Throws `new Error("<status>: <body>")` on non-2xx so call
+// sites can pull a human message out with `extractApiErrorMessage(e)`.
 //
-// Post-F0 (single-binary merge): the dashboard talks DIRECTLY to the
-// openproxy server's `/admin/api/*` surface — same origin, no proxy.
-// The previous `/web/api/*` prefix (which the now-removed separate
-// dashboard binary reverse-proxied to `/admin/*` on the core server)
-// is gone.
+// Post-F0 (single-binary merge) the dashboard talks DIRECTLY to the server's `/admin/api/*`
+// surface — same origin, no proxy. The old `/web/api/*` prefix is gone.
 //
-// DASHBOARD-FIX (Bug 2): every request now carries an
-// `Authorization: Bearer <token>` header sourced from
-// `state/auth.ts::getToken()`. If the user is not logged in (no
-// token), the header is omitted — the server then returns 401, the
-// caller throws, and the router's auth gate redirects to the login
-// view. This is intentional: the only path that should reach the
-// server without a token is the login view's own validation call
-// (which sets the token optimistically before the call).
+// DASHBOARD-FIX (Bug 2): every request carries `Authorization: Bearer <token>` from
+// `state/auth.ts::getToken()`. When there is no token the header is omitted, the server returns
+// 401, the caller throws and the router's auth gate redirects to the login view. That is
+// intentional: the only tokenless path should be the login view's own validation call, which
+// sets the token optimistically before the call.
 
 import { state } from "../state/index.js";
 import { getToken, clearToken } from "../state/auth.js";
@@ -45,7 +38,7 @@ export async function api(path: string, opts: ApiOptions = {}): Promise<unknown>
     const txt: string = await r.text();
     throw new Error(`${r.status}: ${txt}`);
   }
-  // 204 No Content (e.g. DELETE success with empty body)
+  // 204 No Content (e.g. DELETE success with an empty body)
   if (r.status === 204) return null;
   const ct: string = r.headers.get("content-type") || "";
   const data: unknown = ct.includes("application/json") ? await r.json() : await r.text();
@@ -53,44 +46,36 @@ export async function api(path: string, opts: ApiOptions = {}): Promise<unknown>
   return data;
 }
 
-// Returns the latency in ms for the last `api()` call. Used by the
-// health pill in the sidebar.
+// Latency in ms of the last `api()` call. Used by the sidebar health pill.
 export function lastApiLatency(): number { return state.lastApiLatencyMs; }
 
-// ----------------------------------------------------------------------------
-// Debug logs — typed wrappers around `GET /admin/api/debug/logs` and
-// `POST /admin/api/debug/clear`. The view (`views/debug-logs.ts`) calls
-// these instead of `api()` directly so the response shape is checked
-// at compile time and the query-string construction is centralised.
-// ----------------------------------------------------------------------------
+// ── Debug logs — typed wrappers around GET /admin/api/debug/logs and POST ──
+// /admin/api/debug/clear ─────────────────────────────────────────────────────
+// views/debug-logs.ts calls these instead of `api()` so the response shape is checked at
+// compile time and the query-string construction is centralised.
 
-/** Optional query parameters for `fetchDebugLogs`. Every field is
- *  optional; absent fields are omitted from the query string (not
- *  sent as `undefined`). Under `exactOptionalPropertyTypes` callers
- *  must build the opts object conditionally — see `views/debug-logs.ts`
- *  for the pattern. */
+/** Optional query parameters for `fetchDebugLogs`; every field is optional and absent fields
+ *  are omitted from the query string (never sent as `undefined`). Under
+ *  `exactOptionalPropertyTypes` callers must build the opts object conditionally — see
+ *  `views/debug-logs.ts`. */
 export interface FetchDebugLogsOpts {
-  /** If set, only return entries with `seq > since`. Used by the
-   *  polling loop to fetch only new entries. Omit (or pass 0) to
-   *  fetch the whole buffer. */
+  /** Only return entries with `seq > since`; the polling loop fetches just the new ones.
+   *  Omit (or pass 0) to fetch the whole buffer. */
   since?: number;
-  /** Cap on the number of entries returned. Server default 100,
-   *  server max 1000. */
+  /** Cap on entries returned. Server default 100, server max 1000. */
   limit?: number;
-  /** Comma-separated list of levels (e.g. `"WARN,ERROR"`). The
-   *  server splits on `,`, uppercases, and matches case-insensitively. */
+  /** Comma-separated levels (e.g. `"WARN,ERROR"`); the server splits on `,`, uppercases
+   *  and matches case-insensitively. */
   level?: string;
-  /** Filter by `request_id` (exact match). */
+  /** Filter by `request_id` (exact). */
   request_id?: string;
-  /** Filter by `trace_id` (exact match). */
+  /** Filter by `trace_id` (exact). */
   trace_id?: string;
 }
 
-/** `GET /admin/api/debug/logs` — fetch recent `tracing` events from
- *  the server's in-memory ring buffer. The dashboard talks directly
- *  to the server's `/admin/api/*` surface (post-F0 single-binary
- *  merge), so the path passed to `api()` is `/debug/logs` and the
- *  `/admin/api` prefix is prepended by `api()` itself. */
+/** `GET /admin/api/debug/logs` — recent `tracing` events from the server's in-memory ring
+ *  buffer. The dashboard talks directly to `/admin/api/*` (post-F0 single-binary merge), so the
+ *  path passed to `api()` is `/debug/logs` and the `/admin/api` prefix is prepended by `api()`. */
 export async function fetchDebugLogs(opts: FetchDebugLogsOpts = {}): Promise<DebugLogsResponse> {
   const params = new URLSearchParams();
   if (opts.since !== undefined) params.set("since", String(opts.since));
@@ -101,18 +86,16 @@ export async function fetchDebugLogs(opts: FetchDebugLogsOpts = {}): Promise<Deb
   const qs: string = params.toString();
   const path: string = qs ? `/debug/logs?${qs}` : "/debug/logs";
   const data: unknown = await api(path);
-  // The server always returns a JSON object on 2xx; the `api()`
-  // wrapper already parsed it. We cast through `unknown` to the
-  // typed shape — a runtime type-guard would be more defensive but
-  // the contract is stable and a bad payload is a server bug.
+  // The server always returns a JSON object on 2xx and `api()` already parsed it; cast through
+  // `unknown` to the typed shape — a runtime type-guard would be more defensive but the
+  // contract is stable and a bad payload is a server bug.
   return data as DebugLogsResponse;
 }
 
-/** `POST /admin/api/debug/clear` — wipe the in-memory debug log ring
- *  buffer on the server. Used by the "Clear" button in the Debug
- *  Logs view for "reproduce then capture" workflows. Returns void;
- *  errors propagate as `Error("<status>: <body>")` from `api()`. */
+/** `POST /admin/api/debug/clear` — wipe the in-memory debug ring buffer, backing the Debug
+ *  Logs view's "Clear" button for reproduce-then-capture workflows. Returns void; errors
+ *  propagate as `Error("<status>: <body>")` from `api()`. */
 export async function clearDebugLogs(): Promise<void> {
-  // The server returns `{"cleared": true}` (JSON); we discard it.
+  // The server returns `{"cleared": true}`; discarded.
   await api("/debug/clear", { method: "POST" });
 }

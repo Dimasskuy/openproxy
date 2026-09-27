@@ -35,16 +35,15 @@ pub const CODEBUDDY_REFRESH_PATH: &str = "/plugin/auth/token/refresh";
 pub const LOGIN_TOKEN_PENDING_CODE: i64 = 11217;
 pub const LOGIN_ACCOUNT_PENDING_CODE: i64 = 12151;
 
-/// Maximum time-to-live before proactive token refresh in seconds (20 hours).
-/// CodeBuddy upstream returns an astronomical expiresIn (e.g. 1 year ~ 31536000s),
-/// but Tencent Keycloak SSO session idle timeout revokes the session if not refreshed
-/// within 24 hours (as codified in @tencent-ai/codebuddy-code's 24h refresh timer).
-/// Clamping effective expires_in to 20 hours (72,000s) guarantees proactive background
-/// refresh well before the 24h session idle deadline.
+/// Maximum TTL before proactive refresh, 20 hours.
+///
+/// Upstream `expiresIn` is astronomical (about a year), but the Tencent Keycloak
+/// SSO session revokes after 24 idle hours, so 72,000s keeps the background refresh
+/// well inside that deadline.
 pub const CODEBUDDY_MAX_EXPIRES_IN_SECS: u64 = 72_000;
 
-/// Resolve canonical base URL for CodeBuddy API calls.
-/// Respects `OPENPROXY_CODEBUDDY_BASE_URL` or `OPENPROXY_CODEBUDDY_AUTH_BASE_URL` env vars if set.
+/// Canonical base URL for CodeBuddy calls, honouring
+/// `OPENPROXY_CODEBUDDY_BASE_URL` / `OPENPROXY_CODEBUDDY_AUTH_BASE_URL`.
 pub fn codebuddy_base_url() -> String {
     std::env::var("OPENPROXY_CODEBUDDY_BASE_URL")
         .or_else(|_| std::env::var("OPENPROXY_CODEBUDDY_AUTH_BASE_URL"))
@@ -53,7 +52,7 @@ pub fn codebuddy_base_url() -> String {
         .unwrap_or_else(|| DEFAULT_CODEBUDDY_BASE_URL.to_string())
 }
 
-/// Extracts numeric return code from either standard envelope or nested response.
+/// Numeric return code from the standard envelope or the nested response.
 pub(crate) fn read_envelope_code(val: &serde_json::Value) -> Option<i64> {
     if let Some(code) = val.get("code").and_then(serde_json::Value::as_i64) {
         return Some(code);
@@ -312,7 +311,7 @@ impl OAuthProvider for CodeBuddyOAuthProvider {
                 .await
                 .map_err(|e| map_upstream_err(e, "codebuddy device token poll read"))?;
 
-            // 404 or 428 standard pending response
+            // 404 / 428 is the standard pending response
             if status.as_u16() == 404 || status.as_u16() == 428 {
                 return Ok(None);
             }
@@ -642,7 +641,8 @@ impl OAuthProvider for CodeBuddyOAuthProvider {
     }
 }
 
-/// Updates `oauth_provider_specific` with real credit balances and strips legacy checkin fields.
+/// Refresh `oauth_provider_specific` with real credit balances, dropping the
+/// legacy checkin fields.
 pub fn update_codebuddy_credit_balance(
     conn: &rusqlite::Connection,
     account_id: AccountId,
@@ -674,7 +674,7 @@ pub fn update_codebuddy_credit_balance(
         serde_json::Map::new()
     };
 
-    // Remove legacy fake checkin fields
+    // legacy checkin fields were placeholders, not real balances
     map.remove("last_checkin_date");
     map.remove("streak_days");
 

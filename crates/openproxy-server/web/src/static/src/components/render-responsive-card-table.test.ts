@@ -1,8 +1,6 @@
-// components/render-responsive-card-table.test.ts — unit tests for
-// the generic responsive table render function. Validates the markup
-// shape (table on desktop, data-label hooks for mobile CSS) and the
-// empty state without needing a browser (the actual responsive
-// switch is CSS, not JS).
+// components/render-responsive-card-table.test.ts — unit tests for the generic responsive
+// table renderer: markup shape (table on desktop, data-label hooks for the mobile CSS) and
+// the empty state. The responsive switch itself is CSS, not JS.
 
 import { describe, it, expect } from "vitest";
 import { html as litHtml, render } from "lit-html";
@@ -23,8 +21,7 @@ const ROWS: readonly Row[] = [
 function toString(tpl: TemplateResult): string {
   const container = document.createElement("div");
   render(tpl, container);
-  // Strip lit-html's `<!--?lit$…-->` binding markers so assertions can
-  // match contiguous markup produced by nested templates.
+  // Strip lit-html's `<!--?lit$…-->` binding markers so nested-template markup matches contiguously.
   return container.innerHTML.replace(/<!--[\s\S]*?-->/g, "");
 }
 
@@ -38,8 +35,7 @@ describe("renderResponsiveCardTable", () => {
       rows: ROWS,
       rowKey: (r) => r.id,
     }));
-    // lit-html inserts `<!--?lit$...$-->` markers inside <th> elements,
-    // so we check that the header text and tag exist, not strict markup.
+    // lit-html inserts `<!--?lit$…-->` markers inside <th>, so assert on text+tag, not exact markup.
     expect(html).toContain("<th");
     expect(html).toContain("Host");
     expect(html).toContain("Status");

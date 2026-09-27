@@ -1,10 +1,6 @@
-//! Discovery service: orchestrates fetch → upsert → auto-activate.
-//!
-//! Encapsulates the two-step refresh flow that was previously
-//! duplicated across [`crate::admin::refresh_models`] (step 7) and
-//! [`crate::discovery_scheduler`] (step 6). Both call sites can now
-//! delegate to [`DiscoveryService::refresh_and_activate`] for the
-//! full lifecycle.
+//! Discovery service: fetch → upsert → auto-activate, shared by
+//! [`crate::admin::refresh_models`] and [`crate::discovery_scheduler`] through
+//! [`DiscoveryService::refresh_and_activate`].
 
 use super::{DiscoveredModel, UpsertResult};
 use crate::error::Result;
@@ -12,10 +8,8 @@ use crate::ids::ProviderId;
 use openproxy_db::models::ModelRepository;
 use std::time::Duration;
 
-/// Orchestrates the model-discovery lifecycle.
-///
-/// Generic over `R: ModelRepository` so production code uses
-/// `SqliteModelRepository` while tests can inject a mock.
+/// Model-discovery lifecycle, generic over `R: ModelRepository` so tests can
+/// inject a mock.
 pub struct DiscoveryService<R: ModelRepository> {
     repo: R,
 }
@@ -25,20 +19,9 @@ impl<R: ModelRepository> DiscoveryService<R> {
         Self { repo }
     }
 
-    /// Full refresh flow: upsert discovered models, then optionally
-    /// re-apply the auto-activation keyword rule.
-    ///
-    /// This is the single entry point that replaces the scattered
-    /// `upsert_many` + `apply_auto_activation` dance.
-    ///
-    /// # Arguments
-    ///
-    /// * `provider` — the provider whose catalog was just fetched.
-    /// * `discovered` — the models reported by the upstream `/models`
-    ///   endpoint.
-    /// * `ttl` — cache lifetime for newly inserted rows.
-    /// * `keyword` — if `Some`, re-applies auto-activation after the
-    ///   upsert. If `None`, auto-activation is skipped.
+    /// Upsert `discovered` (the upstream catalog for `provider`) with `ttl` as the
+    /// cache lifetime for new rows, then re-apply auto-activation when `keyword`
+    /// is `Some`.
     pub fn refresh_and_activate(
         &self,
         provider: &ProviderId,
@@ -49,8 +32,7 @@ impl<R: ModelRepository> DiscoveryService<R> {
         let result = self.repo.upsert_many(provider, discovered, ttl)?;
 
         if let Some(kw) = keyword {
-            // Auto-activation errors are non-fatal: log and continue.
-            // The next discovery tick will retry.
+            // non-fatal: the next tick retries
             if let Err(e) = self.repo.apply_auto_activation(provider, Some(kw)) {
                 tracing::warn!(
                     provider = %provider,
@@ -63,8 +45,7 @@ impl<R: ModelRepository> DiscoveryService<R> {
         Ok(result)
     }
 
-    /// Access the underlying repository (e.g. for ad-hoc queries
-    /// outside the refresh flow).
+    /// The underlying repository, for queries outside the refresh flow.
     pub fn repository(&self) -> &R {
         &self.repo
     }

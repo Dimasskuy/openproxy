@@ -1,4 +1,4 @@
-// lib/types/api.ts — Re-exports domain types for openproxy web dashboard
+// lib/types/api.ts — re-exports the domain types for the openproxy web dashboard.
 export * from "./common";
 export * from "./models";
 export * from "./combos";

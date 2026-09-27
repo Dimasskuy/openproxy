@@ -100,13 +100,10 @@ impl SelectionRegistry {
         update(e);
     }
 
-    /// Calculate composite reputation score for a target in [0.05, 1.0].
-    ///
-    /// - Targets with no prior traffic in the window receive 1.0 (optimistic initialization).
-    /// - Success rate forms the foundation: successes / (successes + failures).
-    /// - Timeouts are heavily penalized since they degrade client streams.
-    /// - A failure in the last 60 seconds applies a 0.6x recency penalty.
-    /// - Average latency exceeding 10s progressively damps the score.
+    /// Composite reputation score in [0.05, 1.0]: successes / (successes +
+    /// failures), damped by a timeout penalty, a 0.6x penalty for a failure in the
+    /// last 60s, and latency above 10s. A target with no traffic in the window
+    /// scores 1.0.
     pub fn reputation_score(&self, target_id: ComboTargetId, window_secs: u64) -> f64 {
         let g = self.inner.read().unwrap_or_else(|e| e.into_inner());
         let Some(e) = g.get(&target_id.0) else {
@@ -326,9 +323,7 @@ mod tests {
         assert!(!registry.is_empty());
         assert_eq!(registry.len(), 1);
 
-        // record_request doesn't update last_success_ms
         assert_eq!(registry.last_success_within(target_1, 10), 0);
-        // But request count should be 1
         assert_eq!(registry.request_count_within(target_1, 10), 1);
 
         registry.record_success(target_1);
@@ -370,14 +365,11 @@ mod tests {
 
         registry.record_success(target_1);
 
-        // Wait a small amount to ensure time passes
         std::thread::sleep(Duration::from_millis(10));
 
-        // Within large window, should return values
         assert!(registry.last_success_within(target_1, 10) > 0);
         assert_eq!(registry.request_count_within(target_1, 10), 1);
 
-        // Outside window (0 seconds), should return 0
         assert_eq!(registry.last_success_within(target_1, 0), 0);
         assert_eq!(registry.request_count_within(target_1, 0), 0);
     }
@@ -391,14 +383,11 @@ mod tests {
         registry.record_success(target_1);
         registry.record_request(target_2);
 
-        // Wait a little bit
         std::thread::sleep(Duration::from_millis(10));
 
-        // Pruning with large max_age should not remove anything
         assert_eq!(registry.prune_stale(Duration::from_secs(10)), 0);
         assert_eq!(registry.len(), 2);
 
-        // Pruning with 0 max_age should remove both targets (since activity is now > 0ms old)
         let removed = registry.prune_stale(Duration::from_millis(0));
         assert_eq!(removed, 2);
         assert_eq!(registry.len(), 0);
@@ -410,20 +399,16 @@ mod tests {
         let target_1 = ComboTargetId(1);
         let target_2 = ComboTargetId(2);
 
-        // Non-existent target returns 0
         assert_eq!(registry.last_activity_within(target_1, 10), 0);
 
-        // Record request updates activity
         registry.record_request(target_1);
         let act1 = registry.last_activity_within(target_1, 10);
         assert!(act1 > 0);
 
-        // Record failure updates activity
         registry.record_failure(target_2);
         let act2 = registry.last_activity_within(target_2, 10);
         assert!(act2 > 0);
 
-        // Outside window (0 seconds window) returns 0
         std::thread::sleep(Duration::from_millis(10));
         assert_eq!(registry.last_activity_within(target_1, 0), 0);
     }
@@ -436,17 +421,14 @@ mod tests {
         let timeout = ComboTargetId(30);
         let untried = ComboTargetId(40);
 
-        // Untried target has default optimistic reputation 1.0
         assert_eq!(registry.reputation_score(untried, 60), 1.0);
 
-        // Healthy target: 10 successes, 0 failures, low latency
         for _ in 0..10 {
             registry.record_success_with_latency(healthy, 200);
         }
         let score_healthy = registry.reputation_score(healthy, 60);
         assert!((score_healthy - 1.0).abs() < 1e-4);
 
-        // Failing target: 2 successes, 8 failures
         for _ in 0..2 {
             registry.record_success_with_latency(failing, 300);
         }
@@ -454,11 +436,9 @@ mod tests {
             registry.record_failure_with_kind(failing, false);
         }
         let score_failing = registry.reputation_score(failing, 60);
-        // Success rate is 0.2, plus recency penalty (0.6) -> 0.12
         assert!(score_failing < 0.25);
         assert!(score_failing >= 0.05);
 
-        // Timeout target: 5 successes, 5 timeouts
         for _ in 0..5 {
             registry.record_success_with_latency(timeout, 500);
         }
@@ -466,7 +446,6 @@ mod tests {
             registry.record_failure_with_kind(timeout, true);
         }
         let score_timeout = registry.reputation_score(timeout, 60);
-        // 50% success rate, timeout factor 0.75, recency penalty 0.6 -> ~0.225
         assert!(score_timeout < score_healthy);
         assert!(score_timeout < 0.35);
 

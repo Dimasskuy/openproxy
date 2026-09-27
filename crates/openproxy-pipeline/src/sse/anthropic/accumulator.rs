@@ -14,18 +14,17 @@ pub(crate) const MAX_TOOL_NAME_BYTES: usize = 256;
 
 #[derive(Debug, Default, Clone)]
 pub struct AnthropicToolUseAccumulator {
-    /// Index of the tool call within the assistant message's `tool_calls` array.
+    /// Position in the assistant message's `tool_calls` array.
     pub index: u32,
     /// Anthropic `id` (e.g. "toolu_01ABC"). Emitted once at start.
     pub id: String,
     /// Function name (e.g. "get_weather"). Emitted once at start.
     pub name: String,
-    /// Accumulated partial JSON fragments from input_json_delta.
+    /// Accumulated `input_json_delta` fragments.
     pub arguments: String,
 }
 
 impl AnthropicToolUseAccumulator {
-    /// Create a new accumulator with bounds checking.
     pub fn new_with_bounds(index: u32, id: String, name: String) -> Result<Self> {
         if id.len() > MAX_TOOL_ID_BYTES {
             return Err(CoreError::Parse(format!(
@@ -45,7 +44,7 @@ impl AnthropicToolUseAccumulator {
         })
     }
 
-    /// Append to arguments with bounds checking.
+    /// Appends a fragment, erroring once the cap is exceeded.
     pub fn push_arguments(&mut self, fragment: &str) -> Result<()> {
         if self.arguments.len() + fragment.len() > MAX_TOOL_ARGUMENTS_BYTES {
             return Err(CoreError::Parse(format!(

@@ -1,9 +1,4 @@
-// views/analytics/index.ts — entry point for the analytics dashboard.
-// Owns the top-level layout (toolbar + body), the data-fetch sequence
-// on mount, and the chart lifecycle wiring. The KPI cards, ranking,
-// status, latency, and race blocks are composed here (not in a
-// sub-module) because they're cheap to render and they're the glue
-// between the toolbar (charts.ts) and the tables (tables.ts).
+// views/analytics/index.ts — layout, KPI/status/latency/race blocks, mount sequence.
 
 import { html, type TemplateResult } from "lit-html";
 import { state } from "../../state/index.js";
@@ -256,14 +251,11 @@ function renderAnalytics(): TemplateResult {
 
 // ── Mount ───────────────────────────────────────────────────────────
 
-/** Mount the analytics view. Returns a cleanup function that tears
- *  down the chart instances + the theme-change listener. */
 export async function mountAnalytics(): Promise<(() => void) | void> {
   const el = document.getElementById("main");
   if (!el) return;
 
-  // Reset view-local state on every mount. The previous mount's
-  // charts were destroyed by its cleanup function; we start fresh.
+  // Fresh start: the previous mount's charts died with its cleanup fn.
   setViewState({
     loading: true,
     errorMsg: null,
@@ -273,9 +265,7 @@ export async function mountAnalytics(): Promise<(() => void) | void> {
 
   const { preset, providerId, apiKeyId } = parseHashParams();
   try {
-    // Combined query string for every `/usage/*` fetch. The errors
-    // endpoint additionally carries `limit=10` so we cap the table
-    // at 10 rows (the server's default is 100).
+    // Shared by every `/usage/*` fetch; errors adds `limit=10` to cap the table.
     const usageQ = buildUsageQuery(preset, providerId, apiKeyId);
     const errorsQ = buildUsageQuery(preset, providerId, apiKeyId, { limit: "10" });
     const [
@@ -291,10 +281,7 @@ export async function mountAnalytics(): Promise<(() => void) | void> {
       api(`/usage/by-day${usageQ}`) as Promise<ByDayRow[]>,
       api(`/usage/by-status${usageQ}`) as Promise<ByStatusRow[]>,
       api(`/usage/errors${errorsQ}`) as Promise<ErrorRow[]>,
-      // Filter dropdown options — use the state cache when the
-      // bg-poll has already populated it (the common case); fall
-      // back to a direct fetch on a cold paint. Backfill the cache
-      // after the fetch so the next navigation is instant.
+      // Prefer the bg-poll's cache; fall back to a direct fetch on a cold paint.
       (state.providers && state.providers.length)
         ? Promise.resolve(state.providers)
         : api("/providers") as Promise<Provider[]>,
@@ -322,11 +309,8 @@ export async function mountAnalytics(): Promise<(() => void) | void> {
     if (apiKeysResp) state.apiKeys = apiKeysResp as typeof state.apiKeys;
 
     requestUpdate();
-    // Create the uPlot charts after the data-bearing render commits.
-    // `requestUpdate()` schedules a microtask re-render; the
-    // `requestAnimationFrame` callback runs after the next paint, so
-    // the chart-container `<div>`s exist by then. `createAnalyticsCharts`
-    // is idempotent (no-op if `charts` is already set).
+    // rAF runs after the `requestUpdate()` re-render paints, so the chart
+    // containers exist. `createAnalyticsCharts` is idempotent.
     requestAnimationFrame(() => {
       createAnalyticsCharts();
     });

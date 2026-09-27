@@ -228,7 +228,6 @@ impl ChunkProcessor<'_> {
         Ok(crate::streaming::ChunkEvent::Skip)
     }
 
-    /// OpenAI-format SSE handler (fast + slow paths).
     pub(super) async fn process_openai_format(
         &mut self,
         ctx: &StreamContext<'_>,

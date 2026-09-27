@@ -100,18 +100,14 @@ export function showAddProxySource(): void {
   );
 }
 
-/** Read the proxy-source form and produce the JSON body sent to
- *  `POST /admin/proxy-sources` (create) and `PUT
- *  /admin/proxy-sources/:id` (update).
+/** Read the proxy-source form into the JSON body for `POST /admin/proxy-sources` (create) and
+ *  `PUT /admin/proxy-sources/:id` (update).
  *
- *  Always-present fields (`name`, `url`) are trimmed; `priority`
- *  falls back to `0` when missing/blank; `active` is a checkbox
- *  whose value is the literal string `"on"` when ticked.
+ *  Always-present fields (`name`, `url`) are trimmed; `priority` falls back to `0` when missing
+ *  or blank; `active` is a checkbox whose value is the literal `"on"` when ticked.
  *
- *  Pure (only `form` reads + trim/number coercion). Exported for
- *  unit testing in `proxy-source-handlers.test.ts`. The inferred
- *  return type is `Name`-like; tests assert against it via
- *  `toEqual`. */
+ *  Pure (form reads + trim/number coercion); exported for `proxy-source-handlers.test.ts`. The
+ *  inferred return type is `Name`-like and tests assert against it via `toEqual`. */
 export function buildProxySourceBodyFromForm(form: HTMLFormElement) {
   const f = new FormData(form);
   return {
@@ -272,10 +268,9 @@ export async function toggleProxySourceActive(id: string, e: Event): Promise<voi
   const src = state.proxySources.find((s) => s.id === id);
   if (!src) return;
 
-  // intentionally not using mutateAndRefresh because: Tier 3 —
-  // optimistic checkbox toggle with rollback on error (the catch
-  // restores `checkbox.checked`), which the helper's uniform
-  // error path cannot express.
+  // Deliberately not mutateAndRefresh (Tier 3): an optimistic checkbox toggle with rollback
+  // (the catch restores `checkbox.checked`) is not expressible through the helper's uniform
+  // error path.
   try {
     const payload = {
       name: src.name,

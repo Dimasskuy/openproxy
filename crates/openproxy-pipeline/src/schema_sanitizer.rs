@@ -2,23 +2,17 @@ use serde_json::Value;
 use std::collections::HashSet;
 
 /// Sanitizes JSON Schema for tool parameters to prevent grammar/FSM sampler traps
-/// and ensure compatibility with OpenAI Structured Outputs and Codex Responses API.
-///
-/// Specific fixes:
-/// 1. Strips regex `"pattern"` from schema properties (unsupported by OpenAI Structured
-///    Outputs, and causes regex-constrained token traps such as OpenCode's `pattern: "^ses"`).
-/// 2. Relaxes `"additionalProperties": false` when optional properties exist (fields in `properties`
-///    not listed in `required`). In OpenAI Responses / Codex, `additionalProperties: false` forces
-///    the model to emit all defined properties even when optional.
+/// and stay compatible with OpenAI Structured Outputs / Codex Responses API.
+/// Strips regex `"pattern"` (unsupported, and a token trap such as OpenCode's
+/// `pattern: "^ses"`) and relaxes `"additionalProperties": false` when optional
+/// properties exist (OpenAI forces every defined property to be emitted).
 pub fn sanitize_tool_parameters_schema(val: &mut Value) {
     let Some(obj) = val.as_object_mut() else {
         return;
     };
 
-    // 1. Remove regex "pattern" from property definitions.
     obj.remove("pattern");
 
-    // 2. If additionalProperties: false is set but there are optional properties, remove it.
     if let Some(add_props) = obj.get("additionalProperties")
         && add_props.as_bool() == Some(false)
         && let Some(props) = obj.get("properties").and_then(|p| p.as_object())
@@ -38,7 +32,6 @@ pub fn sanitize_tool_parameters_schema(val: &mut Value) {
         }
     }
 
-    // 3. Recurse into nested structures.
     if let Some(props) = obj.get_mut("properties").and_then(|p| p.as_object_mut()) {
         for (_, prop_val) in props.iter_mut() {
             sanitize_tool_parameters_schema(prop_val);

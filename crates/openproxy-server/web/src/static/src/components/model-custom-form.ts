@@ -1,18 +1,12 @@
-// components/model-custom-form.ts — the "Add custom model" modal.
-// Defaults the format selector to whatever the provider already
-// speaks (anthropic for anthropic providers, openai for everything
-// else) so the user only has to override it when the model speaks a
-// different protocol.
+// components/model-custom-form.ts — the "Add custom model" modal. Defaults the format
+// selector to whatever protocol the provider already speaks (anthropic for anthropic
+// providers, openai otherwise) so the user only overrides it when the model differs.
 //
-// The submit handler (`createCustomModel`) lives in
-// `handlers/model-handlers.ts` and is imported here directly —
-// no more `data-action` registry dispatch. The cycle
-// (model-handlers → model-custom-form → model-handlers) is safe
-// because the imported binding is only referenced inside an
-// `@submit` closure (runtime), not at module top-level.
+// `createCustomModel` is imported from `handlers/model-handlers.ts` directly instead of
+// going through the `data-action` registry. The cycle is safe: the binding is only
+// referenced inside an `@submit` closure, never at module top level.
 //
-// Migrated to lit-html: the modal is rendered into a fresh wrapper
-// `<div>` under `#modal-root` via `render()`. Closing the modal
+// Rendered into a fresh wrapper `<div>` under `#modal-root` via `render()`; closing
 // removes the wrapper.
 
 import { html, render, type TemplateResult } from "lit-html";
@@ -78,9 +72,8 @@ function customModelFormTemplate(providerId: string): TemplateResult {
 
 export function showCustomModelForm(providerId: string): void {
   const root = ensureModalRoot();
-  // Render into a fresh wrapper div so lit-html can diff efficiently
-  // if we ever re-render the same modal. The wrapper is removed by
-  // closeCustomModelForm via the closest .modal-bg lookup.
+  // Fresh wrapper so a future re-render diffs cleanly; removed by closeCustomModelForm
+  // via the closest `.modal-bg` lookup.
   const wrapper = document.createElement("div");
   root.appendChild(wrapper);
   render(customModelFormTemplate(providerId), wrapper);
@@ -89,9 +82,7 @@ export function showCustomModelForm(providerId: string): void {
 export function closeCustomModelForm(): void {
   const m: HTMLElement | null = document.getElementById("custom-model-modal");
   if (!m) return;
-  // The modal lives inside a wrapper div we created in
-  // showCustomModelForm; remove the wrapper too so #modal-root
-  // stays clean.
+  // The modal lives inside the wrapper created above; drop it too so #modal-root stays clean.
   const wrapper = m.parentElement;
   m.remove();
   if (wrapper && wrapper.children.length === 0 && wrapper.parentElement?.id === "modal-root") {

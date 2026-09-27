@@ -93,16 +93,16 @@ describe("notifications store — WS notification events", () => {
     fire(makeEvent(100));
     expect(store.getUnreadCount()).toBe(b0 + 1);
 
-    // rebroadcast does not increment
+    // A rebroadcast must not increment.
     fire(makeEvent(100));
     expect(store.getUnreadCount()).toBe(b0 + 1);
 
-    // markIdsSeen prevents increment
+    // markIdsSeen prevents the increment.
     store.markIdsSeen([300]);
     fire(makeEvent(300));
     expect(store.getUnreadCount()).toBe(b0 + 1);
 
-    // malformed payload ignored
+    // A malformed payload is ignored.
     fire(null);
     fire("not-an-object");
     expect(store.getUnreadCount()).toBe(b0 + 1);
@@ -181,7 +181,7 @@ describe("notifications store — refresh + dirty flag", () => {
     await store.refreshUnreadCount();
     expect(store.getUnreadCount()).toBe(9);
 
-    // optimistic delete and re-sync
+    // Optimistic delete, then re-sync.
     store.setUnreadCount(2);
     store.decrementUnread(1);
     expect(store.getUnreadCount()).toBe(1);
@@ -189,13 +189,13 @@ describe("notifications store — refresh + dirty flag", () => {
     await store.refreshUnreadCount();
     expect(store.getUnreadCount()).toBe(1);
 
-    // already read: no decrement
+    // Already read: no decrement.
     store.setUnreadCount(3);
     api.mockResolvedValue({ count: 3 });
     await store.refreshUnreadCount();
     expect(store.getUnreadCount()).toBe(3);
 
-    // rollback on rejection
+    // Rollback on rejection.
     store.setUnreadCount(2);
     store.decrementUnread(1);
     expect(store.getUnreadCount()).toBe(1);

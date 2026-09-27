@@ -1,14 +1,6 @@
-// components/uplot-chart/index.ts
-// ==========
-// Facade for the uPlot chart subsystem. Re-exports the public API of
-// the three internal modules (colors / lifecycle / builders) so
-// consumers keep importing from `components/uplot-chart.js`:
-//
-//   import { buildThroughputChart, CHART_COLORS, observeResize }
-//     from "../components/uplot-chart.js";
-//
-// The public surface is identical to the pre-split monolithic file —
-// no consumer-facing changes.
+// components/uplot-chart/index.ts — facade re-exporting the public API of colors / lifecycle
+// / builders so consumers keep importing from "components/uplot-chart.js". The public
+// surface is identical to the pre-split monolithic file — no consumer-facing changes.
 
 export { CHART_COLORS, cssVar, type ChartColors } from "./colors.js";
 

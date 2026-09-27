@@ -2,9 +2,8 @@
 
 //! Integration tests for SSE streaming pipeline.
 //!
-//! These tests exercise the SSE parsing functions in a realistic
-//! streaming scenario — simulating how the pipeline reads lines
-//! from upstream and translates them for the client.
+//! Exercise the SSE parsers the way the pipeline reads lines from upstream and
+//! translates them for the client.
 
 use openproxy_pipeline::sse::{
     SSE_DONE, UpstreamSseChunk, format_sse_line, parse_gemini_sse_line, parse_openai_sse_line,
@@ -21,12 +20,9 @@ fn payload_value(chunk: &UpstreamSseChunk) -> serde_json::Value {
     }
 }
 
-// =====================================================================
 // OpenAI streaming simulation
-// =====================================================================
 
-/// Simulate a full OpenAI streaming response end-to-end.
-/// Parses a series of SSE lines as a streaming client would receive them.
+/// Parse a full OpenAI streaming response the way a client receives it.
 #[test]
 fn openai_streaming_full_response_simulation() {
     let sse_lines = vec![
@@ -70,8 +66,7 @@ fn openai_streaming_full_response_simulation() {
     assert_eq!(usage.total_tokens, 15);
 }
 
-/// Simulate an OpenAI streaming response with interleaved empty lines
-/// and comments (common in real HTTP SSE streams).
+/// Empty lines and `:` comments interleaved in a real HTTP SSE stream.
 #[test]
 fn openai_streaming_with_interleaved_empty_and_comments() {
     let sse_lines = vec![
@@ -105,11 +100,9 @@ fn openai_streaming_with_interleaved_empty_and_comments() {
     assert_eq!(content, "Hello world");
 }
 
-// =====================================================================
 // Gemini streaming simulation
-// =====================================================================
 
-/// Simulate a full Gemini streaming response translated to OpenAI format.
+/// Full Gemini streaming response translated to OpenAI format.
 #[test]
 fn gemini_streaming_full_response_simulation() {
     let sse_lines = vec![
@@ -144,7 +137,7 @@ fn gemini_streaming_full_response_simulation() {
     assert_eq!(usage.completion_tokens, 5);
 }
 
-/// Simulate a Gemini streaming response with multiple chunks.
+/// Gemini streaming response split across multiple chunks.
 #[test]
 fn gemini_streaming_multiple_chunks() {
     let sse_lines = vec![
@@ -179,7 +172,7 @@ fn gemini_streaming_multiple_chunks() {
     assert!(usage.is_some());
 }
 
-/// Gemini stream with CRLF line endings (real HTTP transport).
+/// CRLF line endings, as sent by real HTTP transports.
 #[test]
 fn gemini_streaming_with_crlf() {
     let raw = "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]}}]}\r\ndata: [DONE]\r\n";
@@ -203,11 +196,6 @@ fn gemini_streaming_with_crlf() {
     assert_eq!(content, "ok");
 }
 
-// =====================================================================
-// format_sse_line round-trip
-// =====================================================================
-
-/// Verify that format_sse_line output can be parsed back by parse_openai_sse_line.
 #[test]
 fn format_then_parse_roundtrip() {
     let original = serde_json::json!({
@@ -223,8 +211,7 @@ fn format_then_parse_roundtrip() {
     });
 
     let formatted = format_sse_line(&original);
-    // formatted is "data: {...}\n\n"
-    // Parse just the data line (strip the trailing \n\n).
+    // strip the trailing \n\n to feed the data line back to the parser
     let data_line = formatted.trim_end();
     let chunk = parse_openai_sse_line(data_line).unwrap().unwrap();
 
@@ -237,7 +224,6 @@ fn format_then_parse_roundtrip() {
     );
 }
 
-/// Verify SSE_DONE constant round-trips correctly.
 #[test]
 fn sse_done_constant_parses_as_done() {
     let line = SSE_DONE.trim_end();
@@ -245,22 +231,17 @@ fn sse_done_constant_parses_as_done() {
     assert!(chunk.done);
 }
 
-/// Format and parse a done sentinel.
 #[test]
 fn format_done_sentinel() {
     let done_value = serde_json::Value::Null;
     let formatted = format_sse_line(&done_value);
-    // The formatted line is "data: null\n\n" — not the same as [DONE].
-    // So we verify that format_sse_line for Null is different from SSE_DONE.
+    // formatting Null yields "data: null", which is not the [DONE] sentinel
     assert_ne!(formatted, SSE_DONE);
     assert_eq!(formatted, "data: null\n\n");
 }
 
-// =====================================================================
 // Edge cases in streaming context
-// =====================================================================
 
-/// A stream that sends [DONE] immediately (no content).
 #[test]
 fn openai_stream_immediate_done() {
     let sse_lines = vec!["data: [DONE]"];
@@ -282,7 +263,6 @@ fn openai_stream_immediate_done() {
     assert!(content.is_empty());
 }
 
-/// A stream with multiple empty lines before [DONE].
 #[test]
 fn openai_stream_only_empty_lines_then_done() {
     let sse_lines = vec!["", "", "", "", "data: [DONE]"];
@@ -302,7 +282,7 @@ fn openai_stream_only_empty_lines_then_done() {
     assert!(done);
 }
 
-/// Gemini stream with no text in any candidate (only finish_reason).
+/// Gemini stream whose candidates carry only finish_reason, no text.
 #[test]
 fn gemini_stream_finish_only_no_text() {
     let sse_lines = vec![
@@ -336,7 +316,6 @@ fn gemini_stream_finish_only_no_text() {
     assert_eq!(usage.unwrap().completion_tokens, 0);
 }
 
-/// OpenAI stream with very long content across many chunks.
 #[test]
 fn openai_stream_many_small_chunks() {
     let mut sse_lines: Vec<String> = Vec::new();
@@ -368,11 +347,9 @@ fn openai_stream_many_small_chunks() {
     assert_eq!(content, expected);
 }
 
-// =====================================================================
 // Concurrent-ish parsing: same data parsed twice yields same result
-// =====================================================================
 
-/// Parsing the same SSE data multiple times produces identical results (idempotency).
+/// Parsing the same SSE data 100 times yields identical results.
 #[test]
 fn openai_parse_idempotent() {
     let line = r#"data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"gpt-4","choices":[{"index":0,"delta":{"content":"test"},"finish_reason":null}]}"#;
@@ -388,7 +365,7 @@ fn openai_parse_idempotent() {
     }
 }
 
-/// Parsing the same Gemini SSE data multiple times produces identical results.
+/// Parsing the same Gemini SSE data 100 times yields identical results.
 #[test]
 fn gemini_parse_idempotent() {
     let line = r#"data: {"candidates":[{"content":{"parts":[{"text":"test"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}"#;

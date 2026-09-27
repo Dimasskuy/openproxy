@@ -1,13 +1,13 @@
 //! Proxy rotation: detección de triggers y aplicación del cambio de proxy
-//! (marcar muerto, cooldown, buscar candidatos). Mantiene el patrón
-//! `spawn_blocking` con `conn.lock()` confinado al closure (AGENTS.md §4.3:
-//! el guard nunca cruza `.await`).
+//! (marcar muerto, cooldown, buscar candidatos). Todo acceso a BD va dentro
+//! de `spawn_blocking` con el `conn.lock()` confinado al closure: el guard
+//! nunca cruza un `.await` (AGENTS.md §4.3).
 
 use super::UpstreamDispatcher;
 
-/// Disparadores de rotación. `RateLimited` se evalúa siempre;
-/// `Status(code)` y `ConnectError` se contrastan contra la lista
-/// `proxy_rotation_errors` del provider.
+/// Triggers de rotación. `RateLimited` se evalúa siempre; `Status(code)` y
+/// `ConnectError` se contrastan contra la lista CSV `proxy_rotation_errors` del
+/// provider.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ProxyRotationTrigger {
     Status(u16),
@@ -15,9 +15,7 @@ pub(crate) enum ProxyRotationTrigger {
     RateLimited,
 }
 
-/// Argumentos para `apply_proxy_rotation`. Privados al submódulo: el resto
-/// del código pasa por `check_and_trigger_proxy_rotation` que ya
-/// construye los args.
+/// Construido por `check_and_trigger_proxy_rotation`.
 pub(super) struct ProxyRotationArgs<'a> {
     pub(super) conn: &'a rusqlite::Connection,
     pub(super) provider_id: &'a openproxy_types::ids::ProviderId,
@@ -28,12 +26,8 @@ pub(super) struct ProxyRotationArgs<'a> {
     pub(super) cooldown_ms: Option<u64>,
 }
 
-/// Resuelve qué proxy ID se considera "malo" para esta rotación.
-///
-/// Prioridad:
-/// 1. Override explícito del request (`override_proxy_id`).
-/// 2. Proxy per-cuenta (cuando `is_per_account=true`).
-/// 3. Proxy actual del provider.
+/// Proxy ID considerado "malo" para esta rotación: override explícito del
+/// request, proxy per-cuenta, o proxy actual del provider, en ese orden.
 pub(super) fn find_bad_proxy_id(
     provider: &openproxy_types::providers::Provider,
     conn: &rusqlite::Connection,
@@ -55,8 +49,6 @@ pub(super) fn find_bad_proxy_id(
     }
 }
 
-/// Decide si el trigger amerita rotación comparándolo contra la lista CSV
-/// `proxy_rotation_errors` del provider. `RateLimited` rota siempre.
 pub(super) fn should_rotate_proxy(
     provider: &openproxy_types::providers::Provider,
     trigger: ProxyRotationTrigger,
@@ -79,16 +71,14 @@ pub(super) fn should_rotate_proxy(
     }
 }
 
-/// Aplica la rotación en BD:
-/// - `ConnectError` → marca el proxy como `dead`.
-/// - Inserta cooldown para `(provider_id, bad_proxy)` con la duración dada
-///   (default 15 minutos).
-/// - Limpia `current_proxy_id` del provider o de la cuenta según el modo.
-/// - Devuelve `true` si existe al menos un proxy candidato disponible
-///   (sin cooldown, status='alive').
+/// Aplica la rotación en BD. `ConnectError` marca el proxy como `dead`; en
+/// ambos casos inserta el cooldown de `(provider_id, bad_proxy)` (15 minutos
+/// por defecto) y limpia `current_proxy_id` del provider o de la cuenta según
+/// el modo.
 ///
-/// Todas las escrituras son fire-and-forget (`let _ = …`) salvo el cómputo
-/// final de candidatos, que sí propaga resultado para informar al caller.
+/// Las escrituras son fire-and-forget. Solo el cómputo final de candidatos
+/// propaga resultado, para que el caller sepa si queda alguno disponible
+/// (alive y sin cooldown).
 pub(super) fn apply_proxy_rotation(args: ProxyRotationArgs<'_>) -> bool {
     let cooldown_duration = args.cooldown_ms.map_or_else(
         || std::time::Duration::from_mins(15),
@@ -123,9 +113,8 @@ pub(super) fn apply_proxy_rotation(args: ProxyRotationArgs<'_>) -> bool {
 }
 
 impl UpstreamDispatcher {
-    /// Versión async: busca el provider, valida `use_proxies`, y delega a
-    /// `apply_proxy_rotation`. Todo el acceso a BD ocurre dentro de un
-    /// `spawn_blocking` para no bloquear el reactor Tokio.
+    /// Todo el acceso a BD ocurre dentro de un `spawn_blocking` para no bloquear
+    /// el reactor Tokio.
     pub(super) async fn check_and_trigger_proxy_rotation(
         &self,
         provider_id: &openproxy_types::ids::ProviderId,
@@ -184,34 +173,25 @@ impl UpstreamDispatcher {
 
 #[cfg(test)]
 mod tests {
-    //! Test P3 obligatorio (AGENTS.md §3.1 P3): `apply_proxy_rotation` extraída
-    //! con más de 20 líneas requiere al menos 1 test unitario.
-
     use super::*;
 
-    /// Test unitario (no async, no spawn_blocking). Patrón corregido:
-    /// adquirimos el guard UNA vez y pasamos `&Connection` por deref
-    /// (`&*guard`) sin re-lock (AGENTS.md §4.3). Seeds mínimos vía SQL
-    /// directo (`free_proxies::insert` no existe en `openproxy-db`).
+    // Guard adquirido una vez y pasado por deref (`&*guard`), nunca re-locked
+    // (AGENTS.md §4.3). Los seeds van por SQL directo porque `openproxy-db` no
+    // expone `free_proxies::insert`.
     #[test]
     fn apply_proxy_rotation_marks_proxy_dead_on_connect_error() {
-        // 1) Pool en disco temporal con migrations.
         let pool = openproxy_db::DbPool::test_pool_with_prefix("openproxy-rotation-test")
             .expect("open pool");
 
-        // 2) Conexión propia para los seeds + llamada directa a la función.
         let conn_arc = std::sync::Arc::new(parking_lot::Mutex::new(
             pool.open_connection().expect("open extra connection"),
         ));
 
-        // 3) Seeds: provider (use_proxies activo, rotación global) + un
-        //    proxy "bad-1" marcado vivo y un candidato "cand-1" vivo.
         let provider_id = openproxy_types::ids::ProviderId::new("rot-test");
         {
             let c = conn_arc.lock();
-            // Seed de los proxies ANTES del provider para que la FK
-            // `current_proxy_id` → `free_proxies.id` se satisfaga cuando
-            // actualicemos el provider.
+            // Proxies sembrados antes que el provider para que la FK
+            // `current_proxy_id` → `free_proxies.id` se satisfaga al actualizar.
             c.execute(
                 "INSERT INTO free_proxies (id, source, host, port, type, status) \
                  VALUES ('bad-1', 'custom', 'bad-host', 9999, 'http', 'alive')",
@@ -239,7 +219,6 @@ mod tests {
                 },
             )
             .expect("seed provider");
-            // Habilita proxies y fija binding actual al proxy malo.
             c.execute(
                 "UPDATE providers SET use_proxies = 1, \
                  proxy_rotation_errors = 'connect_error,timeout', \
@@ -250,7 +229,6 @@ mod tests {
             .expect("enable provider proxies");
         }
 
-        // 4) Llamada directa con guard único (sin re-lock).
         let had_candidate = {
             let c = conn_arc.lock();
             apply_proxy_rotation(ProxyRotationArgs {
@@ -264,7 +242,6 @@ mod tests {
             })
         };
 
-        // 5) Aserciones sobre los efectos en BD.
         let c = conn_arc.lock();
         let bad_status: String = c
             .query_row(
@@ -303,7 +280,6 @@ mod tests {
             "current_proxy_id must be cleared after non-per-account rotation"
         );
 
-        // El candidato vivo 'cand-1' no está en cooldown → hay candidato.
         assert!(
             had_candidate,
             "with an alive seed, get_candidate_proxies_for_provider must return a candidate"

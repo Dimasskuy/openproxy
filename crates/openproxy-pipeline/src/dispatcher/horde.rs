@@ -12,9 +12,7 @@ use openproxy_types::combos::ComboTarget;
 use openproxy_types::error::CoreError;
 use std::time::Instant;
 
-/// `true` cuando el target es `horde` y el modelo es de visión (o el
-/// request trae una imagen embebida en mensajes). Esta rama se evalúa
-/// en `mod.rs::dispatch_upstream` antes de poblar headers.
+/// Evaluada en `mod.rs::dispatch_upstream` antes de poblar headers.
 pub(super) fn is_horde_vision_request(
     target: &ComboTarget,
     model: &Model,
@@ -29,9 +27,9 @@ pub(super) fn is_horde_vision_request(
 }
 
 impl UpstreamDispatcher {
-    /// Bifurcación ortogonal: si es Horde vision, ejecuta la interrogación
-    /// y serializa la respuesta como `OpenAIResponse` (también opcionalmente
-    /// como stream SSE de 2 chunks).
+    /// Bifurcación ortogonal al modo streaming: serializa la
+    /// interrogación como `OpenAIResponse`, y opcionalmente como un stream
+    /// SSE de 2 chunks.
     pub(super) async fn dispatch_horde_vision(
         &self,
         params: DispatchParams<'_>,

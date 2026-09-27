@@ -1,30 +1,20 @@
-//! `GET /v1/models` — OpenAI-compatible response with enriched
-//! capabilities.
+//! `GET /v1/models` — OpenAI-compatible catalog with enriched capabilities,
+//! following OmniRoute's format so clients like Cursor and Cline can
+//! auto-detect context windows, vision support and tool calling.
 //!
-//! Based on OmniRoute's catalog format so clients like Cursor and Cline
-//! can auto-detect context windows, vision support, tool calling, etc.
+//! The shape unions the OpenAI `/v1/models` contract (`id`, `object`,
+//! `created`, `owned_by` inside an `object: "list"` envelope) with OmniRoute's
+//! capability fields (`context_length`, `max_input_tokens`, `max_output_tokens`,
+//! `input_modalities`, `output_modalities`, `capabilities`, `type`, `family`).
 //!
-//! The shape is the union of:
-//! - The OpenAI `/v1/models` contract (`id`, `object`, `created`,
-//!   `owned_by`, plus a list-shaped envelope with `object: "list"`).
-//! - OmniRoute's capability fields (`context_length`,
-//!   `max_input_tokens`, `max_output_tokens`, `input_modalities`,
-//!   `output_modalities`, `capabilities`, `type`, `family`).
+//! Capability values prefer the operator-edited columns in the `models` table;
+//! [`openproxy_core::capabilities`] heuristics fill any `NULL` field, so rows
+//! discovered before migration 000014 still serve a fully-populated response
+//! (and get backfilled by [`openproxy_core::seed::backfill_model_metadata`]).
 //!
-//! Capability values prefer the operator-edited values stored in the
-//! `models` table; the [`openproxy_core::capabilities`] heuristic is
-//! the fallback for any field that is `NULL` on the row. This means
-//! rows discovered before migration 000014 still produce a fully-
-//! populated response on the first request after the migration (and
-//! also get backfilled to the DB by
-//! [`openproxy_core::seed::backfill_model_metadata`]).
-//!
-//! In addition to the real models in the `models` table, this handler
-//! also surfaces every combo as a synthetic `combo:<name>` entry.
-//! This mirrors OmniRoute's "combo as virtual model" behaviour:
-//! clients that consume the catalog (Cursor, Cline, the dashboard's
-//! model picker) can address a combo by its alias and the chat path
-//! resolves the alias to the combo's target list.
+//! Combos are also surfaced as synthetic `combo:<name>` entries, mirroring
+//! OmniRoute's "combo as virtual model": clients can address a combo by alias
+//! and the chat path resolves the alias to its target list.
 
 use axum::{Json, extract::State, http::HeaderMap};
 use openproxy_core::capabilities::resolve_effective_model_type;
@@ -37,13 +27,12 @@ pub fn router() -> axum::Router<AppState> {
     axum::Router::new().route("/models", axum::routing::get(list_models))
 }
 
-/// Default context length to report when neither the DB column nor
-/// the heuristic knows the model. 128k is the modern chat default and
-/// matches what OpenRouter returns for unknown models.
+/// Default context length when neither the DB column nor the heuristic knows the
+/// model: 128k, the modern chat default and what OpenRouter returns for unknowns.
 const DEFAULT_CONTEXT_LENGTH: i64 = 128_000;
 
-/// Default max output tokens when neither the DB nor the heuristic
-/// has a value. 8 192 is the conservative Claude / GPT-4-class cap.
+/// Default max output tokens when neither DB nor heuristic has a value:
+/// 8 192, the conservative Claude / GPT-4-class cap.
 const DEFAULT_MAX_OUTPUT_TOKENS: i64 = 8_192;
 
 fn filter_models_for_key(
@@ -165,13 +154,12 @@ fn extract_auth_header_token(headers: &HeaderMap) -> Option<&str> {
         })
 }
 
-/// Authenticate with a chat-scope key, OR allow anonymous when zero
-/// active keys exist (first-boot window) AND the operator opted in via
+/// Authenticate with a chat-scope key, or allow anonymous when zero active keys
+/// exist (first-boot window) AND the operator opted in via
 /// `server.allow_anonymous` — the same gate the chat routes apply in
-/// `middleware::auth::check_anonymous_fallback`. Without the opt-in, the
-/// catalog stays private during the first-boot window and after the last
-/// key is revoked (e.g. during an incident rotation). Returns the key if
-/// authenticated, or None if anonymous.
+/// `middleware::auth::check_anonymous_fallback`. Without the opt-in the catalog
+/// stays private during the first-boot window and after the last key is revoked
+/// (e.g. mid-rotation). Returns the key, or `None` when anonymous.
 fn authenticate_chat_or_anonymous(
     state: &AppState,
     headers: &HeaderMap,
@@ -194,12 +182,9 @@ fn authenticate_chat_or_anonymous(
     Ok(Some(key))
 }
 
-/// Project a combo into a synthetic catalog entry. The shape mirrors
-/// `build_model_entry` so the catalog stays homogeneous — clients
-/// that just iterate `data` see a list of models where some happen
-/// to be combos. Capability fields are `null` because a combo is an
-/// alias for an operator-chosen list of targets, not a real model;
-/// per-model metadata would be misleading.
+/// Project a combo into a synthetic catalog entry shaped like `build_model_entry`
+/// so the catalog stays homogeneous. Capability fields are `null`: a combo aliases
+/// an operator-chosen target list, so per-model metadata would mislead.
 fn build_combo_entry(
     c: &openproxy_types::Combo,
     effective_context_window: Option<i64>,
@@ -245,9 +230,9 @@ fn parse_modalities_json_or(
         .unwrap_or_else(fallback)
 }
 
-/// Project one `core::models::Model` row to the enriched OpenAI-shape
-/// JSON object the public endpoint returns. Lifted out of the handler
-/// body so it can be unit-tested without spinning up an axum router.
+/// Project one `core::models::Model` row to the enriched OpenAI-shape JSON the
+/// public endpoint returns. Split out of the handler so it is unit-testable
+/// without an axum router.
 fn build_model_entry(m: &models::Model) -> serde_json::Value {
     let model_id = m.model_id.as_str();
     let provider_id = m.provider_id.as_str();
@@ -309,11 +294,10 @@ fn build_model_entry(m: &models::Model) -> serde_json::Value {
     })
 }
 
-/// Build the inner `capabilities` JSON object, omitting `null` values
-/// so the field is `{ "vision": true, "tool_calling": true, ... }`
-/// rather than `{ "vision": true, "tool_calling": true, "reasoning":
-/// null, ... }`. The omission makes clients that just look for
-/// `if (caps.reasoning)` work correctly.
+/// Build the inner `capabilities` object, omitting `null`s so it reads
+/// `{"vision": true, "tool_calling": true}` instead of
+/// `{"vision": true, "reasoning": null}`. Omission keeps `if (caps.reasoning)`
+/// client checks correct.
 fn build_capabilities_object(caps: &capabilities::ModelCapabilities) -> serde_json::Value {
     let mut out = serde_json::Map::new();
     let fields: [(&str, Option<bool>); 8] = [
@@ -361,8 +345,7 @@ mod tests {
             last_test_status: None,
             last_test_at: None,
             custom: false,
-            // All metadata fields empty — exercises the heuristic
-            // fallback in `build_model_entry`.
+            // All metadata empty: exercises the heuristic fallback.
             context_length: None,
             max_output_tokens: None,
             capabilities_json: None,
@@ -391,9 +374,7 @@ mod tests {
         m.context_length = Some(999_999);
         m.capabilities_json = Some(r#"{"vision": false}"#.into());
         let v = build_model_entry(&m);
-        // The DB value wins: vision is explicitly `false` (and the
-        // field is still present, not omitted, because we got a
-        // value).
+        // DB value wins, and an explicit `false` is present rather than omitted.
         let caps = v.get("capabilities").unwrap();
         assert_eq!(caps.get("vision"), Some(&serde_json::Value::Bool(false)));
         assert_eq!(v.get("context_length").unwrap().as_i64(), Some(999_999));
@@ -404,12 +385,9 @@ mod tests {
         let m = empty_model();
         let v = build_model_entry(&m);
         let caps = v.get("capabilities").and_then(|c| c.as_object()).unwrap();
-        // For a heuristic-inferred gpt-4o row, the capability fields
-        // that are inferable (vision, tool_calling, structured_output,
-        // temperature, attachment) are all present. The `reasoning`
-        // and `thinking` fields are *not* present — gpt-4o doesn't
-        // match the reasoning keywords — which is exactly the
-        // omit-on-null contract the test is guarding.
+        // A heuristic-inferred gpt-4o row yields every inferable capability;
+        // `reasoning`/`thinking` match no keyword and must be omitted — the
+        // exact omit-on-null contract under test.
         for key in [
             "vision",
             "tool_calling",
@@ -423,30 +401,28 @@ mod tests {
             !caps.contains_key("reasoning"),
             "reasoning should be omitted for a non-reasoning model"
         );
-        // `created` is set to a non-zero unix timestamp.
+        // `created` is a non-zero unix timestamp; `object`/`owned_by` round-trip.
         assert!(v.get("created").unwrap().as_i64().unwrap() > 0);
-        // `object: "model"`, `owned_by` round-trips.
         assert_eq!(v.get("object").unwrap().as_str(), Some("model"));
         assert_eq!(v.get("owned_by").unwrap().as_str(), Some("openrouter"));
     }
 
     #[test]
     fn id_is_provider_prefixed() {
-        // The proxy-level id must include the provider prefix so
-        // round-tripping through the chat endpoint is unambiguous.
-        // The test pins down the exact shape: `<provider>/<upstream_id>`.
+        // The provider prefix keeps chat-endpoint round-trips unambiguous; exact
+        // shape `<provider>/<upstream_id>` is pinned here.
         let m = empty_model();
         let v = build_model_entry(&m);
         let id = v
             .get("id")
             .and_then(|x| x.as_str())
             .expect("id is a string");
-        // empty_model() uses provider "openrouter" + upstream "openai/gpt-4o".
+        // empty_model() = provider "openrouter" + upstream "openai/gpt-4o".
         assert_eq!(
             id, "openrouter/openai/gpt-4o",
             "id must be provider-prefixed"
         );
-        // `root` mirrors `id` to keep SDKs that compare them happy.
+        // `root` mirrors `id` for SDKs that compare them.
         let root = v
             .get("root")
             .and_then(|x| x.as_str())
@@ -456,12 +432,9 @@ mod tests {
 
     #[test]
     fn id_handles_already_prefixed_upstream_id() {
-        // Upstream ids that already contain a `/` (e.g.
-        // `nex-agi/nex-n2-pro:free` from OpenRouter) end up with two
-        // slashes in the proxy id: `openrouter/nex-agi/nex-n2-pro:free`.
-        // This is the expected behavior — only the first `/` is the
-        // provider/upstream separator; any later `/` is part of the
-        // upstream model name.
+        // An upstream id that already contains `/` (e.g. OpenRouter's
+        // `nex-agi/nex-n2-pro:free`) yields two slashes. Expected: only the first
+        // `/` separates provider from upstream; later ones belong to the model name.
         let mut m = empty_model();
         m.model_id = ModelId::new("nex-agi/nex-n2-pro:free");
         let v = build_model_entry(&m);

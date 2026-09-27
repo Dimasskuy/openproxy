@@ -1,28 +1,23 @@
-// handlers/registry.ts — central map from `data-action` attribute
+// handlers/registry.ts — central map from the `data-action` attribute
 import { showToast } from "../components/toast.js";
 import { copyToClipboard } from "../lib/clipboard.js";
 import { navigate, rerenderCurrentView, forceRerenderCurrentView } from "../state/router.js";
-// installs a single document-level listener that dispatches clicks
-// / changes / submits based on data-action / data-arg-* attrs.
+// installs a single document-level listener that dispatches clicks / changes / submits based on
+// data-action / data-arg-* attrs.
 //
-// Why: spec §3 + §13.8 forbid window.foo = fn global bridges and
-// inline onclick="window.foo()" handlers. A single shim keeps the
-// HTML tidy (data-action="X" data-arg1="...") without re-wiring
-// every modal.
+// Why: spec §3 + §13.8 forbid window.foo = fn global bridges and inline onclick="window.foo()"
+// handlers. A single shim keeps the HTML tidy (data-action="X" data-arg1="...") without
+// re-wiring every modal.
 //
 // Conventions:
 //   * `action` is the function name in this map.
-//   * `arg1`, `arg2`, ... are positional string args collected
-//     from data-arg-* attributes (in numeric order).
-//   * The trailing `e` is always the DOM event, so handlers can
-//     call e.preventDefault() and reach e.target.
-//   * Functions that take an `e` event first (forms: createKey,
-//     updateKey, updateModel, addTarget, createAccount, createCombo)
-//     receive the event as the LAST argument, matching the way
-//     they used to be invoked from `onsubmit=`. The submit listener
-//     calls preventDefault() before dispatching.
-//   * For self-only closures (closeKeyForm, etc.) the listener
-//     passes the bound element (data-arg1="self") as the arg.
+//   * `arg1`, `arg2`, … are positional string args collected from data-arg-* attrs in numeric order.
+//   * The trailing `e` is always the DOM event, so handlers can call e.preventDefault() and reach
+//     e.target.
+//   * Form handlers that take an event (createKey, updateKey, updateModel, addTarget,
+//     createAccount, createCombo) receive it as the LAST argument, matching how they used to be
+//     invoked from `onsubmit=`; the submit listener calls preventDefault() before dispatching.
+//   * Self-only closures (closeKeyForm, etc.) get the bound element (data-arg1="self") as the arg.
 
 import { showCreateAccount, createAccount, closeCreateAccount, deleteAccount, showUpdateAccountKey, updateAccountKey, closeUpdateAccountKey, showReauthAccount } from "./account-handlers.js";
 import {
@@ -73,28 +68,19 @@ import { closeLogDetailModal, copyDebugBundle } from "../components/log-detail/i
 import { syncProxies, testProxy, testAllProxies, deleteProxy, showAddCustomProxy } from "./proxy-handlers.js";
 import { showAddProxySource, showEditProxySource, deleteProxySource, testProxySource } from "./proxy-source-handlers.js";
 
-// ---- Action registry ----
-// Keys are the data-action values. Each value is the function to
-// invoke. Positional args are filled from data-arg1, data-arg2, ...;
-// the DOM event is always the last argument.
+// -- Action registry --------------------------------------------------------
+// Keys are the data-action values; each maps to the function to invoke. Positional args come
+// from data-arg1, data-arg2, …; the DOM event is always the last argument.
 //
-// The action handlers have very different shapes (some take a
-// string id + event, some take a boolean + event, some take the
-// event alone, some take no args at all). A single narrow type
-// would force every handler into the same shape, so we model the
-// registry value as a callable that accepts any positional args
-// + an event. The dispatch in app.ts passes
-// `collectArgs(el)`, then the DOM event. Each handler validates
-// its own per-action contract.
+// Handlers have widely different shapes (string id + event, boolean + event, event alone, no
+// args), so a single narrow type would force every handler into one shape. The value is
+// therefore a callable accepting any positional args plus an event; app.ts passes
+// `collectArgs(el)` then the DOM event and each handler validates its own contract.
 //
-// We declare it as a *function type* (not an interface) because
-// `interface { (a: string): void }` is contravariant on its
-// parameters: typed handlers are NOT assignable to it. To accept
-// both typed handlers and untyped closures, the type accepts
-// `any` (the only top type that does NOT make typed handlers
-// contravariantly incompatible). We document the convention in
-// the comment block above and rely on the *caller* to validate
-// the per-action contract at runtime.
+// Declared as a *function type* (not an interface) because an `interface { (a: string): void }`
+// is contravariant in its parameters, so typed handlers are not assignable to it. Accepting
+// `any` — the only top type that doesn't create that incompatibility — is what lets both typed
+// handlers and untyped closures coexist; runtime validation is the caller's job.
 export type ActionHandler = (...args: unknown[]) => unknown;
 
 export const HANDLERS = {
@@ -189,8 +175,7 @@ export const HANDLERS = {
   editProviderEndpointPrompt, // (providerId, currentBaseUrl)
   bulkToggleModels,       // (providerId, active)
 
-  // Account health / quota (per-account actions exposed on the
-  // provider detail view)
+  // Account health / quota (exposed on the provider detail view)
   setHealth,              // (id, e)
   refreshAccountQuota,    // (accountId, e)
   refreshAllQuotas,       // (providerId)
@@ -239,12 +224,11 @@ export const HANDLERS = {
 
   // Log detail modal
   closeLogDetailModal,
-  // Copy a Markdown-formatted debug bundle for the currently-open
-  // log row to the clipboard. The button lives in the modal header.
+  // Copy a Markdown debug bundle for the open log row; the button is in the modal header.
   copyDebugBundle,
 
-  // Generic modal-bg closer: removes the closest .modal-bg of the
-  // click target. Used by modals that don't have a stable ID.
+  // Generic modal-bg closer: removes the click target's closest .modal-bg. For modals
+  // without a stable ID.
   closeModalBg(e: Event | null): void {
     if (!e || !e.target) return;
     const target = e.target as Element;
@@ -252,8 +236,7 @@ export const HANDLERS = {
     if (el) el.remove();
   },
 
-  // Copy the value of #oauth-auth-url to the clipboard. Used by
-  // the OAuth "Copy" button in views/providers.js.
+  // Copy #oauth-auth-url; used by the OAuth "Copy" button in views/providers.js.
   copyAuthUrl(): void {
     const el = document.getElementById("oauth-auth-url") as HTMLInputElement | null;
     if (el) {
@@ -261,8 +244,8 @@ export const HANDLERS = {
     }
   },
 
-  // Used by the plaintext-key modal "I've saved it" button: close
-  // the modal-bg and re-navigate so the key list repaints.
+  // Plaintext-key modal "I've saved it": close the modal-bg and re-navigate so the key list
+  // repaints.
   closeAndNavigate(e: Event | null): void {
     if (e && e.target) {
       const target = e.target as Element;
@@ -272,9 +255,8 @@ export const HANDLERS = {
     navigate();
   },
 
-  // Toggles which section of the log detail modal is visible.
-  // The tab indicator (`.active`) is set by an inline listener
-  // registered in showLogDetail().
+  // Toggle which log-detail modal section is visible. The `.active` tab indicator is set by an
+  // inline listener registered in showLogDetail().
   logDetailTab(which: string): void {
     document.querySelectorAll("#log-detail-content [data-log-tab]").forEach((sec) => {
       const el = sec as HTMLElement;
@@ -286,38 +268,31 @@ export const HANDLERS = {
     });
   },
 
-  // Theme toggle (called from sidebar; works through addEventListener
-  // in mountThemeToggle, but exposed as an action for completeness).
+  // Theme toggle (sidebar calls it through addEventListener; exposed as an action too).
   mountThemeToggle,
 
-  // Sidebar collapse toggle. Lives on the sidebar's own button
-  // (data-action="toggleSidebar") and persists the choice to
-  // localStorage.
+  // Sidebar collapse toggle; persists the choice to localStorage.
   toggleSidebar,
   toggleMobileNav,
   closeMobileNav,
 
-  // DASHBOARD-FIX (Bug 2 / Step 2f): sidebar Logout button. Wipes
-  // the stored admin token and navigates to the login route. See
-  // `components/sidebar.ts::logout` for the rationale on why we
-  // don't also stop bg-poll / close the WS here.
+  // Sidebar Logout button: wipes the stored admin token and navigates to the login route.
+  // See `components/sidebar.ts::logout` for why bg-poll / WS are not stopped here.
   logout,
 
-  // Router utilities (data-action friendly). The router keeps its
-  // own window.navigate / window.rerenderCurrentView aliases for
-  // internal callers (bg-poll, hand-written handlers).
+  // Router utilities (data-action friendly). The router also keeps window.navigate /
+  // window.rerenderCurrentView aliases for internal callers (bg-poll, hand-written handlers).
   navigate,
   rerenderCurrentView,
   forceRerenderCurrentView,
 
-  // OAuth (the OAuthLogin object's methods are exposed under flat
-  // names so the HTML stays simple: data-action="oauthStartPKCE").
+  // OAuth (OAuthLogin's methods are exposed under flat names so the HTML stays simple,
+  // e.g. data-action="oauthStartPKCE").
   oauthStartPKCE:        (provider: string) => OAuthLogin.startPKCE(provider),
   oauthStartDeviceCode:  (provider: string) => OAuthLogin.startDeviceCode(provider),
   oauthSubmitManualCallback: () => OAuthLogin.submitManualCallback(),
 
-  // Toast — not strictly needed as a data-action, but useful for
-  // ad-hoc debugging from the console.
+  // Toast — ad-hoc console debugging.
   showToast,
 
   // Free Proxies
@@ -334,11 +309,9 @@ export const HANDLERS = {
   testProxySource,
 };
 
-// Collect positional data-arg-N attrs from an element. Skips the
-// "action" key. Returns an array aligned to arg1..argN order. Numbers
-// that parse as finite integers are returned as Numbers so handlers
-// don't have to parseInt every time. Booleans "true"/"false" are
-// also auto-coerced.
+// Collect positional data-arg-N attrs from an element, skipping the "action" key, in arg1..argN
+// order. Finite-integer values come back as Numbers and the literal strings "true"/"false" are
+// coerced, so handlers don't re-parse.
 export function collectArgs(el: HTMLElement): unknown[] {
   const args: unknown[] = [];
   for (const key in el.dataset) {
@@ -347,7 +320,7 @@ export function collectArgs(el: HTMLElement): unknown[] {
     if (!m) continue;
     const n = parseInt(m[1] || "0", 10) - 1;
     const v = el.dataset[key];
-    // Auto-coerce numbers (only when the entire value is a JSON number).
+    // Auto-coerce numbers (only when the whole value is a JSON number).
     if (v !== undefined && /^-?\d+(\.\d+)?$/.test(v)) {
       args[n] = Number(v);
     }
@@ -357,7 +330,7 @@ export function collectArgs(el: HTMLElement): unknown[] {
     } else if (v === "false") {
       args[n] = false;
     }
-    // Everything else stays as string.
+    // Everything else stays a string.
     else {
       args[n] = v;
     }

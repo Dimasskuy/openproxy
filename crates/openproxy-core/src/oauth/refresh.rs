@@ -78,9 +78,8 @@ impl TokenRefreshCoordinator {
             .await?;
         let expires_at = token_expires_at(token.expires_in);
 
-        // NOTE: `db` is `DbRef<'a>` with a non-'static lifetime, so it cannot
-        // be moved into `spawn_blocking`. We use `block_in_place` here because
-        // the closure runs synchronously and the borrow is scoped to the call.
+        // `db` borrows a non-'static lifetime, so it cannot move into
+        // `spawn_blocking`; `block_in_place` runs the closure on this worker.
         tokio::task::block_in_place(|| {
             db.with_conn(|conn| {
                 store_oauth_tokens(
@@ -112,19 +111,11 @@ pub fn token_expires_at(expires_in: Option<u64>) -> Option<String> {
     })
 }
 
-/// Resolve an OAuth access token for an account, refreshing it if
-/// it is expiring soon.
+/// Resolve an OAuth access token for an account, refreshing it when
+/// `oauth_expires_soon()` fires.
 ///
-/// Steps:
-/// 1. Decrypt the current access token from the DB.
-/// 2. Check `oauth_expires_soon()` — if the token is still fresh,
-///    return it immediately.
-/// 3. If expiring: decrypt the refresh token, find the provider in
-///    the registry, call `refresh_token()` (async), store the new
-///    tokens, return the new access token.
-///
-/// The function manages its own database connections from `db_pool`
-/// to avoid holding a SQLite connection across `.await`.
+/// Each stage takes its own short-lived connection from `db_pool` so no SQLite
+/// connection is held across an `.await`.
 pub async fn resolve_oauth_token(
     db_pool: &openproxy_db::DbPool,
     account: &crate::accounts::Account,
@@ -135,13 +126,12 @@ pub async fn resolve_oauth_token(
 ) -> Result<String> {
     use crate::accounts::{decrypt_access_token, decrypt_refresh_token};
 
-    // Clone the pool once so both spawn_blocking closures share the same
-    // reader-index counter (DbPool is cheap to clone: all fields are Arc-backed).
+    // one clone per stage: DbPool is Arc-backed, so clones are cheap and
+    // independent
     let pool_clone = db_pool.clone();
     let master_key_clone = master_key.clone();
     let account_id = account.id;
 
-    // 1. Decrypt current access token.
     let access_token = tokio::task::spawn_blocking(move || {
         let conn = pool_clone
             .try_reader_for(std::time::Duration::from_secs(5))
@@ -151,12 +141,10 @@ pub async fn resolve_oauth_token(
     .await
     .map_err(|e| CoreError::Internal(format!("spawn failed: {e}")))??;
 
-    // 2. Check expiry — if still fresh, return as-is.
     if !oauth_expires_soon(account, provider_id) {
         return Ok(access_token);
     }
 
-    // 3. Decrypt refresh token under a fresh connection.
     let pool_clone2 = db_pool.clone();
     let master_key_clone2 = master_key.clone();
     let refresh_token = tokio::task::spawn_blocking(move || {
@@ -175,7 +163,6 @@ pub async fn resolve_oauth_token(
         ))
     })?;
 
-    // 4. Find the provider implementation.
     let provider = registry.get(provider_id).ok_or_else(|| {
         CoreError::Auth(format!("no OAuth provider registered for '{provider_id}'"))
     })?;
@@ -186,9 +173,8 @@ pub async fn resolve_oauth_token(
         "oauth on-demand refresh: refreshing expiring token"
     );
 
-    // 5. Refresh and store through the shared coordinator. It serializes
-    // provider refreshes and applies the same persistence behavior used by
-    // the scheduler and pipeline.
+    // the shared coordinator serializes per provider and applies the same
+    // persistence the scheduler and pipeline use
     let token = TokenRefreshCoordinator::global()
         .refresh_and_store(OAuthRefreshParams {
             provider_id,
@@ -210,12 +196,11 @@ pub async fn resolve_oauth_token(
     Ok(token.access_token)
 }
 
-/// Check whether we need to call `resolve_oauth_token` in the
-/// pipeline's custom-provider path. This is a lighter-weight check
-/// that avoids the full refresh flow when the token is still fresh.
+/// Lighter check than [`resolve_oauth_token`] for the pipeline's custom-provider
+/// path, which only needs the expiry comparison.
 pub fn pipeline_token_needs_refresh(db_expires_at: Option<&str>, provider_id: &str) -> bool {
     let Some(ts) = db_expires_at else {
-        return false; // no expiry set → don't know when it expires → assume fresh
+        return false; // no expiry recorded: assume fresh
     };
     let Ok(expires_at) = openproxy_types::timestamp::parse_timestamp(ts) else {
         return false;

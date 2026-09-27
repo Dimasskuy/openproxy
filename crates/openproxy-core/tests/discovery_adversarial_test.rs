@@ -117,19 +117,16 @@ fn seed_custom_provider(pool: &DbPool, master_key: &MasterKey, id_str: &str, bas
     .expect("seed favicon");
 }
 
-/// Adversarial Challenge 1:
-/// Verify that initializing scheduler with 79 providers does NOT spawn 79 concurrent tasks,
-/// and that the concurrency never exceeds the 3-worker limit (strictly <= 3).
+/// 79 providers must not spawn 79 tasks: the worker pool stays bounded to <= 3 workers.
 #[tokio::test]
 async fn test_adversarial_79_providers_pool_strictly_bounded_to_3_workers() {
     let pool = Arc::new(DbPool::test_pool_with_prefix("adv-bounded-79").expect("open pool"));
     let mk = Arc::new(MasterKey::generate().expect("master key"));
 
-    // 40ms delay per request to guarantee overlap between concurrent workers
+    // 40ms delay guarantees overlap between concurrent workers
     let (addr, state) = spawn_mock_discovery_server(40).await;
     let base_url = format!("http://{addr}");
 
-    // Seed exactly 79 custom providers in SQLite
     for i in 0..79 {
         let pid = format!("cust-adv-prov-{i:03}");
         seed_custom_provider(&pool, &mk, &pid, &base_url);
@@ -151,7 +148,7 @@ async fn test_adversarial_79_providers_pool_strictly_bounded_to_3_workers() {
         "scheduler must have resolved exactly 79 custom providers"
     );
 
-    // Wait for at least 15 requests to be processed across workers
+    // wait for at least 15 requests to be processed across workers
     let deadline = tokio::time::Instant::now() + Duration::from_secs(6);
     while state.total_requests.load(Ordering::SeqCst) < 15 {
         if tokio::time::Instant::now() >= deadline {
@@ -180,9 +177,8 @@ async fn test_adversarial_79_providers_pool_strictly_bounded_to_3_workers() {
     sched.cancel();
 }
 
-/// Adversarial Challenge 2:
-/// Verify in-flight deduplication: multiple ticks for the same provider must NEVER
-/// run concurrently; concurrency per provider must strictly equal 1.
+/// In-flight dedup: concurrent ticks for the same provider never overlap; per-provider
+/// concurrency stays at 1.
 #[tokio::test]
 async fn test_adversarial_inflight_deduplication_stress() {
     let pool = Arc::new(DbPool::test_pool_with_prefix("adv-dedup-stress").expect("open pool"));
@@ -207,7 +203,7 @@ async fn test_adversarial_inflight_deduplication_stress() {
 
     assert_eq!(sched.task_count, 1);
 
-    // Run for 600ms while request takes 150ms. Multiple coordinator loops will fire.
+    // 600ms window against a 150ms request: several coordinator loops fire
     for _ in 0..10 {
         tokio::time::sleep(Duration::from_millis(60)).await;
         let active = state.active_concurrency.load(Ordering::SeqCst);
@@ -227,9 +223,8 @@ async fn test_adversarial_inflight_deduplication_stress() {
     sched.cancel();
 }
 
-/// Adversarial Challenge 3:
-/// Verify cancellation safety: when cancel() is triggered, coordinator and all workers
-/// exit cleanly without hanging or dispatching further requests.
+/// cancel() must stop the coordinator and every worker without hanging or dispatching
+/// further requests.
 #[tokio::test]
 async fn test_adversarial_cancellation_and_clean_exit() {
     let pool = Arc::new(DbPool::test_pool_with_prefix("adv-cancel-exit").expect("open pool"));
@@ -254,7 +249,7 @@ async fn test_adversarial_cancellation_and_clean_exit() {
         },
     );
 
-    // Let workers start processing
+    // let workers start processing
     let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
     while state.total_requests.load(Ordering::SeqCst) < 4 {
         if tokio::time::Instant::now() >= deadline {
@@ -263,17 +258,16 @@ async fn test_adversarial_cancellation_and_clean_exit() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
-    // Cancel now
     let cancel_time = tokio::time::Instant::now();
     sched.cancel();
-    // Idempotent cancel call
+    // cancel() is idempotent
     sched.cancel();
 
-    // Allow in-flight requests to complete
+    // let in-flight requests complete
     tokio::time::sleep(Duration::from_millis(80)).await;
     let requests_frozen = state.total_requests.load(Ordering::SeqCst);
 
-    // Sleep an additional 200ms and verify no further requests were dispatched
+    // an extra 200ms must show no further dispatches
     tokio::time::sleep(Duration::from_millis(200)).await;
     let requests_after_wait = state.total_requests.load(Ordering::SeqCst);
 
@@ -296,27 +290,23 @@ async fn test_adversarial_cancellation_and_clean_exit() {
     );
 }
 
-/// Adversarial Challenge 4:
-/// Database migration 000077_provider_favicons.sql verification:
-/// 1. Idempotency on repeated execution.
-/// 2. Foreign key ON DELETE CASCADE integrity.
-/// 3. Foreign key violation rejection.
+/// Migration 000077_provider_favicons.sql: idempotent on re-execution, cascades on
+/// provider delete, rejects favicons for unknown providers.
 #[test]
 fn test_adversarial_migration_000077_idempotency_and_cascade() {
     let pool = DbPool::test_pool_with_prefix("adv-mig-000077").expect("open pool");
     let conn = pool.writer();
 
-    // 1. Raw idempotency check: Re-run migration 000077 SQL directly on DB that already has it
+    // raw idempotency: re-run migration 000077 SQL on a DB that already has it
     let migration_sql =
         include_str!("../../../crates/openproxy-db/migrations/000077_provider_favicons.sql");
     conn.execute_batch(migration_sql)
         .expect("migration 000077 must be cleanly idempotent under re-execution");
 
-    // 2. Foreign keys enabled check
     conn.execute_batch("PRAGMA foreign_keys = ON;")
         .expect("enable fk");
 
-    // 3. Foreign key rejection: cannot insert favicon for non-existent provider
+    // favicon for a non-existent provider must be rejected by the FK constraint
     let fake_data = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR";
     let bad_insert = openproxy_db::providers::set_provider_favicon(
         &conn,
@@ -329,7 +319,6 @@ fn test_adversarial_migration_000077_idempotency_and_cascade() {
         "FK constraint must reject favicons for non-existent provider IDs"
     );
 
-    // 4. Create valid provider and attach favicon
     let pid = ProviderId::new("cascade-test-prov");
     providers::create(
         &conn,
@@ -355,13 +344,11 @@ fn test_adversarial_migration_000077_idempotency_and_cascade() {
     assert_eq!(fav.0, "image/png");
     assert_eq!(fav.1, fake_data);
 
-    // Verify provider row has_favicon is true
     let p_row = providers::get(&conn, &pid)
         .expect("get prov")
         .expect("prov exists");
     assert!(p_row.has_favicon, "provider.has_favicon must be true");
 
-    // 5. Delete provider and verify ON DELETE CASCADE cleans up provider_favicons
     conn.execute(
         "DELETE FROM providers WHERE id = ?1",
         rusqlite::params![pid.as_str()],
@@ -376,19 +363,16 @@ fn test_adversarial_migration_000077_idempotency_and_cascade() {
     );
 }
 
-/// Adversarial Challenge 5:
-/// Verify channel buffer bound (capacity 64) under sudden dispatch burst of 79 providers.
-/// Excess items beyond channel capacity must not cause OOM, panic, or deadlock.
+/// Channel capacity is 64: a 79-provider burst must not OOM, panic, or deadlock.
 #[tokio::test]
 async fn test_adversarial_bounded_channel_overflow_resilience() {
     let pool = Arc::new(DbPool::test_pool_with_prefix("adv-overflow-resil").expect("open pool"));
     let mk = Arc::new(MasterKey::generate().expect("master key"));
 
-    // Delay 100ms per request so workers are busy while coordinator tries to enqueue 79 items
+    // 100ms delay keeps workers busy while the coordinator enqueues 79 items
     let (addr, state) = spawn_mock_discovery_server(100).await;
     let base_url = format!("http://{addr}");
 
-    // Seed 79 providers
     for i in 0..79 {
         let pid = format!("burst-prov-{i:03}");
         seed_custom_provider(&pool, &mk, &pid, &base_url);
@@ -407,7 +391,7 @@ async fn test_adversarial_bounded_channel_overflow_resilience() {
 
     assert_eq!(sched.task_count, 79);
 
-    // Allow the burst dispatch and worker processing to make forward progress
+    // let the burst dispatch and worker processing make forward progress
     let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
     while state.total_requests.load(Ordering::SeqCst) < 10 {
         if tokio::time::Instant::now() >= deadline {

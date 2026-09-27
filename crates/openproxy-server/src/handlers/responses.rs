@@ -1,15 +1,12 @@
 //! `POST /v1/responses` — the Responses-protocol public entry point.
 //!
-//! Spec §3.3 describes the contract:
-//! 1. Parse the incoming JSON as an [`ResponsesRequest`].
-//! 2. Translate to internal [`OpenAIRequest`](openproxy_types::OpenAIRequest)
-//!    (the pipeline's lingua franca).
-//! 3. Resolve the routing plan from the `model` field via the same
-//!    middlewares as `/v1/chat/completions`.
-//! 4. Drive the standard [`Pipeline`] path.
-//! 5. Return a Responses-shaped response (not a chat-completion shape).
+//! Spec §3.3 contract: parse the JSON as a [`ResponsesRequest`], translate to
+//! internal [`OpenAIRequest`](openproxy_types::OpenAIRequest) (the pipeline's
+//! lingua franca), resolve the route through the same middlewares as
+//! `/v1/chat/completions`, drive the standard [`Pipeline`] path and return a
+//! Responses-shaped (not chat-completion-shaped) response.
 //!
-//! See `docs/specs/antigravity-gaps-p2.md` §3 (GAP-2) for full spec.
+//! Full spec in `docs/specs/antigravity-gaps-p2.md` §3 (GAP-2).
 
 use axum::{Router, extract::State, http::HeaderMap, response::IntoResponse, routing::post};
 
@@ -19,11 +16,9 @@ use crate::{
     services::PipelineRunner, state::AppState,
 };
 
-/// Same middlewares as `chat_endpoint`: client_disconnect + rate_limit
-/// + auth + routing. The auth_middleware detects `/v1/responses` and
-///   translates the Responses body into a `ParsedChatRequest`, so the
-///   routing middleware resolves the route correctly (P2-1 / P2-2
-///   patches from the spec).
+/// Same middleware stack as `chat_endpoint`: client_disconnect + rate_limit +
+/// auth + routing. `auth_middleware` detects `/v1/responses` and translates the
+/// Responses body into a `ParsedChatRequest` so routing resolves correctly.
 pub fn router(state: &AppState) -> Router<AppState> {
     use axum::middleware;
     Router::new().route(
@@ -79,9 +74,8 @@ pub async fn responses_completions(
             endpoint_kind: openproxy_types::EndpointKind::Chat,
         });
 
-    // CRITICAL (N1): non-streaming Responses path MUST use
-    // `handle_sync_response_responses` (not `handle_sync_response`)
-    // to emit the Responses-shaped envelope.
+    // Non-streaming MUST go through `handle_sync_response_responses` to emit the
+    // Responses-shaped envelope.
     if is_stream {
         let model = prepared.req.openai_request.model.clone();
         let request_id = prepared.req.request_id;

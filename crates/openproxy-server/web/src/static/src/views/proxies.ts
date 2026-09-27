@@ -32,7 +32,6 @@ interface FreeProxyRow {
   updated_at: string;
 }
 
-// Module-local filters state
 let filterSearch = "";
 let filterSource = "";
 let filterStatus = "";

@@ -1,12 +1,6 @@
-// state/index.ts — global state singleton. Mutated in place by the
-// handlers; views read it on render. Mirrors the original
-// `state` object in app.js.
-//
-// All non-trivial shapes here line up with the manual types in
-// `lib/types/api.ts`. Where the runtime state holds something
-// looser than the server-side type (e.g. `currentView.name` can
-// be `null` on first paint, `modelPickerSelection` is a Set of
-// strings not a model row id), we use a narrow local union.
+// Global state singleton, mutated in place by handlers and read by views.
+// Non-trivial shapes line up with the manual types in `lib/types/api.ts`;
+// looser runtime values get a narrow local union.
 
 import type {
   Provider,
@@ -18,15 +12,10 @@ import type {
   ApiKey,
 } from "../lib/types/api.js";
 
-// ----------------------------------------------------------------------------
-// Shared route + connection status unions. Defined here so the
-// `state` shape can reference them without a circular import
-// (router.ts and ws.ts import from state/, not the other way
-// round). They are re-exported below for ergonomics.
-// ----------------------------------------------------------------------------
+// Defined here so the `state` shape can name them without a circular import
+// (router.ts and ws.ts import from state/, not the reverse).
 
-/** Hash-routed view names. Mirrors the `ROUTES` array in
- *  `state/router.ts` — keep them in sync. */
+/** Hash-routed view names. Keep in sync with `ROUTES` in `state/router.ts`. */
 export type RouteName =
   | "home"
   | "providers"
@@ -49,20 +38,13 @@ export type RouteName =
  *  labels in `state/ws.ts`. */
 export type LogsStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
 
-/** A row id used in the logs map. The WebSocket hands us a string
- *  request_id; the long-poll feed gives us numeric `UsageId`. The
- *  maps in `state.logs` key by string for the in-flight WS feed
- *  and by `RecentUsageRow.id` for the persisted rows. We keep
- *  the maps narrowly typed where we know the shape. */
+/** Row id in the logs map: a string `request_id` from the WebSocket, a
+ *  numeric `UsageId` from the long-poll feed. */
 export type LogsRequestId = string;
 
-/** A single row in the `POST /combos/:id/test-all` response. The
- *  shape is intentionally compatible with the per-row result
- *  returned by `POST /models/:id/test` (same `status` /
- *  `elapsed_ms` / `error_msg` fields) so the UI can render both
- *  through the same `statusPillClass()` helper. `target_id` is the
- *  combo-target row id (the dashboard uses it to match a result
- *  back to the row in the targets table); `row_id` is the upstream
+/** One row of `POST /combos/:id/test-all`. Field-compatible with
+ *  `POST /models/:id/test` so both render through `statusPillClass()`.
+ *  `target_id` matches a row in the targets table; `row_id` is the upstream
  *  model row id and is informational only. */
 export interface ComboTestResult {
   target_id: number;
@@ -86,12 +68,9 @@ export interface ComboTestResult {
   row_id?: number;
 }
 
-/** The latest test-all results per combo id. Populated by
- *  `testAllTargets` (combo-handlers.ts) when the user clicks
- *  "Test all" on the combos detail view. The dashboard reads this
- *  when rendering the "Last test" column; we don't refetch on
- *  bg-poll so the values only change when the user re-runs the
- *  test. */
+/** Latest test-all results per combo id. Written by `testAllTargets` and
+ *  never refetched on bg-poll, so values change only when the user re-runs
+ *  the test. */
 export type ComboTestResults = Record<number, ComboTestResult[]>;
 
 export interface ProviderDetailUiState {
@@ -104,23 +83,15 @@ export interface ProviderDetailUiState {
 }
 export type ProviderDetailUi = Record<string, ProviderDetailUiState>;
 
-/** Shape of the live-logs sub-state. Mirrors the `state.logs`
- *  literal in the original `state/index.js`.
+/** Live-logs sub-state.
  *
- *  Note on the `stagesBy*` maps: a single client request can fan
- *  out into multiple pipeline attempts (per-target retry, fallback
- *  to the next combo target, race losers still get a row). Each
- *  attempt has its own `trace_id` (per the `UsageInput.trace_id`
- *  column in `crates/openproxy-core/src/usage.rs:758`), so we key
- *  the live stage map by `trace_id` to keep per-attempt phase
- *  labels isolated. Keying by `request_id` — as the original code
- *  did — bleeds the latest attempt's phase over every historical
- *  row of the same `request_id`, which is the user-visible bug
- *  "retries duplicate counters on the failed entries".
- *  `stagesByRequestId` is kept (and only written) as a
- *  compatibility fallback for the rare case where a `StageEvent`
- *  arrives with an empty `trace_id` (it then keys by `request_id`
- *  to avoid losing the signal entirely). */
+ *  The `stagesBy*` maps key by `trace_id`, not `request_id`: one client
+ *  request fans out into several attempts (per-target retry, fallback, race
+ *  losers), each with its own `trace_id` (`UsageInput.trace_id` in
+ *  crates/openproxy-core/src/usage.rs). Keying by `request_id` bleeds the
+ *  latest attempt's phase over historical rows of the same request.
+ *  `stagesByRequestId` only catches `StageEvent`s that arrive with an empty
+ *  `trace_id`. */
 export interface LogsState {
   page: number;
   rowsPerPage: number;
@@ -132,14 +103,10 @@ export interface LogsState {
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   recording: boolean;
   recordingLoading: boolean;
-  /** Set of column keys (matching LOG_COLUMNS[].key) that the user
-   *  wants to see in the table. Defaults to `null` and is replaced
-   *  by a `Set<string>` from localStorage at startup by
-   *  views/logs.js. The set is mutated in place by the
-   *  toggleColumn handler so the rest of the code can keep
-   *  reading the same reference. */
+  /** Visible LOG_COLUMNS keys. Mutated in place by the toggleColumn handler,
+   *  so readers keep the same reference. Seeded from localStorage. */
   visibleColumns: Set<string> | null;
-  /** Selected identity for the detail modal. */
+
   selectedIdentity: { kind: "row_id", id: number } | { kind: "attempt", attemptKey: string } | null;
 }
 
@@ -153,9 +120,7 @@ export interface ProxySummary {
   protocols: string[];
 }
 
-/** Shape of the cached provider-detail sub-state (per-provider
- *  selection + test results). The per-provider UI map is keyed
- *  by provider id and the test results are keyed by combo id. */
+/** Per-provider UI map (selection, test results), keyed by provider id. */
 export interface DashboardState {
   // Cached server data, refreshed on navigate() and on bgPoll.
   providers: Provider[];
@@ -236,8 +201,6 @@ export const state: DashboardState = {
   proxySummary: null,
   apiKeys: [],
   health: null,
-  // The view currently displayed. Used by `rerenderCurrentView` so
-  // background polls can re-paint in place.
   currentView: { name: null, context: null },
   // Combo-target selection (multi-select delete in the targets
   // table). Lives here so it survives across the bgPoll re-render.
@@ -275,8 +238,6 @@ export const state: DashboardState = {
     visibleColumns: null,
     selectedIdentity: null,
   },
-  // Latency tracker for the last `api()` call (used by the health
-  // pill in the sidebar).
   lastApiLatencyMs: 0,
 
   // Bg-poll internal state. `__healthPollHandle` is null on boot.
@@ -285,8 +246,7 @@ export const state: DashboardState = {
   __healthPollRunning: false,
 };
 
-// Bg-poll interval handle. We re-use the same window flag so the
-// router / shell can call `startBgPoll()` / `stopBgPoll()` safely.
+// Bg-poll interval handle, shared by the router and shell.
 let pollHandle: ReturnType<typeof setTimeout> | null = null;
 
 export function setPollHandle(h: ReturnType<typeof setTimeout> | null): void {

@@ -24,7 +24,6 @@ use openproxy_types::{ModelId, TargetFormat};
 fn test_opencode_zen_golden_contract_spec_parity() {
     let adapter = OpenCodeZenAdapter::new();
 
-    // 1. Adapter identity, base URL, and anonymous fallback
     assert_eq!(adapter.id().as_str(), "opencode-zen");
     assert_eq!(adapter.config().base_url, "https://opencode.ai/zen/v1");
     assert!(
@@ -32,7 +31,6 @@ fn test_opencode_zen_golden_contract_spec_parity() {
         "OpenCode Zen must support anonymous / free tier fallback"
     );
 
-    // 2. Chat URL routing per format
     let model = ModelId::new("test-model");
     assert_eq!(
         adapter.build_chat_url(TargetFormat::Anthropic, &model),
@@ -55,7 +53,7 @@ fn test_opencode_zen_golden_contract_spec_parity() {
         "https://opencode.ai/zen/v1/systemone"
     );
 
-    // 3. Auth and identity headers branching (PAID key)
+    // paid key: auth travels in x-api-key, never in Authorization
     let headers_paid = adapter.build_headers("zen_sk_test123", TargetFormat::Anthropic, &model);
     fn find_hdr<'a>(hdrs: &'a [(String, String)], name: &str) -> Option<&'a str> {
         hdrs.iter()
@@ -88,7 +86,6 @@ fn test_opencode_zen_golden_contract_spec_parity() {
         "request id must be valid canonical format: {request_id}"
     );
 
-    // 4. Auth headers branching (FREE / keyless tier)
     let headers_free_openai = adapter.build_headers("", TargetFormat::Openai, &model);
     assert_eq!(
         find_hdr(&headers_free_openai, "Authorization"),
@@ -113,7 +110,6 @@ fn test_opencode_zen_golden_contract_spec_parity() {
         Some("public")
     );
 
-    // 5. Free tier model detection
     assert!(is_free_opencode_tier(OpenCodeFlavor::Zen, "", &model));
     assert!(is_free_opencode_tier(OpenCodeFlavor::Zen, "public", &model));
     assert!(is_free_opencode_tier(
@@ -147,7 +143,6 @@ fn test_opencode_zen_golden_contract_spec_parity() {
         &ModelId::new("claude-sonnet-4-6")
     ));
 
-    // 6. models.dev routing format translation
     assert_eq!(
         openproxy_core::models_dev_sync::resolve_routing_format(Some("@ai-sdk/anthropic"), None),
         Some(TargetFormat::Anthropic)
@@ -175,7 +170,6 @@ fn test_opencode_zen_golden_contract_spec_parity() {
         Some(TargetFormat::Openai)
     );
 
-    // 7. Canonical jump-table classification fallback
     assert_eq!(
         classify_opencode_target_format(OpenCodeFlavor::Zen, "union-alpha"),
         TargetFormat::Anthropic
@@ -212,7 +206,6 @@ fn test_opencode_zen_golden_contract_spec_parity() {
 
 #[test]
 fn test_opencode_zen_agent_quartet_tools_injection() {
-    // 1. OpenAI Chat Completions tool injection format
     let mut obj_openai = serde_json::Map::new();
     inject_opencode_agent_quartet_tools(&mut obj_openai, TargetFormat::Openai);
     let tools_oa = obj_openai["tools"].as_array().unwrap();
@@ -223,7 +216,6 @@ fn test_opencode_zen_agent_quartet_tools_injection() {
         .collect();
     assert_eq!(names_oa, vec!["bash", "glob", "grep", "read"]);
 
-    // 2. Anthropic Messages tool injection format
     let mut obj_anthropic = serde_json::Map::new();
     inject_opencode_agent_quartet_tools(&mut obj_anthropic, TargetFormat::Anthropic);
     let tools_anth = obj_anthropic["tools"].as_array().unwrap();
@@ -231,7 +223,6 @@ fn test_opencode_zen_agent_quartet_tools_injection() {
     assert_eq!(tools_anth[0]["name"], "bash");
     assert!(tools_anth[0].get("input_schema").is_some());
 
-    // 3. Responses API tool injection format
     let mut obj_responses = serde_json::Map::new();
     inject_opencode_agent_quartet_tools(&mut obj_responses, TargetFormat::Responses);
     let tools_resp = obj_responses["tools"].as_array().unwrap();
@@ -240,7 +231,6 @@ fn test_opencode_zen_agent_quartet_tools_injection() {
     assert_eq!(tools_resp[0]["name"], "bash");
     assert!(tools_resp[0].get("parameters").is_some());
 
-    // 4. Gemini streamGenerateContent tool injection format
     let mut obj_gemini = serde_json::Map::new();
     inject_opencode_agent_quartet_tools(&mut obj_gemini, TargetFormat::Gemini);
     let tools_gem = obj_gemini["tools"].as_array().unwrap();
@@ -317,7 +307,6 @@ async fn test_opencode_zen_remote_upstream_live_contract_parity() {
     let client = UpstreamClient::new();
     let cancel = CancellationToken::new();
 
-    // 1. Probe live models endpoint
     let probe_url = "https://opencode.ai/zen/v1/models";
     let mut req = UpstreamRequest::get(probe_url);
     req.headers.insert(
@@ -364,7 +353,6 @@ async fn test_opencode_zen_remote_upstream_live_contract_parity() {
         "live catalogue must include claude-sonnet-4-6"
     );
 
-    // 2. Probe live free tier chat completions endpoint with big-pickle
     let chat_url = "https://opencode.ai/zen/v1/chat/completions";
     let chat_body = serde_json::json!({
         "model": "big-pickle",
@@ -443,7 +431,6 @@ async fn test_opencode_upstream_repo_headers_drift_detection() {
         "x-opencode-upstream-model-id",
     ];
 
-    // 1. Probe upstream client request.ts for new x-opencode headers
     let client_url = "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/opencode/src/session/llm/request.ts";
     let req = UpstreamRequest::get(client_url);
     if let Ok(resp) = client
@@ -463,7 +450,6 @@ async fn test_opencode_upstream_repo_headers_drift_detection() {
         }
     }
 
-    // 2. Probe upstream console zen handler.ts for new x-opencode headers
     let handler_url = "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/console/app/src/routes/zen/util/handler.ts";
     let handler_req = UpstreamRequest::get(handler_url);
     if let Ok(resp) = client

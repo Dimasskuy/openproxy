@@ -1,4 +1,3 @@
-/* ----- Provider grid ----- */
 .provider-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -88,7 +87,6 @@
 .empty-state p  { color: var(--color-text-muted); margin-bottom: var(--space-3); }
 
 
-/* ----- Account grid ----- */
 .account-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -104,7 +102,6 @@
 .account-card .account-actions { margin-top: var(--space-2); display: flex; gap: var(--space-1); flex-wrap: wrap; }
 
 
-/* ----- Provider detail ----- */
 .provider-detail-header {
   display: flex;
   align-items: center;
@@ -179,10 +176,9 @@
     background: var(--color-surface-2);
   }
 
-  /* Desktop: hide the mobile-only card cells for the views that still
-     use the bespoke two-layout table (providers models, proxy-sources,
-     analytics errors). proxies/keys were migrated to the generic
-     renderResponsiveCardTable in Phase 2 and no longer emit these. */
+  /* Desktop hides the mobile-only card cells. The views below still
+     use a bespoke two-layout table; proxies/keys moved to
+     renderResponsiveCardTable and no longer emit these cells. */
   .mobile-model-card-cell,
   .mobile-proxy-source-card-cell,
   .mobile-analytics-error-card-cell {
@@ -249,7 +245,6 @@
   color: var(--color-text-muted);
 }
 
-/* Per-model quota styles */
 .quota-model-details {
   margin-top: var(--space-2);
   font-size: var(--fs-xs);
@@ -330,7 +325,6 @@
 #models-tbody tr.selected { background: var(--color-primary-soft); }
 #models-tbody code { font-size: var(--fs-xs); }
 
-/* Account & Model Table Structural Helpers */
 .account-title-row { display: inline-flex; align-items: center; gap: var(--space-1); }
 .account-edit-icon { color: var(--color-text-muted); cursor: pointer; }
 .account-actions-wrap { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
@@ -352,7 +346,6 @@
   font-size: var(--fs-sm);
 }
 
-/* Drag & Drop targets */
 .drag-handle {
   cursor: grab;
   user-select: none;
@@ -378,7 +371,6 @@
 }
 
 
-/* ----- OAuth ----- */
 .oauth-login-section { margin-bottom: var(--space-4); }
 .oauth-login-section h3 { margin-bottom: var(--space-2); font-size: var(--fs-lg); }
 .oauth-buttons { display: flex; gap: var(--space-2); flex-wrap: wrap; }

@@ -1,8 +1,6 @@
-//! Error types for the `UpstreamClient`.
-//!
-//! `UpstreamError` is the single error surface that call sites see.
-//! Each variant is non-exhaustive inside (`#[non_exhaustive]`) so future
-//! gates can add context without a breaking change.
+//! `UpstreamError` is the single error surface `UpstreamClient` call sites see.
+//! Each variant is `#[non_exhaustive]` so a future gate can add context without
+//! a breaking change.
 
 use super::phases::UpstreamPhase;
 use std::fmt;
@@ -11,8 +9,8 @@ use std::fmt;
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum UpstreamError {
-    /// A specific phase exceeded its deadline. The carried phase tells
-    /// the caller (and tests) exactly which step stalled.
+    /// A phase exceeded its deadline. The carried phase names the step that
+    /// stalled.
     Timeout(UpstreamPhase),
     /// TCP / DNS / IO failure while establishing the connection.
     Connection(String),

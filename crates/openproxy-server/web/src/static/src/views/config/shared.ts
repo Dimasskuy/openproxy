@@ -1,15 +1,6 @@
-// views/config/shared.ts — shared types, banner state, and render
-// helpers for the config view sub-modules.
-//
-// The four editable sections (timeouts, recording TTL, compression,
-// idle-chunk-retryable) each map to their own PUT endpoint and
-// auto-save on change. A small banner at the top reflects the
-// last-save status. The other three sections (retries,
-// circuit_breaker, racing) reflect the loaded `config.toml` and are
-// not editable from the dashboard — they live in a collapsed
-// `<details class="config-static-region">` as plain mono-font text.
-//
-// See views/combos.ts for the lit-html migration reference pattern.
+// views/config/shared.ts — types, banner state, config accessors, helpers.
+// The three config.toml sections (retries, circuit_breaker, racing) are
+// read-only here and render in a collapsed `.config-static-region`.
 
 import { html, type TemplateResult } from "lit-html";
 import { showToast } from "../../components/toast.js";
@@ -22,10 +13,6 @@ export interface FieldOpts {
   unit?: string;
 }
 
-// Shape of the /admin/config response. The server flattens the
-// four sections (timeouts, retries, circuit_breaker, racing) into
-// a single object; each section is optional so a partial payload
-// (e.g. on a transient error) doesn't crash the render.
 export interface ConfigPayload {
   timeouts?: {
     connect_ms?: number | null;
@@ -116,9 +103,7 @@ export const DEFAULT_TIMEOUTS = {
 
 // ── Loaded-config state ─────────────────────────────────────────────
 //
-// The `/config` payload fetched by mountConfig. The `patch*` helpers
-// in editable-cards.ts mutate the object in place (they never
-// reassign the variable), so accessor pairs are enough to share it.
+// The `patch*` helpers mutate this object in place, so accessor pairs suffice.
 
 let cfg: ConfigPayload | null = null;
 
@@ -130,7 +115,6 @@ export function setConfig(value: ConfigPayload | null): void {
   cfg = value;
 }
 
-// ── Banner state. Set by the patch helpers after each save. ────────
 
 let bannerKind: "info" | "success" = "info";
 let bannerTitle = "Live values.";
@@ -148,10 +132,7 @@ export function getBanner(): { kind: "info" | "success"; title: string; body: st
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-/** Pull the human-readable `message` field out of the JSON envelope
- *  produced by the server's `ApiError` impl. The thrower is `api()`,
- *  which raises `new Error("<status>: <body>")`; the JSON body lives
- *  as a string suffix on `e.message`, and we re-parse it here. */
+/** Extract `message` from the JSON `ApiError` body that `api()` appends to `e.message`. */
 export function errStr(e: unknown): string {
   if (!(e instanceof Error)) return String(e);
   const m = e.message.match(/"error"\s*:\s*\{[\s\S]*?"message"\s*:\s*"((?:[^"\\]|\\.)*)"/);
@@ -193,9 +174,8 @@ export function renderField(
   </label>`;
 }
 
-/** Render a read-only key/value pair for the static region. Uses
- *  `.config-static-display .field` so the existing CSS gives us the
- *  uppercase muted label + mono-font value look. */
+/** Read-only key/value pair for the static region. `.config-static-display .field`
+ *  supplies the uppercase muted label + mono value styling. */
 export function renderStaticField(label: string, value: number | null | undefined): TemplateResult {
   const display: string = (value === null || value === undefined) ? "—" : String(value);
   return html`<div class="field"><span class="label">${label}</span><span class="value">${display}</span></div>`;

@@ -14,8 +14,7 @@ impl PipelineNext<'_> {
 }
 
 pub trait PipelineStage: Send + Sync {
-    /// Executes this stage. A stage can either handle the request completely,
-    /// or pass it to the next stage by calling `next.execute(ctx).await`.
+    /// Handle the request, or delegate to the next stage via `next.execute(ctx).await`.
     fn execute(
         &self,
         ctx: &mut PipelineContext,

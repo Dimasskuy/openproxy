@@ -1,14 +1,12 @@
 use openproxy_types::OpenAIMessage;
 use serde_json::Value;
 
-/// Mutates the textual content of an `OpenAIMessage` transparently,
-/// whether it is a plain `String` or an `Array` of content parts (`{"type":"text","text":"..."}`).
+/// Applies `transform` to the textual content of an `OpenAIMessage`, whether it
+/// is a plain `String` or an `Array` of content parts
+/// (`{"type":"text","text":"..."}`). `transform` returns the replacement for a
+/// changed string, or `None` to leave it alone.
 ///
-/// The provided `transform` closure receives a `&str` and returns `Option<String>`.
-/// - Returning `Some(new_text)` indicates that the text should be replaced if it changed.
-/// - Returning `None` indicates that no change is needed.
-///
-/// Returns `true` if any text content was mutated, `false` otherwise.
+/// Returns `true` if any text content changed.
 pub fn mutate_message_text<F>(msg: &mut OpenAIMessage, mut transform: F) -> bool
 where
     F: FnMut(&str) -> Option<String>,

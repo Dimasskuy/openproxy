@@ -11,11 +11,10 @@
 //!    dedup identical items, cap at 15. Used only when the result is smaller
 //!    than the original.
 //!
-//! Both strategies are skipped (no-op) if they would not reduce size, so the
-//! function is safe to call unconditionally on any conversation. All ratio
-//! comparisons use integer math (`count * den >= total * num`) to avoid the
-//! classic `0.8 * 5 = 4.000000001` floating-point rounding trap that would
-//! otherwise silently raise the coverage threshold.
+//! Both strategies no-op when they would not reduce size, so the function is
+//! safe to call unconditionally on any conversation. Ratio comparisons use
+//! integer math (`count * den >= total * num`): `0.8 * 5 = 4.000000001` would
+//! silently raise the coverage threshold.
 
 use openproxy_types::OpenAIMessage;
 use serde_json::Value;
@@ -46,15 +45,10 @@ const ERROR_TOKENS: &[&str] = &["error", "fail", "fatal", "exception", "crash"];
 pub const LOSSLESS_TECHNIQUE: &str = "lite::smart_crusher_lossless";
 pub const LOSSY_TECHNIQUE: &str = "lite::smart_crusher_lossy";
 
-/// Compress a single JSON array string. Returns `Some((compressed, technique))`
-/// if compression applied, or `None` otherwise.
-///
-/// This is the per-string entry point that powers the content router. It
-/// parses `text` as a JSON value, requires it to be an array of ≥
-/// `MIN_ITEMS` objects, and tries the lossless CSV-schema path before
-/// falling back to the lossy crush path. The output is only returned when
-/// it is strictly smaller than the input (per the lossless/lossy size
-/// guards), so the function is safe to call unconditionally on any string.
+/// Per-string entry point powering the content router: parses `text` as a
+/// JSON array of ≥ `MIN_ITEMS` objects, tries the lossless CSV-schema path
+/// before the lossy crush path, and returns the output only when it is
+/// strictly smaller than the input.
 fn parse_object_array(text: &str) -> Option<Box<[Value]>> {
     let Value::Array(arr) = serde_json::from_str::<Value>(text).ok()? else {
         return None;
@@ -86,7 +80,7 @@ fn try_lossy_route(arr: &[Value], original_len: usize) -> Option<(String, &'stat
 /// Compress a single JSON array string. Returns `Some((compressed, technique))`
 /// if compression applied, or `None` otherwise.
 ///
-/// This is the per-string entry point that powers the content router. It
+/// Per-string entry point behind the content router. It
 /// parses `text` as a JSON value, requires it to be an array of ≥
 /// `MIN_ITEMS` objects, and tries the lossless CSV-schema path before
 /// falling back to the lossy crush path. The output is only returned when
@@ -97,14 +91,9 @@ pub fn crush_json_string(text: &str) -> Option<(String, &'static str)> {
     try_lossless_route(&arr, text.len()).or_else(|| try_lossy_route(&arr, text.len()))
 }
 
-/// Compresses JSON tool result arrays. Operates on `role == "tool"` messages
-/// whose content parses as a JSON array of objects with ≥5 items. Returns the
-/// technique names that applied (e.g. "lite::smart_crusher_lossless",
-/// "lite::smart_crusher_lossy").
-///
-/// Non-tool messages, non-JSON content, JSON that isn't an array, arrays with
-/// fewer than 5 items, and arrays containing non-object items are all skipped
-/// (the function returns an empty `Vec` for those messages and moves on).
+/// Compresses JSON tool result arrays: `role == "tool"` messages whose content
+/// parses as an array of ≥ 5 objects. Non-tool messages, non-JSON content,
+/// non-arrays, short arrays and arrays holding non-object items are skipped.
 pub fn smart_crush_tool_results(msgs: &mut Messages) -> Vec<&'static str> {
     let mut applied: Vec<&'static str> = Vec::new();
     for msg in msgs.iter_mut() {
@@ -267,8 +256,8 @@ fn value_has_error_token(v: &Value) -> bool {
     }
 }
 
-/// True if any field *value* of `item` matches an error token. Keys are
-/// intentionally NOT checked — only values, per the spec.
+/// Whether any field *value* of `item` matches an error token. Keys are never
+/// checked, only values.
 fn item_has_error_token(item: &Value) -> bool {
     item.as_object()
         .is_some_and(|o| o.values().any(value_has_error_token))

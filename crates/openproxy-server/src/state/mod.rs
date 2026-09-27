@@ -1,16 +1,13 @@
 //! Application state shared across all handlers.
 //!
-//! `AppState` is constructed once at startup and then cloned (via `Arc`
-//! internally) into every axum handler. It owns:
+//! `AppState` is built once at startup and cloned (via inner `Arc`s) into every
+//! axum handler. It owns the parsed [`AppConfig`], the SQLite [`DbPool`], the
+//! [`MasterKey`] used to decrypt provider API keys at request time, the built-in
+//! [`ProviderAdapter`] registry, and a shared [`UpstreamClient`] for upstream
+//! LLM calls.
 //!
-//! - The parsed [`AppConfig`] (timeouts, racing, logging, etc.).
-//! - The SQLite [`DbPool`] used for all persistence.
-//! - The [`MasterKey`] used to decrypt provider API keys at request time.
-//! - The registry of built-in [`ProviderAdapter`]s.
-//! - A shared [`UpstreamClient`] used for upstream LLM calls.
-//!
-//! All heavy fields are wrapped in `Arc` so handler signatures stay
-//! cheap-to-clone and the type itself is `Send + Sync` by construction.
+//! Heavy fields are `Arc`-wrapped so handler signatures stay cheap to clone and
+//! the type is `Send + Sync` by construction.
 
 mod background;
 mod builder;
@@ -104,9 +101,8 @@ impl AppState {
 
     pub const MAX_API_KEY_CACHE_ENTRIES: usize = 5000;
 
-    /// Insert or refresh a validated API key in the fast in-memory cache (60s TTL).
-    /// Strictly bounded to 5,000 entries; when capacity is reached, expired keys
-    /// are pruned, and if still full, oldest entries are evicted.
+    /// Insert or refresh a validated API key in the in-memory cache (60s TTL).
+    /// Bounded to 5,000 entries: expired keys are pruned first, then oldest-first.
     pub fn cache_api_key(&self, key: Arc<openproxy_core::api_keys::ApiKey>) {
         if !self.api_key_cache.contains_key(&key.key_hash)
             && self.api_key_cache.len() >= Self::MAX_API_KEY_CACHE_ENTRIES

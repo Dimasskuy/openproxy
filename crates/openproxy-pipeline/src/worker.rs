@@ -45,7 +45,7 @@ pub fn spawn_worker(
             let repo_clone = Arc::clone(&repo);
             let selection_registry_clone = Arc::clone(&selection_registry);
 
-            // Usar spawn_blocking para las queries de SQLite
+            // spawn_blocking: SQLite es síncrono y no puede correr en el hilo de Tokio.
             let _ = tokio::task::spawn_blocking(move || {
                 for job in batch {
                     process_job(

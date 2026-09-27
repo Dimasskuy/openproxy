@@ -395,7 +395,7 @@ async fn dispatch_upstream_streaming_emits_done_on_empty_content_stream() {
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
             let mut buf = [0u8; 2048];
             let _ = socket.read(&mut buf).await;
-            // Upstream sends empty string delta with finish_reason: "stop", but NO [DONE] frame
+            // Empty content delta with finish_reason: "stop" and no [DONE] frame.
             let response = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n\
                 data: {\"id\":\"test\",\"object\":\"chat.completion.chunk\",\"created\":123,\"model\":\"g-2.5\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"},\"finish_reason\":\"stop\"}]}\n\n";
             let _ = socket.write_all(response.as_bytes()).await;
@@ -561,7 +561,7 @@ async fn dispatch_upstream_streaming_errors_on_empty_eof_stream() {
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
             let mut buf = [0u8; 2048];
             let _ = socket.read(&mut buf).await;
-            // Upstream sends 200 OK headers but closes immediately with zero body bytes
+            // 200 OK headers, then close with zero body bytes.
             let response =
                 "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n";
             let _ = socket.write_all(response.as_bytes()).await;
@@ -694,7 +694,6 @@ async fn dispatch_upstream_streaming_errors_on_empty_eof_stream() {
     };
 
     let result = dispatcher.dispatch_upstream_streaming(params).await;
-    // Must fail as empty streaming response
     assert!(
         result.error.is_some(),
         "expected error for completely empty stream"
@@ -705,7 +704,7 @@ async fn dispatch_upstream_streaming_errors_on_empty_eof_stream() {
     while let Ok(chunk) = sink_rx.try_recv() {
         received.push(chunk);
     }
-    // Client must NOT receive [DONE] for failed empty stream
+    // A failed stream sends no terminal frame.
     assert!(
         received.is_empty()
             || received

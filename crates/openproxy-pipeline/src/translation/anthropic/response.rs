@@ -2,12 +2,9 @@ use crate::translation::types::{AnthropicResponse, OpenAIChoice, OpenAIResponse,
 use openproxy_types::OpenAIMessage;
 use serde_json::Value;
 
-/// Convert Anthropic response to OpenAI response.
-///
-/// - `choices[0].message.content` = concatenation of all text content blocks.
-/// - `usage`: `prompt_tokens=input_tokens`, `completion_tokens=output_tokens`,
-///   `total_tokens=sum`.
-/// - `finish_reason` mapped from `stop_reason` using Anthropic -> OpenAI semantics.
+/// `content` concatenates the text blocks, `usage` maps input/output/sum
+/// onto prompt/completion/total, and `finish_reason` comes from
+/// `stop_reason`.
 pub fn anthropic_to_openai(resp: &AnthropicResponse) -> OpenAIResponse {
     let combined: String = resp
         .content
@@ -94,7 +91,6 @@ pub fn anthropic_to_openai(resp: &AnthropicResponse) -> OpenAIResponse {
     }
 }
 
-/// Map an Anthropic stop_reason value to an OpenAI finish_reason value.
 pub fn map_finish_reason(stop_reason: &str) -> String {
     match stop_reason {
         "end_turn" => "stop".to_string(),
@@ -102,9 +98,8 @@ pub fn map_finish_reason(stop_reason: &str) -> String {
         "tool_use" | "tool_call" | "tool_calls" | "toolUse" | "toolCall" | "toolCalls" => {
             "tool_calls".to_string()
         }
-        // stop_sequence and unknown values fall back to "stop".
         other => {
-            // Treat anything unknown as "stop" to stay close to OpenAI's vocabulary.
+            // Unknown values stay inside OpenAI's vocabulary.
             let _ = other;
             "stop".to_string()
         }

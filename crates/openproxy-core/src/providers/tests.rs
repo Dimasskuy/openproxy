@@ -312,34 +312,27 @@ fn list_and_list_active_hide_virtual_combo_provider() {
 
 #[test]
 fn test_validate_favicon_magic_bytes_valid_formats() {
-    // PNG
     let png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR...";
     assert_eq!(validate_favicon_bytes(png), Some("image/png"));
 
-    // ICO (type 1 icon)
     let ico = b"\x00\x00\x01\x00\x01\x00\x10\x10...";
     assert_eq!(validate_favicon_bytes(ico), Some("image/x-icon"));
 
-    // ICO (type 2 cursor)
     let cur = b"\x00\x00\x02\x00\x01\x00\x10\x10...";
     assert_eq!(validate_favicon_bytes(cur), Some("image/x-icon"));
 
-    // GIF (GIF87a / GIF89a)
     let gif = b"GIF89a\x10\x00\x10\x00...";
     assert_eq!(validate_favicon_bytes(gif), Some("image/gif"));
 
-    // JPEG
     let jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF...";
     assert_eq!(validate_favicon_bytes(jpeg), Some("image/jpeg"));
 
-    // WEBP
     let webp = b"RIFF\x20\x00\x00\x00WEBPVP8 ...";
     assert_eq!(validate_favicon_bytes(webp), Some("image/webp"));
 }
 
 #[test]
 fn test_validate_favicon_rejects_html_and_text() {
-    // HTML doctype
     let html1 = b"<!DOCTYPE html><html><head><title>Error</title></head></html>";
     assert_eq!(validate_favicon_bytes(html1), None);
 
@@ -352,26 +345,21 @@ fn test_validate_favicon_rejects_html_and_text() {
     let html4 = b"<HTML><BODY>Redirect</BODY></HTML>";
     assert_eq!(validate_favicon_bytes(html4), None);
 
-    // text/html
     let text = b"text/html; charset=utf-8";
     assert_eq!(validate_favicon_bytes(text), None);
 
-    // plain text
     let plain = b"404 Not Found";
     assert_eq!(validate_favicon_bytes(plain), None);
 }
 
 #[test]
 fn test_validate_favicon_size_ceiling_and_empty() {
-    // Empty
     assert_eq!(validate_favicon_bytes(&[]), None);
 
-    // Just under / exactly at 64 KiB ceiling
     let mut valid_png = vec![0u8; 64 * 1024];
     valid_png[..4].copy_from_slice(b"\x89PNG");
     assert_eq!(validate_favicon_bytes(&valid_png), Some("image/png"));
 
-    // 64 KiB + 1 byte -> rejected
     let mut oversized = vec![0u8; 64 * 1024 + 1];
     oversized[..4].copy_from_slice(b"\x89PNG");
     assert_eq!(validate_favicon_bytes(&oversized), None);
@@ -379,7 +367,7 @@ fn test_validate_favicon_size_ceiling_and_empty() {
 
 #[test]
 fn test_validate_favicon_adversarial_stress() {
-    // 1. Truncated magic bytes (<4 bytes, 8 bytes, 11 bytes)
+    // Magic bytes truncados (<4, 8 y 11 bytes)
     let truncated_cases: &[&[u8]] = &[
         b"",
         b"\x89",
@@ -409,7 +397,7 @@ fn test_validate_favicon_adversarial_stress() {
         );
     }
 
-    // 2. Corrupted headers pretending to be valid image formats
+    // Cabeceras corruptas que imitan formatos válidos
     let corrupted_cases: &[&[u8]] = &[
         b"\x89PNC\r\n\x1a\n",
         b"\x00\x00\x03\x00\x01\x00",
@@ -427,7 +415,7 @@ fn test_validate_favicon_adversarial_stress() {
         );
     }
 
-    // 3. Real HTML documents & text errors
+    // HTML real y errores de texto
     let html_cases: &[&[u8]] = &[
         b"<!DOCTYPE html>\n<html lang=\"en\"><head><title>404 Not Found</title></head><body><h1>404</h1></body></html>",
         b"<!doctype html public \"-//W3C//DTD HTML 4.01//EN\">\n<html><body>Blocked</body></html>",
@@ -447,34 +435,32 @@ fn test_validate_favicon_adversarial_stress() {
         );
     }
 
-    // Real-world 733 KiB HTML document simulation (e.g. ozdoev failure)
+    // Simula un documento HTML real de 733 KiB
     let repeated_html =
         "<!DOCTYPE html><html><body>Large error payload</body></html>\n".repeat(12 * 1024);
     assert!(repeated_html.len() > 700 * 1024);
     assert_eq!(validate_favicon_bytes(repeated_html.as_bytes()), None);
 
-    // 4. Payloads > 64 KiB
-    // Exactly 64 KiB (65,536 bytes) with PNG magic -> Allowed
+    // 65,536 bytes con magic PNG: permitido
     let mut boundary_png = vec![0u8; 64 * 1024];
     boundary_png[..4].copy_from_slice(b"\x89PNG");
     assert_eq!(validate_favicon_bytes(&boundary_png), Some("image/png"));
 
-    // 64 KiB + 1 byte (65,537 bytes) with PNG magic -> Strictly rejected
+    // 65,537 bytes con magic PNG: rechazado
     let mut oversized_1 = vec![0u8; 64 * 1024 + 1];
     oversized_1[..4].copy_from_slice(b"\x89PNG");
     assert_eq!(validate_favicon_bytes(&oversized_1), None);
 
-    // 65 KiB (66,560 bytes) with valid JPEG magic -> Strictly rejected
+    // 66,560 bytes con magic JPEG válido: rechazado
     let mut oversized_jpeg = vec![0u8; 65 * 1024];
     oversized_jpeg[..3].copy_from_slice(b"\xff\xd8\xff");
     assert_eq!(validate_favicon_bytes(&oversized_jpeg), None);
 
-    // 733 KiB payload with valid ICO magic -> Strictly rejected
+    // Payload de 733 KiB con magic ICO válido: rechazado
     let mut oversized_ico = vec![0u8; 733 * 1024];
     oversized_ico[..4].copy_from_slice(b"\x00\x00\x01\x00");
     assert_eq!(validate_favicon_bytes(&oversized_ico), None);
 
-    // 5. Valid formats: PNG, ICO (1 & 2), GIF (87a & 89a), JPEG, WEBP
     assert_eq!(
         validate_favicon_bytes(b"\x89PNG\r\n\x1a\n"),
         Some("image/png")
@@ -507,7 +493,6 @@ fn test_validate_favicon_adversarial_stress() {
 
 #[test]
 fn test_domain_extraction_and_loopback_filtering() {
-    // 1. extract_domain
     assert_eq!(
         extract_domain("https://api.openai.com/v1"),
         Some("api.openai.com".to_string())
@@ -526,7 +511,6 @@ fn test_domain_extraction_and_loopback_filtering() {
     );
     assert_eq!(extract_domain(""), None);
 
-    // 2. extract_apex_domain
     assert_eq!(extract_apex_domain("api.fireworks.ai"), "fireworks.ai");
     assert_eq!(
         extract_apex_domain("sub.domain.example.co.uk"),
@@ -535,8 +519,6 @@ fn test_domain_extraction_and_loopback_filtering() {
     assert_eq!(extract_apex_domain("127.0.0.1"), "127.0.0.1");
     assert_eq!(extract_apex_domain("::1"), "::1");
 
-    // 3. is_loopback_or_private_host
-    // Local / loopback
     assert!(is_loopback_or_private_host("localhost"));
     assert!(is_loopback_or_private_host("my-service.localhost"));
     assert!(is_loopback_or_private_host("service.local"));
@@ -564,7 +546,6 @@ fn test_domain_extraction_and_loopback_filtering() {
     assert!(is_loopback_or_private_host("::ffff:127.0.0.1"));
     assert!(is_loopback_or_private_host("::ffff:192.168.0.1"));
 
-    // Public / external hosts (must NOT be filtered)
     assert!(!is_loopback_or_private_host("api.openai.com"));
     assert!(!is_loopback_or_private_host("anthropic.com"));
     assert!(!is_loopback_or_private_host("8.8.8.8"));

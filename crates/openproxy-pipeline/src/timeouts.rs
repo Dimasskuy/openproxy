@@ -67,6 +67,7 @@ impl ModelTimeoutOverrides {
 
 /// Resolve the final timeouts for a request by applying 2-level precedence.
 pub fn resolve(defaults: &Timeouts, model_overrides: Option<&ModelTimeoutOverrides>) -> Timeouts {
+    // Model overrides win; unset fields keep the system default.
     let mut t = *defaults;
     if let Some(m) = model_overrides {
         if let Some(ms) = m.ttft_ms {
@@ -93,12 +94,10 @@ mod tests {
             total: Duration::from_millis(500),
         };
 
-        // No overrides
         let resolved = resolve(&defaults, None);
         assert_eq!(resolved.ttft, Duration::from_millis(300));
         assert_eq!(resolved.idle_chunk, Duration::from_millis(400));
 
-        // With overrides
         let overrides = ModelTimeoutOverrides {
             ttft_ms: Some(1000),
             idle_chunk_ms: None,
@@ -110,17 +109,14 @@ mod tests {
 
     #[test]
     fn test_model_timeout_overrides_from_json() {
-        // Test None
         let overrides = ModelTimeoutOverrides::from_json(None).unwrap();
         assert!(overrides.is_empty());
         assert_eq!(overrides.ttft_ms, None);
         assert_eq!(overrides.idle_chunk_ms, None);
 
-        // Test empty string
         let overrides = ModelTimeoutOverrides::from_json(Some("")).unwrap();
         assert!(overrides.is_empty());
 
-        // Test valid JSON
         let overrides =
             ModelTimeoutOverrides::from_json(Some(r#"{"ttft_ms": 1000, "idle_chunk_ms": 2000}"#))
                 .unwrap();
@@ -128,13 +124,11 @@ mod tests {
         assert_eq!(overrides.ttft_ms, Some(1000));
         assert_eq!(overrides.idle_chunk_ms, Some(2000));
 
-        // Test partial valid JSON
         let overrides = ModelTimeoutOverrides::from_json(Some(r#"{"ttft_ms": 1000}"#)).unwrap();
         assert!(!overrides.is_empty());
         assert_eq!(overrides.ttft_ms, Some(1000));
         assert_eq!(overrides.idle_chunk_ms, None);
 
-        // Test invalid JSON
         let overrides = ModelTimeoutOverrides::from_json(Some(r#"{"ttft_ms": "not an int"}"#));
         assert!(overrides.is_err());
     }

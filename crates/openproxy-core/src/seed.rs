@@ -1,17 +1,11 @@
 //! Auto-seed built-in providers on first run.
 //!
-//! The providers in this list correspond 1:1 to the built-in adapters
-//! registered in [`openproxy_adapters::adapters::builtin_adapters`]. Inserting a row for
-//! each one on startup means the user can immediately see them in the
-//! dashboard (and reference them by id in API calls) without having to
-//! hand-create them.
+//! The list corresponds 1:1 to the adapters in
+//! [`openproxy_adapters::adapters::builtin_adapters`], so a fresh install shows them
+//! in the dashboard and accepts them by id in API calls without hand-creation.
 //!
-//! The seed is **idempotent**: each insert goes through
-//! [`crate::providers::get`] first and is skipped when the row already
-//! exists. This makes the function safe to call on every startup — it only
-//! ever *adds* new rows, never updates or duplicates.
-//!
-//! [`openproxy_adapters::adapters::builtin_adapters`]: crate::adapters
+//! Idempotent: each insert is skipped when the row exists, so the function is
+//! safe on every startup and only ever adds rows.
 
 use crate::capabilities;
 use crate::error::Result;
@@ -26,40 +20,24 @@ pub fn builtin_provider_ids() -> Vec<String> {
         .collect()
 }
 
-/// The id of the synthetic "combo" provider row used as a placeholder
-/// `provider_id` on combo-in-combo (sub-combo) targets. The row has
-/// `active = 1` and `format = 'openai'` so the `combo_targets` join
-/// `p.active = 1` lets sub-combo rows through, but it has no adapter
-/// registered against it — the pipeline never tries to dispatch a
-/// chat call against this provider. Routing for a sub-combo target
-/// is handled by flattening the sub-combo's children into the parent
-/// combo's target list, not by hitting this id.
+/// Id of the synthetic "combo" provider row, the placeholder `provider_id` on
+/// sub-combo targets. `active = 1` and `format = 'openai'` let sub-combo rows pass
+/// the `combo_targets` join on `p.active = 1`, and no adapter is registered
+/// against it: routing flattens the sub-combo's children into the parent instead.
 pub use openproxy_types::providers::VIRTUAL_COMBO_PROVIDER_ID;
 
-/// Convenience predicate: is `id` one of the built-in seeded
-/// providers? Used by the admin handlers to reject delete attempts
-/// on built-ins (see [`builtin_provider_ids`] for the rationale).
+/// Whether `id` is a built-in seeded provider. Admin handlers use this to reject
+/// deletes (see [`builtin_provider_ids`]).
 pub fn is_builtin(id: &str) -> bool {
     builtin_provider_ids().iter().any(|s| s == id)
 }
 
-/// Insert any missing built-in providers. Returns the number of rows
-/// newly created; rows that already existed are silently skipped.
+/// Insert any missing built-in providers, returning how many rows were created.
+/// `AppState::new` calls this right after the migrations run.
 ///
-/// This is the entry point the server's `AppState::new` calls right
-/// after the migrations have run.
-///
-/// # Errors
-///
-/// Propagates any [`CoreError::Validation`] (bad enum literal) or
-/// [`CoreError::Database`] (insert failure) from the underlying
-/// [`providers::create`]. The three enum strings in the constant table
-/// above are all valid, so a `Validation` here would indicate
-/// programmer error; a `Database` error would indicate a real I/O
-/// problem the caller should surface.
-///
-/// [`CoreError::Validation`]: crate::error::CoreError::Validation
-/// [`CoreError::Database`]: crate::error::CoreError::Database
+/// A [`CoreError::Validation`] here means one of the seeded enum literals is
+/// invalid, which is a programmer error; a [`CoreError::Database`] is a real I/O
+/// failure the caller should surface.
 fn serialize_extra_headers(headers: &[(String, String)]) -> Option<String> {
     if headers.is_empty() {
         return None;
@@ -138,15 +116,15 @@ pub fn seed_builtin_providers(conn: &Connection) -> Result<usize> {
             seeded += 1;
         }
     }
-    // Ensure CodeBuddy provider points to international worldwide edition (codebuddy.ai).
+    // CodeBuddy provider points at the international edition (codebuddy.ai).
     let _ = conn.execute(
         "UPDATE providers SET base_url = 'https://www.codebuddy.ai/v2' \
          WHERE id = 'codebuddy' \
            AND (base_url = 'https://www.codebuddy.cn/v2' OR base_url = 'https://www.codebuddy.cn')",
         [],
     );
-    // Normalize any legacy CodeBuddy accounts whose token expiry was saved as 1 year
-    // into the future (preventing proactive background refresh before Keycloak's 24h idle timeout).
+    // Legacy CodeBuddy accounts stored a 1-year token expiry, which suppressed
+    // proactive refresh past Keycloak's 24h idle timeout.
     let _ = conn.execute(
         "UPDATE accounts SET expires_at = datetime('now') \
          WHERE provider_id = 'codebuddy' \
@@ -156,18 +134,12 @@ pub fn seed_builtin_providers(conn: &Connection) -> Result<usize> {
     Ok(seeded)
 }
 
-/// Insert the virtual "combo" provider row used as a placeholder
-/// `provider_id` on sub-combo targets. Idempotent: skipped if the
-/// row already exists. This is intentionally a separate call from
-/// [`seed_builtin_providers`] because the "combo" id is *not* a
-/// built-in in the sense that admin deletion protection covers
-/// (there is no adapter registered against it) — it lives in the
-/// `providers` table only to satisfy the `combo_targets.provider_id`
-/// NOT-NULL + FK constraint and the `list_targets` `p.active = 1`
-/// join filter.
+/// Insert the virtual "combo" provider row. Separate from [`seed_builtin_providers`]
+/// because admin deletion protection does not cover it: no adapter is registered
+/// against it, and the row exists only to satisfy the `combo_targets.provider_id`
+/// NOT-NULL + FK constraint and the `list_targets` `p.active = 1` join filter.
 ///
-/// Returns `true` if a new row was inserted, `false` if it was
-/// already there.
+/// Returns `true` when a row was inserted.
 pub fn seed_virtual_combo_provider(conn: &Connection) -> Result<bool> {
     let id_typed = ProviderId::new(VIRTUAL_COMBO_PROVIDER_ID);
     if providers::get(conn, &id_typed)?.is_some() {
@@ -249,8 +221,7 @@ fn update_single_model_metadata(conn: &Connection, m: &crate::models::Model) -> 
     })
 }
 
-/// Backfill the new model-metadata columns for rows that were inserted
-/// before migration 000014 ran.
+/// Backfill model-metadata columns for rows inserted before migration 000014.
 pub fn backfill_model_metadata(conn: &Connection) -> Result<u64> {
     let models = crate::models::list_all(conn)?;
     let mut updated = 0u64;
@@ -269,7 +240,7 @@ mod tests {
 
     use std::path::PathBuf;
 
-    /// Build an in-process pool: temp dir on disk, migrations applied.
+    /// In-process pool: temp dir on disk with migrations applied.
     fn fresh_pool() -> (DbPool, PathBuf) {
         let pool = DbPool::test_pool_with_prefix("openproxy-seed-test").expect("open pool");
         let path = pool.path().to_path_buf();
@@ -283,7 +254,7 @@ mod tests {
         let n = seed_builtin_providers(&conn).expect("seed");
         assert_eq!(n, 22, "first call inserts all twenty-two");
 
-        // All twenty-two are present and reachable by id.
+        // all twenty-two present and reachable by id
         for id in [
             "atomesus",
             "openrouter",
@@ -322,7 +293,7 @@ mod tests {
         let first = seed_builtin_providers(&conn).expect("first");
         assert_eq!(first, 22);
 
-        // Idempotent: running again must not insert more rows.
+        // running again must not insert more rows
         let second = seed_builtin_providers(&conn).expect("second");
         assert_eq!(second, 0, "no new rows on second call");
 
@@ -334,7 +305,7 @@ mod tests {
     fn partial_state_only_seeds_missing() {
         let (pool, _path) = fresh_pool();
         let conn = pool.writer();
-        // Pre-seed one of the builtins manually.
+        // pre-seed one of the builtins manually
         providers::create(
             &conn,
             providers::NewProvider {
@@ -353,7 +324,7 @@ mod tests {
         let n = seed_builtin_providers(&conn).expect("seed");
         assert_eq!(n, 21, "only the twenty-one missing ones");
 
-        // The pre-seeded row's name was *not* overwritten.
+        // the pre-seeded row's name was not overwritten
         let p = providers::get(&conn, &ProviderId::new("openrouter"))
             .expect("get")
             .unwrap();
@@ -489,9 +460,8 @@ mod tests {
         for id in builtin_provider_ids() {
             assert!(is_builtin(&id), "{id} should be marked built-in");
         }
-        // A handful of negative cases: built-in predicate must not
-        // match custom ids (the same string used by `create_provider`)
-        // and must not match a partial prefix (e.g. "openrouter-x").
+        // the predicate must reject custom ids (the same string
+        // `create_provider` uses) and partial prefixes like "openrouter-x"
         for not_builtin in ["my-custom", "OpenRouter", "OPENROUTER", "openrouter-x", ""] {
             assert!(
                 !is_builtin(not_builtin),

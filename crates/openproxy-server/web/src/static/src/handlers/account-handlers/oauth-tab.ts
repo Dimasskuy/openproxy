@@ -366,7 +366,7 @@ export function createOAuthTabHandler(ctx: OAuthTabContext): OAuthTabHandler {
             requestRender();
           }
         } catch {
-          // keep polling until timeout, cancel, or modal close
+          // Keep polling until timeout, cancel, or modal close.
         }
       }, 5000);
     } catch (err: unknown) {
@@ -434,7 +434,7 @@ export function createOAuthTabHandler(ctx: OAuthTabContext): OAuthTabHandler {
       callbackState =
         url.searchParams.get("state") || url.hash.replace(/^#/, "") || null;
     } catch {
-      // Not a full URL - treat as raw key or fragment
+      // Not a full URL — treat as a raw key or fragment.
     }
 
     if (!code) {

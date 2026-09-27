@@ -1,5 +1,4 @@
 // views/quota-cell.ts — render the per-account "Quota" cell.
-// Migrated to lit-html: returns TemplateResult.
 
 import { html, type TemplateResult } from 'lit-html';
 import type { Account, ModelQuotaDetail } from "../lib/types/api.js";

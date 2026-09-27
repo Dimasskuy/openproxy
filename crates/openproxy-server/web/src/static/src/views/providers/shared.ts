@@ -1,11 +1,6 @@
-// views/providers/shared.ts — shared types, module-local state, and
-// render helpers used by BOTH the provider grid (list.ts) and the
-// provider detail (detail.ts).
-//
-// Public surface kept narrow on purpose — anything that only one of
-// the siblings uses lives next to that sibling, not here. The goal is
-// "shared" in the literal sense (both consumers reference it), not
-// "kitchen sink".
+// Shared types, module-local state, and render helpers used by both the
+// provider grid (list.ts) and the provider detail (detail.ts). Anything only
+// one sibling uses lives next to that sibling.
 
 import { html, type TemplateResult } from 'lit-html';
 import { ref } from 'lit-html/directives/ref.js';
@@ -14,33 +9,24 @@ import { getToken } from '../../state/auth.js';
 import type { ModelSort } from '../../components/model-table.js';
 import type { Provider } from '../../lib/types/api.js';
 
-// ---- Types shared by list + detail ----
 
-/** Per-detail-view UI state. Stored on `state.providerDetail[providerId]`
- *  so the user's filter / search / sort / page choice survives
- *  navigation away and back. The grid view does not consume this
- *  type, but the type still lives in shared.ts because detail.ts and
- *  index.ts both reach into it (index.ts seeds the defaults on first
- *  mount, detail.ts reads/writes it on every filter click). */
+/** Per-detail-view UI state, stored on `state.providerDetail[providerId]`
+ *  so the filter / search / sort / page choice survives navigation.
+ *  index.ts seeds the defaults, detail.ts reads and writes them. */
 export interface ProviderDetailUiState {
   filter: 'all' | 'active' | 'inactive';
   search: string;
   sort: ModelSort | null;
   page: number;
   pageSize: number;
-  // The original interface allowed an open index signature; preserved
-  // here for source-compatibility with any caller that reached into
-  // arbitrary keys (none in this codebase, but the spec said "no
-  // behavior changes").
+  // Index signature kept for source-compatibility with callers reaching
+  // into arbitrary keys (none in this codebase).
   [key: string]: unknown;
 }
 
-// ---- Per-provider UI-state accessors (detail view) ----
 //
-// Split out of the former detail.ts monolith (FU1). The models
-// section (models.ts) reads/writes these on every filter/sort/page
-// interaction and detail.ts seeds the defaults on first render, so
-// they live next to the `ProviderDetailUiState` type they operate on.
+// The models section reads/writes these on every filter/sort/page
+// interaction, so they live next to the `ProviderDetailUiState` type.
 
 export function getProviderUi(providerId: string): ProviderDetailUiState {
   const raw = state.providerDetail[providerId] as
@@ -62,13 +48,10 @@ export function setProviderUi(
   state.providerDetail[providerId] = ui;
 }
 
-// ---- Module-local state shared by index + detail ----
 //
 // `detailProviderId` is the active detail context (set by mountProviders
 // when `detailId` is provided). `loadError` is set by the fetch path in
-// index.ts and read by both list.ts and detail.ts to render an error
-// banner. Keeping them here lets index.ts stay a thin orchestrator
-// and avoids duplicating the assignments in both view files.
+// index.ts and read by list.ts and detail.ts to render an error banner.
 
 export let detailProviderId: string | null = null;
 export function setDetailProviderId(id: string | null): void {
@@ -80,7 +63,6 @@ export function setLoadError(err: string | null): void {
   loadError = err;
 }
 
-// ---- Render helpers used by both list and detail ----
 
 /** Extract the hostname (with no scheme, no path) from a base_url.
  *  Tolerant of inputs missing the protocol — providers in the DB
@@ -118,14 +100,11 @@ export function extractApexDomain(host: string): string {
   return parts.slice(-2).join('.');
 }
 
-// ---- Authenticated favicon loading ----
 //
 // `GET /admin/api/providers/:id/icon` sits behind the admin auth
-// middleware like every other `/admin/api/*` route (it used to be the
-// single unauthenticated exception, which made it a provider-existence
-// oracle). A bare `<img src>` cannot carry the Bearer header, so we fetch
-// the blob ourselves and hand the `<img>` an object URL. Object URLs are
-// cached per provider id for the lifetime of the page.
+// middleware like every other `/admin/api/*` route. A bare `<img src>`
+// cannot carry the Bearer header, so we fetch the blob ourselves and hand
+// the `<img>` an object URL, cached per provider id for the page lifetime.
 
 const iconObjectUrls = new Map<string, string>();
 const iconInflight = new Map<string, Promise<string | null>>();
@@ -168,16 +147,15 @@ export function invalidateProviderIcon(providerId: string): void {
 
 /** Render the provider favicon with a graceful fallback chain:
  *  1. persisted favicon via the authenticated `/admin/api/providers/:id/icon`
- *     endpoint (if `has_favicon` is true) — fetched with the Bearer token
- *     and served to the `<img>` as a `blob:` URL,
- *  2. legacy `favicon_base64` (if set),
+ *     endpoint (if `has_favicon`), served to the `<img>` as a `blob:` URL,
+ *  2. legacy `favicon_base64`,
  *  3. Google's `s2/favicons` service keyed on the host,
  *  4. retry against the apex domain (handles `cdn.provider.com`),
  *  5. retry against DuckDuckGo's IP3 icon service,
  *  6. finally hide the <img> and show the letter fallback.
  *
  *  Used by both `renderProviderCard` (grid) and `renderDetailHeader`
- *  (detail) — that's why it lives in shared.ts. */
+ *  (detail). */
 export function renderProviderIcon(p: Provider): TemplateResult {
   const fallback = (p.id[0] || '?').toUpperCase();
   const host = extractDomain(p.base_url);
@@ -192,9 +170,8 @@ export function renderProviderIcon(p: Provider): TemplateResult {
     return html`<span>${fallback}</span>`;
   }
 
-  // When the persisted icon is not cached yet, start the authenticated
-  // fetch and swap the `src` in once it lands. Until then the external
-  // fallback (if any) is shown so the card never renders an empty box.
+  // Until the authenticated fetch lands, the external fallback (if any)
+  // is shown so the card never renders an empty box.
   const onImgMounted = (el: Element | undefined): void => {
     if (!(el instanceof HTMLImageElement) || !p.has_favicon || cachedIcon) return;
     void loadProviderIconUrl(p.id).then((url: string | null) => {
@@ -230,14 +207,12 @@ export function renderProviderIcon(p: Provider): TemplateResult {
   `;
 }
 
-// ---- Capability badges ----
 //
-// Split out of the former detail.ts monolith (FU1). Renders the
-// vision/tools/reasoning/… badges parsed from a model's
-// `capabilities_json` (accepts the raw JSON string or a pre-parsed
-// object; bad input renders as an em-dash instead of throwing).
-// A simpler variant also exists in components/model-table.ts — this
-// one additionally surfaces the non-chat `modelType` badge.
+// Renders the vision/tools/reasoning/… badges parsed from a model's
+// `capabilities_json` (raw JSON string or pre-parsed object; bad input
+// renders as an em-dash instead of throwing). Unlike the simpler variant in
+// components/model-table.ts, this one also surfaces the non-chat
+// `modelType` badge.
 
 export function renderCapabilityBadges(
   json: string | null | undefined,
@@ -253,8 +228,8 @@ export function renderCapabilityBadges(
       try {
         caps = JSON.parse(json) as unknown;
       } catch {
-        // ignore — fall through with caps = undefined; renderCapabilityBadges
-        // handles both null and undefined gracefully below.
+        // fall through with caps = undefined; renderCapabilityBadges handles
+        // both null and undefined below.
       }
     } else {
       caps = json;

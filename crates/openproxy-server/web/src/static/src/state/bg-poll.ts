@@ -1,39 +1,21 @@
-// state/bg-poll.ts — background poll. After the user feedback that
-// the 3s data poll was "destroying the UX" (re-paints under inputs,
-// lost focus, etc.) we removed the data poll entirely. Each view is
-// now responsible for fetching what it needs at mount time (see
-// views/home.js, views/providers.js, etc.) and for re-fetching after
-// any user mutation (see handlers/*-handlers.js, which call
-// rerenderCurrentView()).
+// The only background poll left is the health tick below, one lightweight
+// request every 3s to keep the sidebar health pill live. Views fetch their own
+// data at mount and after every user mutation (see handlers/*-handlers.ts,
+// which call `rerenderCurrentView()`), because a global data poll re-painted
+// the DOM under inputs and stole focus. A view that needs live numbers
+// subscribes to a state slice in its own mount and patches that node. Live
+// logs go through the WebSocket in state/ws.ts.
 //
-// What remains is a single lightweight health poll, ~1 endpoint
-// every 3s, to keep the sidebar health pill live. The user
-// explicitly asked for this: "no, solo dejamos polling a ese
-// endpoint health que es liviano, para indicar en tiempo real el
-// estado del backend". /admin/health returns a tiny JSON object
-// (`{status, message}`) so the cost is negligible.
-//
-// If a view needs live updates in the future (e.g. a "live quota"
-// badge on a row), it should subscribe to a specific state slice
-// in its own mount and patch that single node — not poll. Live
-// logs are handled separately by the WebSocket in state/ws.ts.
-//
-// The pattern below is setTimeout-recursive (not setInterval), so
-// the next tick is scheduled inside the previous tick's `finally`
-// AFTER the await resolved. That keeps a single in-flight call at
-// a time and avoids the classic setInterval(asyncFn) re-entrancy.
+// The tick is setTimeout-recursive, not setInterval: the next tick is
+// scheduled in `finally`, after the await settles, so a single call is ever
+// in flight.
 
 import { state, setPollHandle } from "./index.js";
-// Import renderSidebar so the health pill updates via lit-html's
-// diff (not direct DOM manipulation, which lit-html overwrites on
-// the next sidebar re-render).
 import { renderSidebar } from "../components/sidebar.js";
 
 const POLL_MS = 3000;
 
-/** Health payload as returned by /admin/health. Kept narrow
- *  because the pill only reads `.status`. The `message` field is
- *  informational and shown in tooltips. */
+/** `/admin/health` payload. `message` is informational, shown in tooltips. */
 interface HealthPayload {
   status: string;
   message?: string;
@@ -41,10 +23,8 @@ interface HealthPayload {
 
 async function healthTick(): Promise<void> {
   try {
-    // Hit the PUBLIC /admin/health endpoint (not /admin/api/health).
-    // The public endpoint is unauthenticated (it's the LB liveness
-    // probe), so the health pill works even on the login page before
-    // the user has entered a token.
+    // The public endpoint, not /admin/api/health: it is unauthenticated (the
+    // LB liveness probe), so the pill works on the login page too.
     const res: Response = await fetch("/admin/health");
     if (!res.ok) throw new Error(`${res.status}`);
     const raw: unknown = await res.json();
@@ -54,15 +34,9 @@ async function healthTick(): Promise<void> {
     } else {
       state.health = { status: "unknown" };
     }
-    // Re-render the sidebar so the health pill updates via lit-html's
-    // diff. Previously the bg-poll updated `#health-status` directly
-    // via `pill.textContent = ...`, but the sidebar's lit-html
-    // re-render (triggered by any `renderSidebar()` call from the
-    // router, notifications store, etc.) would overwrite the direct
-    // DOM update with the stale `state.health` value — leaving the
-    // pill stuck on "—" even after the poll succeeded. Routing through
-    // `renderSidebar()` ensures the pill always reflects the current
-    // `state.health`.
+    // Route the update through lit-html. Writing `#health-status` directly
+    // lost to the next `renderSidebar()` from the router or the
+    // notifications store, which re-rendered the stale `state.health`.
     renderSidebar();
   } catch (_e: unknown) { /* swallow — next tick will try again */ }
   finally {
@@ -73,9 +47,8 @@ async function healthTick(): Promise<void> {
   }
 }
 
-/** Narrow an `unknown` into the HealthPayload shape we expect
- *  from /admin/health. The bg-poll never crashes on a bad
- *  payload — the pill just shows "—" until the next tick. */
+/** Narrow an `unknown` to HealthPayload. A bad payload leaves the pill on its
+ *  placeholder until the next tick. */
 function isHealthPayload(x: unknown): x is HealthPayload {
   if (typeof x !== "object" || x === null) return false;
   const o: Record<string, unknown> = x as Record<string, unknown>;

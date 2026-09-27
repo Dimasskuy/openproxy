@@ -7,7 +7,6 @@ use super::regexes::{
     REGEX_URI_USERINFO_PASSWORD, REGEX_URL, REGEX_URL_SENSITIVE_PARAM,
 };
 
-/// Merge overlapping or adjacent ranges.
 pub fn merge_ranges(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
     if ranges.len() <= 1 {
         return ranges;
@@ -26,7 +25,6 @@ pub fn merge_ranges(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
     merged
 }
 
-/// Binary search check whether [start, end) overlaps with any protected range.
 #[inline]
 pub fn is_in_protected_range(ranges: &[Range<usize>], start: usize, end: usize) -> bool {
     let idx = ranges.partition_point(|r| r.end <= start);
@@ -37,24 +35,24 @@ pub fn is_in_protected_range(ranges: &[Range<usize>], start: usize, end: usize) 
     }
 }
 
-/// Identify syntax-protected spans (URLs with carveouts, JSON keys)
-/// that must not have their structural boundaries corrupted.
+/// Spans whose structural boundaries must survive redaction: URLs with
+/// carveouts, data URIs, JSON keys.
 pub fn find_syntax_protected_ranges(text: &str) -> Vec<Range<usize>> {
     let mut ranges = Vec::new();
 
-    // 1. URLs (https://..., ftp://..., postgres://..., etc.)
+    // URLs (https://..., ftp://..., postgres://...).
     for m in REGEX_URL.find_iter(text) {
         let url_str = m.as_str();
         let mut carveouts: Vec<Range<usize>> = Vec::new();
 
-        // A. Password in userinfo: postgres://user:password@host
+        // Password in userinfo: postgres://user:password@host.
         if let Some(cap) = REGEX_URI_USERINFO_PASSWORD.captures(url_str)
             && let Some(pass_m) = cap.get(1)
         {
             carveouts.push(m.start() + pass_m.start()..m.start() + pass_m.end());
         }
 
-        // B. Sensitive query parameters: https://host/path?token=SECRET_VALUE&...
+        // Sensitive query parameters: https://host/path?token=SECRET_VALUE&...
         for cap in REGEX_URL_SENSITIVE_PARAM.captures_iter(url_str) {
             if let Some(param_val) = cap.get(1) {
                 carveouts.push(m.start() + param_val.start()..m.start() + param_val.end());
@@ -78,12 +76,12 @@ pub fn find_syntax_protected_ranges(text: &str) -> Vec<Range<usize>> {
         }
     }
 
-    // 2. Data URIs (data:image/jpeg;base64,...)
+    // Data URIs: data:image/jpeg;base64,...
     for m in REGEX_DATA_URI.find_iter(text) {
         ranges.push(m.range());
     }
 
-    // 3. JSON keys ("key":)
+    // JSON keys: "key":
     for cap in REGEX_JSON_KEY.captures_iter(text) {
         if let Some(key_match) = cap.get(1) {
             ranges.push(key_match.range());
@@ -93,17 +91,17 @@ pub fn find_syntax_protected_ranges(text: &str) -> Vec<Range<usize>> {
     merge_ranges(ranges)
 }
 
-/// Identify code blocks (fenced ``` and inline `) to avoid heuristic false-positives
-/// on code variables, types, or syntax.
+/// Fenced and inline code blocks, so the heuristics do not fire on code
+/// variables, types or syntax.
 pub fn find_code_protected_ranges(text: &str) -> Vec<Range<usize>> {
     let mut ranges = Vec::new();
 
-    // 1. Fenced code blocks ```...``` and ~~~...~~~
+    // Fenced blocks ```...``` and ~~~...~~~
     for m in REGEX_FENCED_CODE.find_iter(text) {
         ranges.push(m.range());
     }
 
-    // 2. Inline code `...`
+    // Inline `...`
     for m in REGEX_INLINE_CODE.find_iter(text) {
         ranges.push(m.range());
     }
@@ -111,7 +109,6 @@ pub fn find_code_protected_ranges(text: &str) -> Vec<Range<usize>> {
     merge_ranges(ranges)
 }
 
-/// Identify all protected spans (combining syntax and code protection).
 pub fn find_protected_ranges(text: &str) -> Vec<Range<usize>> {
     let mut ranges = find_syntax_protected_ranges(text);
     ranges.extend(find_code_protected_ranges(text));

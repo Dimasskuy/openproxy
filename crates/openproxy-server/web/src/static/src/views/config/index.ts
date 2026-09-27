@@ -1,16 +1,5 @@
-// views/config/index.ts — config editor entry point (lit-html).
-//
-// Thin orchestrator: fetches the `/config` payload, seeds the
-// sub-module state, and assembles the page from the editable cards
-// (editable-cards.ts), the Database Maintenance card
-// (maintenance.ts), and the read-only static region (retries /
-// circuit_breaker / racing, loaded from config.toml — not editable
-// from the dashboard).
-//
-// The four legacy per-section save functions
-// (`configSaveTimeouts`, `configSaveRecordingTtl`,
-// `configSaveCompression`, `configSaveIdleChunkRetryable`) are
-// re-exported because `handlers/registry.ts` imports them by name.
+// views/config/index.ts — orchestrator: fetch /config, seed sub-module
+// state, assemble the editable cards + read-only static region.
 
 import { html, type TemplateResult } from "lit-html";
 import { unsafeHTML } from "lit-html/directives/unsafe-html.js";
@@ -29,7 +18,6 @@ import {
 } from "./editable-cards.js";
 import { loadMaintenanceState, pollVacuumStatus, renderMaintenanceCard } from "./maintenance.js";
 
-// Re-exported for handlers/registry.ts (imported by name).
 export {
   configSaveTimeouts, configSaveRecordingTtl,
   configSaveCompression, configSaveIdleChunkRetryable,
@@ -150,10 +138,8 @@ export async function mountConfig(): Promise<(() => void) | void> {
       const payload = await api("/config") as ConfigPayload;
       setConfig(payload);
       applyServerConfig(payload);
-      // Load maintenance config + vacuum status
       await loadMaintenanceState();
-      // Start polling vacuum status every 5s (so the button updates
-      // when a VACUUM completes)
+      // 5s poll so the button reflects a completing VACUUM
       if (vacuumPollHandle) clearInterval(vacuumPollHandle);
       vacuumPollHandle = setInterval(() => void pollVacuumStatus(), 5000);
       setBanner("info", t("config.banner.live_values"),

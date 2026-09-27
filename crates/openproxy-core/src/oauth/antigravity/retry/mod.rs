@@ -1,8 +1,6 @@
-//! `invalid_grant` retry loop + per-account `OnUnhealthyCell` callback.
-//!
-//! The loop is generic over the async operation so unit tests can
-//! supply a closure that returns synthetic `Err(invalid_grant)` or
-//! `Ok` without touching the network.
+//! `invalid_grant` retry loop + per-account `OnUnhealthyCell` callback. The loop
+//! is generic over the async operation so tests can drive synthetic
+//! `Err(invalid_grant)` / `Ok` without the network.
 
 use crate::error::{CoreError, Result};
 use crate::ids::AccountId;
@@ -10,25 +8,15 @@ use crate::oauth::TokenResponse;
 
 use super::counters::{ANTIGRAVITY_BACKOFF_MS, ANTIGRAVITY_INVALID_GRANT_THRESHOLD, bump, reset};
 
-/// Pure helper that drives the `invalid_grant` retry loop. Generic
-/// over the async operation so unit tests can supply a closure that
-/// returns synthetic `Err(invalid_grant)` or `Ok` without touching
-/// the network.
+/// Drives the `invalid_grant` retry loop.
 ///
-/// Behavior (per GAP-5 spec §3):
+/// Up to `ANTIGRAVITY_INVALID_GRANT_THRESHOLD` attempts: `Ok` resets the counter
+/// and returns the token. An error containing `"invalid_grant"` bumps the counter,
+/// and reaching the threshold calls `on_unhealthy` and returns the original
+/// error. Any other error returns immediately without touching the counter.
 ///
-/// 1. Attempt the operation up to `ANTIGRAVITY_INVALID_GRANT_THRESHOLD`
-///    times (3 attempts total: initial + 2 retries).
-/// 2. On `Ok`, reset the counter to 0 and return the token.
-/// 3. On `Err`:
-///    * If the error message contains `"invalid_grant"`, increment
-///      the counter. If the counter reaches the threshold, call
-///      `on_unhealthy` and return the original error.
-///    * Any other error short-circuits the loop and is returned
-///      directly without touching the counter.
-/// 4. Between attempts, sleep for the indexed backoff duration. The
-///    sleep is wrapped in `tokio::time::timeout` so a cancelled
-///    caller does not stall in a backoff forever (cross-spec fix N5).
+/// Backoff sleeps are wrapped in `tokio::time::timeout` so a cancelled caller does
+/// not stall (cross-spec fix N5).
 pub(super) async fn drive_invalid_grant_retry<F, Fut>(
     account_id: AccountId,
     mut op: F,
@@ -56,9 +44,8 @@ where
             }
             Err(e) => {
                 let is_invalid_grant = e.to_string().contains("invalid_grant");
+                // a non-`invalid_grant` error leaves the counter untouched
                 if !is_invalid_grant {
-                    // Non-`invalid_grant` errors short-circuit the loop and
-                    // do NOT touch the counter (edge case #8).
                     return Err(e);
                 }
 
@@ -83,23 +70,19 @@ where
                     }));
                 }
 
-                // Exponential backoff before the next attempt. Wrapped in
-                // `tokio::time::timeout` so a cancelled caller does not
-                // stall here (cross-spec fix N5 from `antigravity-gaps-p2.md`).
                 let delay_ms = ANTIGRAVITY_BACKOFF_MS
                     .get(attempt as usize)
                     .copied()
                     .unwrap_or(4_000);
                 let sleep = tokio::time::sleep(std::time::Duration::from_millis(delay_ms));
-                // Pin the sleep future so it can be polled inside `timeout`
-                // without being dropped on cancellation (cancellation-safe).
+                // pin so `timeout` can poll the sleep without dropping it
                 tokio::pin!(sleep);
                 if tokio::time::timeout(std::time::Duration::from_secs(delay_ms + 1), &mut sleep)
                     .await
                     .is_err()
                 {
-                    // Caller likely cancelled or stalled. Propagate the last
-                    // `invalid_grant` error so the upstream pipeline can act.
+                    // caller cancelled or stalled: propagate the last error so
+                    // the upstream pipeline can act
                     return Err(last_invalid_grant_err.take().unwrap_or_else(|| {
                         CoreError::Auth("antigravity refresh: cancelled".into())
                     }));
@@ -108,17 +91,14 @@ where
         }
     }
 
-    // Unreachable in normal flow — the loop either returns `Ok` or
-    // `Err` on the last attempt. Keep a defensive fallthrough so the
-    // compiler accepts a non-`!` return path.
+    // the loop returns on every path; this fallthrough satisfies the non-`!`
+    // return type
     Err(last_invalid_grant_err
         .unwrap_or_else(|| CoreError::Auth("antigravity refresh: exhausted retries".into())))
 }
 
-/// Tiny wrapper so we can move a `FnOnce(AccountId)` into the retry
-/// helper while also being able to choose to NOT call it if the loop
-/// succeeds before reaching the threshold. Avoids a `OnceCell`-style
-/// dance for a single-shot callback.
+/// Lets a `FnOnce(AccountId)` move into the retry helper and still stay uncalled
+/// when the loop succeeds before the threshold.
 pub(super) struct OnUnhealthyCell<F: FnOnce(AccountId)> {
     inner: Option<F>,
 }

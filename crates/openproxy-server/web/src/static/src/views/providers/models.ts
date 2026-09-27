@@ -1,13 +1,5 @@
-// views/providers/models.ts — models section of the provider detail page.
-//
-// Split out of the former detail.ts monolith (FU1). This module
-// owns the models-section template (filter bar, table, bulk actions,
-// pagination) plus the UI-state setters (search / filter / sort / page)
-// and the per-provider auto-activate / proxy-settings handlers.
-//
-// Per-row handlers and renderModelRow live in models-row.ts.
-// Bulk operation handlers live in models-bulk.ts.
-// The custom-model form adapter lives in custom-model.ts.
+// views/providers/models.ts — models section: filter bar, table, bulk actions,
+// pagination, UI-state setters, and the auto-activate / proxy handlers.
 
 import { html, type TemplateResult } from 'lit-html';
 import { state } from '../../state/index.js';
@@ -42,7 +34,6 @@ import {
   onBulkDeleteSelected,
 } from './models-bulk.js';
 
-// ---- UI-state setters (per-provider filter/search/sort/page) ----
 
 export function onToggleSelectAllModels(e: Event | null): void {
   const target =
@@ -119,10 +110,9 @@ export function onSetProviderPage(providerId: string, page: number): void {
   requestUpdate();
 }
 
-// W3: per-provider "notify on keyword matches only" toggle. Only sent
-// when `auto_activate_keyword` is set; clearing the keyword (handled by
-// onUpdateAutoActivate) hides the toggle, so we never send the field
-// without a keyword. Three-state: unset -> null on clear.
+// "notify on keyword matches only" toggle. Only sent alongside a keyword;
+// clearing it (onUpdateAutoActivate) hides the toggle, so the field is never
+// sent alone. Three-state: unset -> null on clear.
 async function onToggleNotifKeywordOnly(
   providerId: string,
   next: boolean,
@@ -245,7 +235,6 @@ async function onToggleIncrementalRace(
   }
 }
 
-// ---- Render: sortable <th> helper ----
 
 function renderSortableTh(
   col: SortableColumn,
@@ -261,7 +250,6 @@ function renderSortableTh(
   return html`<th class=${'sortable' + (isActive ? ' sorted' : '')} @click=${() => onCycleProviderSort(providerId, col.key)}>${col.label}<span class="sort-indicator">${indicator}</span></th>`;
 }
 
-// ---- Render: models section (filter bar + table + bulk actions + pagination) ----
 
 export function renderModelsSection(
   provider: Provider,

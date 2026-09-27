@@ -297,7 +297,7 @@ mod tests {
     #[test]
     fn test_cline_email_from_token() {
         let provider = ClineOAuthProvider::new();
-        // Construct a dummy JWT payload with email
+        // synthetic JWT payload carrying the email
         let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256"}"#);
         let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .encode(r#"{"email":"user@example.com","name":"Test User"}"#);

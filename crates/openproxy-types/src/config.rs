@@ -489,7 +489,6 @@ mod tests {
         let parsed: PiiConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(default_cfg, parsed);
 
-        // Test aliases
         let aliased_json = r#"{"enabled": true, "reversible": false, "redact_logs": false, "entities": ["email", "key"]}"#;
         let aliased: PiiConfig = serde_json::from_str(aliased_json).unwrap();
         assert!(aliased.pii_enabled);
@@ -500,7 +499,6 @@ mod tests {
             vec![PiiEntity::Email, PiiEntity::Secret]
         );
 
-        // Test deduplication of repeated and aliased entities
         let dup_json = r#"{"pii_entities": ["credit_card", "person", "card", "person", "credit_card", "name"]}"#;
         let dup_cfg: PiiConfig = serde_json::from_str(dup_json).unwrap();
         assert_eq!(

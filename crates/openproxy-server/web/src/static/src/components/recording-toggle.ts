@@ -1,5 +1,4 @@
 // components/recording-toggle.ts — toggle button for recording.
-// Pure visual rendering component focused on UI presentation.
 
 import { state } from "../state/index.js";
 
@@ -8,8 +7,7 @@ export function renderRecordingToggle(recording?: boolean, loading?: boolean): v
   if (!btn) return;
   const on: boolean = recording ?? !!state.logs.recording;
   const isLoading: boolean = loading ?? !!state.logs.recordingLoading;
-  // Update the existing button in-place instead of rendering a new
-  // one into the parent (which caused the duplicate button bug).
+  // Update the existing button in place; rendering a new one caused a duplicate-button bug.
   btn.classList.toggle("on", on);
   btn.classList.toggle("off", !on);
   btn.classList.toggle("loading", isLoading);

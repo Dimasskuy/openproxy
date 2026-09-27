@@ -1,7 +1,5 @@
-// views/combos/combos-list.ts — table-based responsive listing for combos.
-//
-// Separates custom user-created combos from auto-generated provider combos,
-// providing real-time filtering, strategy/mode badges, and quick actions.
+// views/combos/combos-list.ts — responsive table listing for combos: custom
+// user-created combos separate from auto-generated provider combos.
 
 import { html, type TemplateResult } from 'lit-html';
 import { state } from "../../state/index.js";

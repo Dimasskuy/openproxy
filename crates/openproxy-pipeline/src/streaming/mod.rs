@@ -6,29 +6,24 @@ use openproxy_types::error::CoreError;
 /// Action resulting from processing an SSE chunk in a `StreamingChunkStage`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StreamAction {
-    /// Pass through the chunk unchanged.
     Passthrough,
-    /// Mutate the chunk payload into new content.
     Mutate(String),
-    /// Skip/drop this chunk from being forwarded.
     Skip,
     /// Stream reached normal termination ([DONE]).
     Done,
 }
 
-/// Modular stage/middleware trait for transforming or observing streaming SSE chunks.
+/// Transforms or observes streaming SSE chunks.
 pub trait StreamingChunkStage: Send + Sync {
-    /// Process a streaming payload (e.g. JSON string within `data: ...`).
-    /// Returns `StreamAction` indicating how to handle the result.
+    /// Processes the payload inside a `data: ...` frame.
     fn process_chunk(&mut self, payload: &str) -> StreamAction;
 
-    /// Finalize any remaining buffered state when the stream ends.
+    /// Flushes state still buffered when the stream ends.
     fn finalize(&mut self) -> Option<String> {
         None
     }
 }
 
-/// A pipeline of `StreamingChunkStage`s executed sequentially.
 #[derive(Default)]
 pub struct StreamingStagePipeline {
     stages: Vec<Box<dyn StreamingChunkStage>>,
@@ -99,23 +94,18 @@ impl StreamingChunkStage for StreamingStagePipeline {
     }
 }
 
-/// Represents an event in the streaming pipeline.
 pub(crate) enum ChunkEvent {
-    /// A data chunk, typically representing an SSE payload or raw bytes.
     Data(Bytes),
-    /// Skip sending data (already handled).
     Skip,
-    /// The end of the stream (e.g., [DONE] received or EOF reached).
+    /// The end of the stream ([DONE] received or EOF reached).
     Done,
-    /// Early return with a complete PipelineResult.
     Return(Box<crate::PipelineResult>),
 }
 
 use crate::streaming_state::StreamContext;
 
 pub(crate) trait ChunkInterceptor: Send + Sync {
-    /// Processes a chunk event, optionally mutating it or emitting a new event.
-    /// Returning an Error will abort the pipeline.
+    /// An `Err` aborts the pipeline.
     async fn process_chunk(
         &mut self,
         ctx: &StreamContext<'_>,

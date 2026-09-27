@@ -4,19 +4,15 @@ use std::sync::{Arc, LazyLock};
 
 use super::smart_truncate::{CompiledTruncateConfig, smart_truncate};
 
-// ─── Compiled filter structs ─────────────────────────────────────────────────
+// Compiled filter structs
 
 /// A filter with all patterns pre-compiled and rule names pre-computed.
 ///
-/// Built ONCE at startup (in a `std::sync::LazyLock` static) and shared
-/// across all requests via `Arc<CompiledFilter>`. This eliminates the
-/// per-message `RtkFilter` reconstruction (≈15 `String` + ≈5 `Vec`
-/// allocations) and the per-message `regex::Regex::new` calls (5–15 per
-/// message) that the previous `&RtkFilter` API performed.
-///
-/// The `rule_*` fields are pre-computed `&'static str` (via `Box::leak`,
-/// called ~100 times total at startup for ~3 KB of process-lifetime
-/// leaked strings — acceptable for a one-shot filter cache).
+/// Built once at startup in a `std::sync::LazyLock` and shared through
+/// `Arc<CompiledFilter>`, so no per-message struct reconstruction or
+/// `regex::Regex::new` call happens. The `rule_*` fields are pre-computed
+/// `&'static str` via `Box::leak`: ~100 calls and ~3 KB leaked for the life
+/// of the process, paid by a one-shot filter cache.
 pub struct CompiledFilter {
     pub id: &'static str,
     pub strip_ansi: bool,
@@ -31,7 +27,7 @@ pub struct CompiledFilter {
     pub truncate_line_at: usize,
     pub on_empty: &'static str,
     pub truncate: Option<CompiledTruncateConfig>,
-    // Pre-computed rule names — avoid `format!("{}::xxx", filter.id)` per call.
+    // Pre-computed rule names, so no `format!("{}::xxx", filter.id)` per call.
     pub rule_strip_ansi: &'static str,
     pub rule_filter_stderr: &'static str,
     pub rule_replace: &'static str,
@@ -52,23 +48,23 @@ pub struct CompiledMatchOutputRule {
     pub unless: Option<regex::Regex>,
 }
 
-// ─── Construction helpers ────────────────────────────────────────────────────
+// Construction helpers
 
-/// Leak a `String` to `&'static str`. Called only at filter-construction
-/// time (once per filter × ~10 rules ≈ ~100 small strings ≈ ~3 KB total
-/// leaked). Acceptable for a process-lifetime cache.
+/// Filtra `String` a `&'static str`. Solo se invoca al construir filtros
+/// (~10 reglas por filtro, ~3 KB fugados en total), aceptable para una cache
+/// con vida de proceso.
 fn leak_string(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
 }
 
-/// Compile a regex pattern, panicking on error. Called only at
-/// filter-construction time; all patterns are static literals, so a
-/// compile error is a programmer bug that should fail startup loudly.
+/// Compila un patrón regex y entra en pánico ante un error. Solo se invoca al
+/// construir filtros y todos los patrones son literales estáticos, así que un
+/// error de compilación es un bug de programación que debe tumbar el arranque.
 fn compile_re(pattern: &str) -> regex::Regex {
     regex::Regex::new(pattern).unwrap_or_else(|e| panic!("invalid filter pattern {pattern:?}: {e}"))
 }
 
-/// Pre-compute a rule name like `"git-status::strip_ansi"`.
+/// Pre-computa un nombre de regla como `"git-status::strip_ansi"`.
 fn rule_name(id: &'static str, suffix: &'static str) -> &'static str {
     leak_string(format!("{id}::{suffix}"))
 }
@@ -179,11 +175,6 @@ macro_rules! compiled_filter {
     }};
 }
 
-// ─── Static STDERR regex (compiled once) ─────────────────────────────────────
-//
-// `filter_stderr_prefixes` was previously compiling this regex on every
-// call. Phase B already moved `strip_ansi` to memchr; this finishes the
-// job for the stderr-prefix path.
 static STDERR_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| openproxy_types::static_regex!(r"(?m)^\s*(?:stderr|err)\s*(?:\||:)\s*"));
 
@@ -191,7 +182,7 @@ fn filter_stderr_prefixes(text: &str) -> String {
     STDERR_RE.replace_all(text, "").into_owned()
 }
 
-// ─── Unified RTK Rules & Filter Registry ────────────────────────────────────
+// Unified RTK Rules & Filter Registry
 
 /// A unified RTK rule binding a command identifier, its detector function, and its optional compiled filter builder.
 #[derive(Clone, Copy)]
@@ -238,11 +229,9 @@ pub static RTK_RULES: &[RtkCommandRule] = &[
     define_rtk_rule!("generic-error", detector: super::command_detector::detect_generic_error, filter: make_generic_error_filter),
 ];
 
-// ─── Static filter registry ──────────────────────────────────────────────────
-//
-// Built once on first access; shared via `Arc<CompiledFilter>` thereafter.
-// Insertion order does not matter — `get_builtin_filter` does a single
-// `HashMap::get` lookup.
+// Static filter registry, built once on first access and shared through
+// `Arc<CompiledFilter>`. Insertion order is irrelevant: `get_builtin_filter`
+// does one `HashMap::get`.
 
 pub static BUILTIN_FILTERS: LazyLock<HashMap<&'static str, Arc<CompiledFilter>>> =
     LazyLock::new(|| {
@@ -258,28 +247,21 @@ pub static BUILTIN_FILTERS: LazyLock<HashMap<&'static str, Arc<CompiledFilter>>>
 pub static GENERIC_FILTER: LazyLock<Arc<CompiledFilter>> =
     LazyLock::new(|| Arc::new(make_generic_filter()));
 
-/// Obtiene el filtro built-in para un tipo de comando detectado.
-///
-/// Returns a cheaply-cloned `Arc<CompiledFilter>` — no struct
-/// reconstruction, no regex compilation.
+/// Obtiene el filtro built-in para un tipo de comando detectado: un
+/// `Arc<CompiledFilter>` clonado, sin reconstruir structs ni compilar regex.
 pub fn get_builtin_filter(detected_id: &str) -> Option<Arc<CompiledFilter>> {
     BUILTIN_FILTERS.get(detected_id).cloned()
 }
 
-/// Obtiene el filtro genérico de propósito general.
-///
-/// Returns a cheaply-cloned `Arc<CompiledFilter>` pointing at the single
-/// process-wide `GENERIC_FILTER` instance.
+/// Obtiene el filtro genérico de propósito general: un `Arc<CompiledFilter>`
+/// clonado que apunta a la única instancia `GENERIC_FILTER` del proceso.
 pub fn get_generic_filter() -> Arc<CompiledFilter> {
     Arc::clone(&GENERIC_FILTER)
 }
 
-// ─── Builtin filter constructors ─────────────────────────────────────────────
-//
-// Each `make_*_filter` is called exactly once per process lifetime, from
-// inside the `Lazy::new` closure of `BUILTIN_FILTERS` / `GENERIC_FILTER`.
-// Patterns are translated verbatim from the previous `get_builtin_filter`
-// match arms — any divergence is a bug.
+// Builtin filter constructors. Each `make_*_filter` runs once per process
+// lifetime, from inside the `Lazy::new` closure of `BUILTIN_FILTERS` /
+// `GENERIC_FILTER`. Any divergence from these patterns is a bug.
 
 fn make_git_status_filter() -> CompiledFilter {
     compiled_filter!(
@@ -456,7 +438,7 @@ fn make_generic_filter() -> CompiledFilter {
     )
 }
 
-// ─── Filter pipeline ─────────────────────────────────────────────────────────
+// Filter pipeline
 
 fn apply_cleanups_and_replaces(
     result: &mut String,
@@ -644,12 +626,9 @@ fn apply_truncation_stages(
 
 /// Aplica el pipeline de filtrado de un `CompiledFilter` al texto.
 ///
-/// Returns `(filtered_text, applied_rule_names)` where each rule name is
-/// a pre-computed `&'static str` (e.g. `"git-status::strip_ansi"`) — no
+/// Returns `(filtered_text, applied_rule_names)`, each rule name a
+/// pre-computed `&'static str` (e.g. `"git-status::strip_ansi"`) with no
 /// `format!` allocation per call.
-///
-/// The 10 pipeline stages run in the same order as the previous
-/// `RtkFilter`-based implementation; behavior is identical.
 pub fn apply_line_filter(text: &str, filter: &CompiledFilter) -> (String, Vec<&'static str>) {
     let mut applied_rules: Vec<&'static str> = Vec::new();
     let mut result = text.to_string();
@@ -664,7 +643,7 @@ pub fn apply_line_filter(text: &str, filter: &CompiledFilter) -> (String, Vec<&'
     (result, applied_rules)
 }
 
-// ─── ANSI stripping (memchr-based, from Phase A) ─────────────────────────────
+// ANSI stripping (memchr based)
 
 fn skip_csi_sequence(bytes: &[u8], mut i: usize) -> usize {
     i += 2;
@@ -679,17 +658,13 @@ fn skip_csi_sequence(bytes: &[u8], mut i: usize) -> usize {
 
 /// Strip ANSI CSI escape sequences from `text`.
 ///
-/// CSI sequences are: ESC `[` [param bytes 0x30-0x3F] [intermediate bytes
-/// 0x20-0x2F] [final byte 0x40-0x7E]. This covers color codes (SGR),
-/// cursor movement, erase, etc.
+/// CSI grammar: ESC `[` [param bytes 0x30-0x3F] [intermediate bytes 0x20-0x2F]
+/// [final byte 0x40-0x7E], which covers SGR color codes, cursor movement and
+/// erase. A memchr byte scanner finds the next ESC (0x1B) with no per-call
+/// regex compilation, and returns `Cow::Borrowed` when no ESC byte exists.
 ///
-/// Uses a byte scanner with memchr to find the next ESC (0x1B) — ~10x
-/// faster than the regex it replaces, and no per-call regex compilation.
-/// Fast-paths to `Cow::Borrowed` if no ESC byte is found.
-///
-/// SAFETY: we only remove ASCII bytes (all CSI grammar bytes are ASCII),
-/// so UTF-8 multi-byte sequences in the content are never split. The
-/// final `String::from_utf8_unchecked` is safe.
+/// SAFETY: every CSI grammar byte is ASCII, so removal never splits a UTF-8
+/// multi-byte sequence in the content.
 fn strip_ansi(text: &str) -> Cow<'_, str> {
     let bytes = text.as_bytes();
     let Some(first_esc) = memchr::memchr(0x1B, bytes) else {
@@ -713,10 +688,10 @@ fn strip_ansi(text: &str) -> Cow<'_, str> {
                 i += 1;
             }
         }
-        // Safety: we only removed ASCII bytes (0x1B, 0x5B, and 0x20..=0x7E).
-        // ASCII bytes are always single-byte in UTF-8, so removing them never
-        // splits a multi-byte sequence. The remaining bytes are a valid UTF-8
-        // subsequence of the original valid UTF-8 string.
+        // SAFETY: solo se eliminan bytes ASCII (0x1B, 0x5B y 0x20..=0x7E).
+        // Un byte ASCII siempre ocupa un byte en UTF-8, así que borrarlo nunca
+        // parte una secuencia multibyte: los bytes restantes son una subsecuencia
+        // UTF-8 válida del string original.
         let s = std::str::from_utf8(out).unwrap_or_default();
         Cow::Owned(s.to_string())
     })

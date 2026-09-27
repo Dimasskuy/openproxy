@@ -1,17 +1,10 @@
-// components/motion-provider.ts — respect the user's `prefers-reduced-motion`
-// system preference. Toggles a `reduced-motion` class on
-// `<html>` so the CSS layer can neutralise animations and
-// transitions. Also listens for live changes so a user who flips
-// the OS setting during a session gets the new behavior
-// immediately without a page reload.
+// components/motion-provider.ts — respects the `prefers-reduced-motion` system preference by
+// toggling a `reduced-motion` class on `<html>`, and listens for live changes so a mid-
+// session OS toggle applies without a reload.
 //
-// The CSS counterpart (`.reduced-motion * { animation-duration:
-// 0.01ms !important; transition-duration: 0.01ms !important;
-// scroll-behavior: auto !important; }`) lives in
-// `styles/base.css` and overrides every per-element rule via
-// cascade order. The `!important` is intentional and scoped —
-// users who explicitly opt in get all motion suppressed; users
-// who don't see no change at all.
+// The CSS counterpart (`.reduced-motion *` zeroing animation/transition duration and
+// scroll-behavior) lives in `styles/base.css` and overrides per-element rules by cascade
+// order; the `!important` is intentional and scoped to users who opted in.
 
 type MediaQueryListChangeHandler = (e: MediaQueryListEvent) => void;
 
@@ -21,17 +14,14 @@ function apply(reduce: boolean): void {
 
 let installed: boolean = false;
 
-/** Install the motion provider. Idempotent — safe to call from
- *  the boot sequence and from any later re-render path. */
+/** Install the motion provider. Idempotent — safe from boot and later re-renders. */
 export function installMotionProvider(): void {
   if (installed) return;
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
   const mql: MediaQueryList = window.matchMedia("(prefers-reduced-motion: reduce)");
   apply(mql.matches);
-  // `addEventListener` is the modern API; the legacy `addListener`
-  // shim only exists on very old Safari (< 14) which we don't
-  // target. `MediaQueryListEvent` is the standard change-event
-  // payload carrying the new `.matches` value.
+  // `addEventListener` (the legacy `addListener` shim is Safari < 14 only) and
+  // `MediaQueryListEvent` carries the new `.matches` value.
   const handler: MediaQueryListChangeHandler = (e: MediaQueryListEvent): void => {
     apply(e.matches);
   };

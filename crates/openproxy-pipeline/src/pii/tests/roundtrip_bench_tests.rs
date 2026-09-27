@@ -236,7 +236,7 @@ fn test_high_volume_pii_scalability_and_zero_collision() {
         ));
     }
     assert_eq!(session.forward.len(), 6000);
-    // reverse map contains the 6000 full placeholders plus first/last component aliases for Person entities
+    // 6000 full placeholders plus the Person first/last component aliases.
     assert!(session.reverse.len() >= 6000 && session.reverse.len() <= 6080);
 
     use std::fmt::Write;

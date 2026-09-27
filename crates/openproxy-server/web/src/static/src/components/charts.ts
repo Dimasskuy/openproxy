@@ -1,18 +1,13 @@
-//! Inline SVG daily-usage chart — no external library, keeps the
-//! bundle lean. Pure function returning an SVG string; the caller
-//! injects it into the DOM via `innerHTML`.
+//! Inline SVG daily-usage chart — no external library, keeps the bundle lean. Pure function
+//! returning an SVG string the caller injects with `innerHTML`.
 //!
-//! Design: follows the Dell 1996 retro aesthetic — 1px black strokes,
-//! square data points, no soft shadows, no gradients. Chart series
-//! colors come from the `--chart-*` CSS custom properties.
-//!
-//! Interactive charts (line/sparkline/time-series) live in
-//! `uplot-chart.ts` (uPlot).
+//! Dell 1996 retro aesthetic: 1px black strokes, square data points, no soft
+//! shadows, no gradients. Series colors come from the `--chart-*` custom properties.
+//! Interactive time-series charts live in `uplot-chart.ts` (uPlot).
 
 import type { ByDayRow } from "../lib/types/api";
 
-// ── Color palette ────────────────────────────────────────────────────
-// Repurposes the catalog tint family as data-series colors.
+// ── Color palette (catalog tints reused as data-series colors) ─────────────
 const CHART_COLORS = [
   "#e91d2a", // dell red (primary)
   "#4d7c2a", // sage (success)
@@ -24,7 +19,7 @@ const CHART_COLORS = [
   "#7a5a3a", // steel
 ];
 
-// ── Daily usage line chart ──────────────────────────────────────────
+// ── Daily usage line chart ─────────────────────────────────────────────────
 
 export interface DailyChartOpts {
   /** Height of the chart area in px (excluding labels). Default 200. */
@@ -35,15 +30,8 @@ export interface DailyChartOpts {
   showCost?: boolean;
 }
 
-/**
- * Render a dual-axis daily usage chart as inline SVG.
- *
- * Left axis: unique requests (line).
- * Right axis: cost USD (bars).
- * Bottom axis: dates.
- *
- * The SVG uses `viewBox` so it scales responsively.
- */
+/** Dual-axis daily usage chart as inline SVG: unique requests (line, left axis) and
+ *  cost USD (bars, right axis) over dates. `viewBox` makes it scale responsively. */
 export function dailyUsageChart(
   rows: ByDayRow[],
   opts: DailyChartOpts = {},
@@ -68,17 +56,14 @@ export function dailyUsageChart(
   const barW = n > 1 ? Math.max(2, plotW / n * 0.6) : plotW * 0.5;
   const stepX = n > 1 ? plotW / (n - 1) : 0;
 
-  // Scale functions.
   const x = (i: number) => padL + (n > 1 ? i * stepX : plotW / 2);
   const yReqs = (v: number) => padT + plotH - (v / maxReqs) * plotH;
   const yCost = (v: number) => padT + plotH - (v / maxCost) * plotH;
 
-  // Build the requests line path.
   const linePath = rows
     .map((r, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${yReqs(r.unique_requests).toFixed(1)}`)
     .join(" ");
 
-  // Build cost bars.
   const bars = rows.map((r, i) => {
     const bx = x(i) - barW / 2;
     const by = yCost(r.total_cost_usd);
@@ -86,12 +71,10 @@ export function dailyUsageChart(
     return `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${CHART_COLORS[1]}" opacity="0.3" />`;
   }).join("");
 
-  // Build data points (circles on the line).
   const dots = rows.map((r, i) =>
     `<circle cx="${x(i).toFixed(1)}" cy="${yReqs(r.unique_requests).toFixed(1)}" r="2.5" fill="${CHART_COLORS[0]}" stroke="#000" stroke-width="0.5" />`
   ).join("");
 
-  // Y-axis labels (requests — left).
   const reqTicks = 4;
   const reqLabels: string[] = [];
   for (let t = 0; t <= reqTicks; t++) {
@@ -103,7 +86,6 @@ export function dailyUsageChart(
     );
   }
 
-  // Y-axis labels (cost — right).
   const costLabels: string[] = [];
   if (opts.showCost !== false) {
     const costTicks = 4;
@@ -116,7 +98,6 @@ export function dailyUsageChart(
     }
   }
 
-  // X-axis labels (dates) — show ~6 labels max to avoid crowding.
   const xLabels: string[] = [];
   const labelEvery = Math.max(1, Math.ceil(n / 6));
   rows.forEach((r, i) => {
@@ -128,7 +109,6 @@ export function dailyUsageChart(
     }
   });
 
-  // Axis lines.
   const axisLine = `stroke="var(--color-border)" stroke-width="1"`;
 
   return `<svg class="chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" style="width:100%;height:${h}px;">
@@ -143,7 +123,7 @@ export function dailyUsageChart(
   </svg>`;
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────
 
 function formatTick(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;

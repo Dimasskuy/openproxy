@@ -7,7 +7,8 @@ fn test_multimodal_image_url_base64_payload_preserved_without_corruption() {
     let engine = PiiEngine::new(&[PiiEntity::Person, PiiEntity::Email, PiiEntity::Secret]);
     let mut session = PiiSession::new(true);
 
-    // Realistic JPEG header and random-looking base64 that would previously trigger Secret entropy detection
+    // A realistic JPEG header plus random-looking base64: exactly the shape
+    // that trips Secret entropy detection.
     let raw_base64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/";
     let data_uri = format!("data:image/jpeg;base64,{raw_base64}");
 
@@ -44,7 +45,6 @@ fn test_multimodal_image_url_base64_payload_preserved_without_corruption() {
     let text_part = &content_arr[0];
     let image_part = &content_arr[1];
 
-    // 1. Text is properly pseudonymized
     let text = text_part["text"].as_str().unwrap();
     assert!(!text.contains("John Doe"));
     assert!(!text.contains("john.doe@example.com"));
@@ -53,12 +53,10 @@ fn test_multimodal_image_url_base64_payload_preserved_without_corruption() {
         "Please analyze this image for John Doe (john.doe@example.com)"
     );
 
-    // 2. Multimodal base64 data URI is 100% UNTOUCHED and BIT-PERFECT
     let url = image_part["image_url"]["url"].as_str().unwrap();
     assert_eq!(url, data_uri);
     assert!(!url.contains("sec_"));
 
-    // 3. No secrets falsely detected in the base64 image
     let secret_count = session.counts.get(&PiiEntity::Secret).copied().unwrap_or(0);
     assert_eq!(
         secret_count, 0,
@@ -73,7 +71,6 @@ fn test_multimodal_gemini_inline_data_and_anthropic_source_preserved() {
 
     let raw_base64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/";
 
-    // Gemini shape: contents[].parts[].inline_data.data
     let mut gemini_val = serde_json::json!({
         "contents": [{
             "parts": [
@@ -92,7 +89,6 @@ fn test_multimodal_gemini_inline_data_and_anthropic_source_preserved() {
         raw_base64
     );
 
-    // Anthropic shape: messages[].content[].source.data
     let mut anthropic_val = serde_json::json!({
         "messages": [{
             "role": "user",

@@ -7,7 +7,7 @@ fn bench_oauth_refresh(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let mut group = c.benchmark_group("oauth_refresh");
 
-    // Sequential simulation (Old behavior)
+    // sequential refresh, sleep per attempt
     group.bench_function("sequential_refresh_10", |b| {
         b.to_async(&rt).iter(|| async {
             for i in 0..10 {
@@ -20,7 +20,7 @@ fn bench_oauth_refresh(c: &mut Criterion) {
         });
     });
 
-    // Concurrent token bucket simulation (New behavior)
+    // concurrent refresh, governor token bucket with burst 1
     group.bench_function("concurrent_refresh_10", |b| {
         b.to_async(&rt).iter(|| async {
             use governor::{Quota, RateLimiter};

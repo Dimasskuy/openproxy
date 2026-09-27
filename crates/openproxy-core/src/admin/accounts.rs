@@ -15,9 +15,8 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateAccountInput {
     pub provider_id: String,
-    /// API key for api_key accounts. `None` for OAuth accounts.
-    /// Accepts both `api_key` and `secret` as JSON field names for
-    /// compatibility with the web UI (which sends `secret`).
+    /// API key for api_key accounts, `None` for OAuth accounts. Accepts `api_key`
+    /// or `secret`, since the web UI sends the latter.
     #[serde(alias = "secret")]
     pub api_key: Option<String>,
     pub label: Option<String>,
@@ -25,12 +24,10 @@ pub struct CreateAccountInput {
     pub extra_config_json: Option<String>,
 }
 
-/// Insert a new account. The plaintext `api_key` is encrypted with
-/// `master_key` and only the resulting BLOB is stored.
+/// Insert a new account, storing only the encrypted `api_key` BLOB.
 ///
-/// `priority` defaults to `100` when not provided, matching the
-/// "lower = higher priority" convention documented in
-/// [`crate::accounts`].
+/// `priority` defaults to `100`, matching the "lower is higher priority"
+/// convention in [`crate::accounts`].
 pub fn create_account(
     conn: &Connection,
     master_key: &MasterKey,
@@ -96,11 +93,9 @@ pub struct BulkCreateAccountsResponse {
 
 /// Insert multiple accounts in batch.
 ///
-/// Deduplication (3 phases):
-/// 1. Queries and decrypts all existing API keys for `provider_id` in the database.
-/// 2. Tracks seen keys in-memory across the incoming batch.
-/// 3. Silently discards duplicate keys (already in DB or duplicated within the batch),
-///    making bulk creation idempotent and duplicate-free.
+/// Dedup runs in three phases: decrypt every existing key for `provider_id`,
+/// track keys seen in-memory across the batch, then drop duplicates (already in
+/// the DB or repeated in the batch), which makes the call idempotent.
 pub fn bulk_create_accounts(
     conn: &Connection,
     master_key: &MasterKey,
@@ -116,7 +111,7 @@ pub fn bulk_create_accounts(
             continue;
         }
 
-        // Deduplication: skip if already in DB for this provider or previously seen in this batch
+        // skip keys already in the DB for this provider or seen in this batch
         if !existing_keys.insert(trimmed.to_string()) {
             continue;
         }
@@ -140,8 +135,8 @@ pub fn bulk_create_accounts(
     Ok(ids)
 }
 
-/// List accounts, optionally filtered by provider.
-/// The `master_key` is required to decrypt `oauth_provider_specific`.
+/// Accounts, optionally filtered by provider. `master_key` decrypts
+/// `oauth_provider_specific`.
 pub fn list_accounts(
     conn: &Connection,
     provider: Option<&ProviderId>,
@@ -162,8 +157,7 @@ pub struct UpdateAccountApiKeyInput {
     pub api_key: Option<String>,
 }
 
-/// Encrypt and store (or clear) the API key for an existing account.
-/// Returns [`CoreError::AccountNotFound`] when `id` is missing.
+/// Encrypt and store (or clear) an existing account's API key.
 pub fn update_account_api_key(
     conn: &Connection,
     master_key: &MasterKey,
@@ -179,8 +173,7 @@ pub struct UpdateAccountLabelInput {
     pub label: Option<String>,
 }
 
-/// Update the label for an existing account.
-/// Returns [`CoreError::AccountNotFound`] when `id` is missing.
+/// Update an existing account's label.
 pub fn update_account_label(
     conn: &Connection,
     id: AccountId,
@@ -189,8 +182,7 @@ pub fn update_account_label(
     accounts::update_label(conn, id, input.label.as_deref())
 }
 
-/// Get the decrypted API key for an account.
-/// Returns [`CoreError::AccountNotFound`] when `id` is missing.
+/// Decrypted API key for an account.
 pub fn get_account_api_key(
     conn: &Connection,
     master_key: &MasterKey,
@@ -199,10 +191,8 @@ pub fn get_account_api_key(
     accounts::decrypt_api_key(conn, id, master_key)
 }
 
-/// Decrypt an account's API key. The connection must be dropped by the
-/// caller before any async work (e.g. the upstream HTTP call); this
-/// helper exists so the quota-refresh path doesn't have to repeat the
-/// `decrypt_api_key` boilerplate.
+/// Decrypt an account's API key. The caller drops the connection before any async
+/// work. This exists so the quota-refresh path need not repeat the boilerplate.
 pub fn decrypt_api_key_for_account(
     conn: &Connection,
     id: AccountId,
@@ -211,18 +201,15 @@ pub fn decrypt_api_key_for_account(
     accounts::decrypt_api_key(conn, id, master_key)
 }
 
-/// Stamp a quota snapshot onto an account row. See
-/// [`accounts::set_quota`] for the column-level semantics.
+/// Stamp a quota snapshot onto an account row. See [`accounts::set_quota`] for the
+/// column-level semantics.
 pub fn persist_account_quota(conn: &Connection, id: AccountId, q: &AccountQuota) -> Result<()> {
     accounts::set_quota(conn, id, q)
 }
 
-/// Look up the account row needed to route a quota refresh. Returns
-/// the account on success, or [`CoreError::AccountNotFound`] when the
-/// id is missing. The caller still holds the writer guard when this
-/// returns; the typical pattern is to call this, drop the guard, then
-/// fire the upstream HTTP call.
-/// The `master_key` is required to decrypt `oauth_provider_specific`.
+/// Account row needed to route a quota refresh. The caller still holds the writer
+/// guard on return: call this, drop the guard, then fire the upstream HTTP call.
+/// `master_key` decrypts `oauth_provider_specific`.
 pub fn account_for_quota_refresh(
     conn: &Connection,
     id: AccountId,
@@ -231,14 +218,12 @@ pub fn account_for_quota_refresh(
     accounts::get(conn, id, master_key)?.ok_or(CoreError::AccountNotFound(id.0))
 }
 
-/// Fetch quota for a single account using the right provider-specific
-/// fetcher. Today MiniMax (and its CN sibling), OpenRouter, and
-/// Antigravity have fetchers; any other provider id returns an
-/// `AccountQuota` with all-NULL numeric fields and a `fetch_error`
-/// string saying the provider is unsupported.
+/// Fetch quota for one account through the provider-specific fetcher, optionally
+/// routing auxiliary upstream calls through `proxy_url`.
 ///
-/// Fetch quota for a single account using the right provider-specific fetcher,
-/// optionally passing a proxy URL for upstream auxiliary routing.
+/// MiniMax (and its CN sibling), OpenRouter and Antigravity have fetchers. Any
+/// other provider id returns an `AccountQuota` with NULL numeric fields and a
+/// `fetch_error` saying the provider is unsupported.
 pub async fn fetch_account_quota_with_proxy(
     provider_id: &str,
     upstream: &Arc<UpstreamClient>,
@@ -278,8 +263,7 @@ pub async fn fetch_account_quota_with_proxy(
     })
 }
 
-/// Fetch quota for a single account using the right provider-specific
-/// fetcher without an explicit proxy.
+/// [`Self::fetch_quota_with_proxy`] without an explicit proxy.
 pub async fn fetch_account_quota(
     provider_id: &str,
     upstream: &Arc<UpstreamClient>,

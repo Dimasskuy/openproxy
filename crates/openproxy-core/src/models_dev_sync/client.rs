@@ -33,7 +33,7 @@ async fn handle_fetch_attempt_error(
     }
 }
 
-/// Fetch raw JSON bytes from models.dev with retries.
+/// Fetch raw JSON bytes from models.dev, with retries.
 pub async fn fetch_models_dev(upstream: &Arc<UpstreamClient>) -> Result<bytes::Bytes> {
     const MAX_RETRIES: u32 = 3;
     let mut backoff = std::time::Duration::from_secs(2);
@@ -66,7 +66,7 @@ fn map_fetch_upstream_error(
     }
 }
 
-/// Single attempt to fetch raw JSON bytes from models.dev.
+/// One fetch attempt against models.dev.
 async fn fetch_models_dev_once(upstream: &Arc<UpstreamClient>) -> Result<bytes::Bytes> {
     let req = UpstreamRequest::get(MODELS_DEV_URL);
     let cancel = CancellationToken::new();
@@ -97,7 +97,7 @@ async fn fetch_models_dev_once(upstream: &Arc<UpstreamClient>) -> Result<bytes::
     Ok(body)
 }
 
-/// Background sync task using a `ServiceContainer` for dependency injection.
+/// Background sync task, with dependencies from a `ServiceContainer`.
 pub async fn start_sync_scheduler_with_container(
     services: &crate::di::ServiceContainer,
     check_interval_secs: u64,
@@ -184,7 +184,7 @@ pub async fn start_sync_scheduler(
     }
 }
 
-/// One-shot sync + enrich + auto-combo, called from the admin handler.
+/// One-shot sync + enrich + auto-combo for the admin handler.
 pub async fn run_one_shot(
     db_pool: std::sync::Arc<openproxy_db::DbPool>,
     upstream_client: Arc<UpstreamClient>,

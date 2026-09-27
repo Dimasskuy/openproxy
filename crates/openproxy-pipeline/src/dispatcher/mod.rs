@@ -63,9 +63,8 @@ impl UpstreamDispatcher {
         self.record_bodies_and_headers.load(Ordering::Relaxed)
     }
 
-    /// Construye el `UpstreamRequest` (URL, body, proxy asignado) y el
-    /// `DispatchContext` asociado. Si la resolución de proxy falla,
-    /// devuelve un `PipelineResult` de fallo en `Box`.
+    /// Un fallo de resolución de proxy devuelve el `PipelineResult` de
+    /// fallo ya registrado en `Box`.
     async fn setup_upstream_request_and_context<'a>(
         &self,
         params: &types::DispatchParams<'a>,
@@ -104,7 +103,6 @@ impl UpstreamDispatcher {
         }
     }
 
-    /// Bifurca entre streaming (si hay `stream_sink`) y non-streaming.
     async fn dispatch_by_stream_mode(
         &self,
         params: types::DispatchParams<'_>,
@@ -132,11 +130,6 @@ impl UpstreamDispatcher {
         }
     }
 
-    /// Entry point público. Pasos:
-    /// 1. `setup_upstream_request_and_context` (proxy + body).
-    /// 2. Si `is_horde_vision_request` → `dispatch_horde_vision`.
-    /// 3. Popula headers + `is_streaming=true`.
-    /// 4. `dispatch_by_stream_mode`.
     pub(crate) async fn dispatch_upstream(
         &self,
         params: types::DispatchParams<'_>,

@@ -1,9 +1,8 @@
 // build.mjs — esbuild bundler for the openproxy dashboard frontend.
 //
-// Bundles all TS source + lit-html into code-split chunks: a small
-// core bundle (app.js) plus lazy-loaded chunks for heavy views
-// (playground, providers, notifications, analytics, config).
-// `rust-embed` picks up everything under `dist/` automatically.
+// Bundles all TS source + lit-html into code-split chunks: a small core bundle (app.js) plus
+// lazy-loaded chunks for the heavy views (playground, providers, notifications, analytics,
+// config). `rust-embed` picks up everything under `dist/` automatically.
 
 import { build, context } from 'esbuild';
 import { fileURLToPath } from 'url';
@@ -22,9 +21,8 @@ const options = {
   outdir: outDir,
   splitting: true,
   chunkNames: 'chunks/[name]-[hash]',
-  // No sourcemap in production builds — the .map file gets embedded
-  // into the Rust binary via rust-embed and wastes RAM. For
-  // development debugging, run `node build.mjs --sourcemap`.
+  // No sourcemap in production builds — the .map file gets embedded into the Rust binary via
+  // rust-embed and wastes RAM. For development debugging, run `node build.mjs --sourcemap`.
   sourcemap: process.argv.includes('--sourcemap'),
   minify: !isWatch,
   legalComments: 'eof',

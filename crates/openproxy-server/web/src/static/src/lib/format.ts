@@ -12,11 +12,10 @@ export function formatContext(n: unknown): string {
   return (num / 1_000_000).toFixed(1) + "M";
 }
 
-// TemplateResult variant of `formatContext`. Used inside `<td>`s
-// where the null case must render as a muted `<span>` (em-dash
-// inside an element, not escaped text) so the column width stays
-// constant across rows. Mirrors the legacy inlined copy that used
-// to live in `components/model-table.ts` and `views/providers.ts`.
+// TemplateResult variant of `formatContext`, used inside <td>s where the null case must render as a
+// muted <span> (em-dash inside an element, not escaped text) so the column width stays constant
+// across rows. Mirrors the legacy inlined copy from components/model-table.ts and
+// views/providers.ts.
 export function formatContextBadge(tokens: number | null | undefined): TemplateResult {
   if (tokens == null) return html`<span class="muted">—</span>`;
   if (tokens >= 1_000_000) return html`${(tokens / 1_000_000).toFixed(1)}M`;
@@ -33,8 +32,7 @@ export function formatMs(ms: unknown): string {
   return Math.round(Number(ms)) + "ms";
 }
 
-// Localised-friendly number for currency / counts. Not a full i18n
-// helper — just a one-liner we use in a few places.
+// Localisation-friendly number for currency / counts. Not a full i18n helper.
 export function formatNumber(n: number, opts: Intl.NumberFormatOptions = {}): string {
   return new Intl.NumberFormat(undefined, opts).format(n);
 }

@@ -1,8 +1,4 @@
 // views/home/kpis.ts — KPI tile grid + sparkline builders.
-//
-// Renders the 6 KPI tiles (active requests, requests/min, p95 latency,
-// success rate, tokens/min, cost/min) and provides sparkline data
-// constructors for the mini uPlot charts inside each tile.
 
 import { html, type TemplateResult } from "lit-html";
 import type uPlot from "uplot";
@@ -12,9 +8,6 @@ import type { Snapshot, SnapshotWindow } from "./types.js";
 import type { ThroughputPoint, StatusCodePoint, LatencyPoint } from "../../state/live-store.js";
 import { createSparkline, observeResize, CHART_COLORS } from "../../components/uplot-chart/index.js";
 
-// ==========
-// Formatters
-// ==========
 
 /** Compact number formatter: 1234 → "1.2k", 12345 → "12.3k", 1234567 → "1.2M". */
 export function formatCompact(n: number): string {
@@ -55,9 +48,7 @@ export function formatTokensInOut(inTok: number | null, outTok: number | null): 
   return i + "/" + o;
 }
 
-// ==========
 // KPI tile rendering
-// ==========
 
 function renderKpiTile(
   label: string,
@@ -113,9 +104,7 @@ export function renderKpiGrid(
   </div>`;
 }
 
-// ==========
 // Sparkline creation (uPlot instances)
-// ==========
 
 const SPARKLINE_BUCKETS = 60;
 
@@ -127,8 +116,7 @@ export interface SparklineInstances {
   sparkCost: uPlot;
 }
 
-/** Create the 5 KPI sparkline uPlot charts + ResizeObservers. Returns
- *  sparklines and a disposer array. Called after the first lit-html render. */
+/** Create the 5 KPI sparkline uPlot charts + ResizeObservers. */
 export function createSparklines(): {
   sparklines: SparklineInstances | null;
   disposers: Array<() => void>;
@@ -162,9 +150,7 @@ export function createSparklines(): {
   return { sparklines: s, disposers };
 }
 
-// ==========
 // Sparkline data builders
-// ==========
 
 function sparklineData(
   points: ThroughputPoint[],

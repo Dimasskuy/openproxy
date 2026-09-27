@@ -9,10 +9,7 @@
 //! streams land in the same indexed, long-retained log store as the
 //! structured log pipeline, so "just stderr" was never a safe channel.
 //!
-//! The behaviour is intentionally one-shot: subsequent starts see
-//! existing keys and do nothing. Re-running the bootstrap path on a
-//! populated DB is a no-op so the operator can safely restart the
-//! server.
+//! One-shot: a populated `api_keys` table is a no-op, so restarts are safe.
 //!
 //! Disable by leaving the `api_keys` table non-empty at boot (the
 //! normal case after the first run).
@@ -60,10 +57,8 @@ pub fn ensure_bootstrap_key(conn: &Connection, label: &str) -> Result<Option<Boo
         "system",
     )?;
 
-    // SECURITY: the plaintext never goes to a log stream (structured or
-    // stderr). It is written to a 0600 file the operator reads once and
-    // deletes; only the location is logged. WARN, not INFO, because the
-    // operator must take action.
+    // SECURITY: the plaintext never reaches any log stream; only the 0600 file
+    // path is logged, at WARN because the operator must act.
     match write_bootstrap_key_file(conn, &plaintext) {
         Ok(Some(path)) => tracing::warn!(
             key_id = key.id.0,
@@ -180,8 +175,7 @@ mod tests {
         let result = ensure_bootstrap_key(&conn, "bootstrap").expect("bootstrap");
         let r = result.expect("non-empty result on empty table");
         assert!(r.plaintext.starts_with("op_live_"));
-        // Scope includes both manage + chat so the operator can hit
-        // admin and chat endpoints with the same key.
+        // manage + chat so one key reaches both endpoint families.
         let key = api_keys::get_by_id(&conn, r.id)
             .expect("get")
             .expect("present");
@@ -192,7 +186,6 @@ mod tests {
     #[test]
     fn bootstrap_is_noop_when_keys_exist() {
         let (conn, _p) = fresh_conn();
-        // Pre-populate.
         let (_existing, _) = api_keys::create(
             &conn,
             CreateApiKeyInput {

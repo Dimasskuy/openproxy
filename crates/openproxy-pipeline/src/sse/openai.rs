@@ -5,9 +5,9 @@ use openproxy_types::error::Result;
 use openproxy_types::message::PromptTokensDetails;
 use serde_json::Value;
 
-/// Lightweight struct for extracting only metadata from OpenAI SSE chunks.
-/// serde skips unknown fields (delta content, tool_calls, etc.) without
-/// allocating them, making this much faster than parsing into Value.
+/// Extracts chunk metadata only. serde skips the fields the proxy does not
+/// need (`delta.content`, `tool_calls`) without allocating them, which is
+/// cheaper than parsing into `Value` per chunk.
 #[derive(serde::Deserialize)]
 struct OpenAiSseProbe {
     #[serde(default)]
@@ -68,8 +68,8 @@ pub fn parse_openai_sse_line(line: &str) -> Result<Option<UpstreamSseChunk>> {
         super::SseDataOrDone::Done => return Ok(Some(UpstreamSseChunk::done())),
         super::SseDataOrDone::Skip => return Ok(None),
     };
-    // Fast targeted parse: only extracts usage + finish_reason,
-    // skips all other fields (delta.content, tool_calls, etc.)
+    // Only usage and finish_reason are read; delta content and tool
+    // calls are skipped.
     let probe: OpenAiSseProbe = parse_provider_json(payload, "openai")?;
 
     let usage = probe.usage.map(|u| {
@@ -103,11 +103,10 @@ pub fn parse_openai_sse_line(line: &str) -> Result<Option<UpstreamSseChunk>> {
         )
     });
     // o1-style reasoning models (o1, o3, deepseek-r1) emit
-    // `delta.reasoning_content` on chunks that also carry `usage`
-    // or a non-null `finish_reason` — i.e. the slow path. Surface
-    // it on `delta_reasoning` so the pipeline's accumulator
-    // (sse_accumulator.rs) can persist it as
-    // `choices[0].message.reasoning_content`. The probe does the
+    // `delta.reasoning_content` on chunks that also carry `usage` or a
+    // non-null `finish_reason`, the slow path. Surface it on
+    // `delta_reasoning` so the accumulator persists it as
+    // `choices[0].message.reasoning_content`.
     let (delta_reasoning, finish_reason) = match probe.choices.and_then(|mut c| c.pop()) {
         Some(choice) => {
             let reasoning = choice.delta.and_then(|d| d.reasoning_content);
@@ -166,7 +165,6 @@ mod tests {
 
     #[test]
     fn openai_line_without_data_prefix_returns_none() {
-        // Lines that don't start with "data:" should be silently skipped.
         assert!(
             parse_openai_sse_line("event: some_event")
                 .unwrap()
@@ -183,7 +181,6 @@ mod tests {
 
     #[test]
     fn openai_line_with_event_prefix_ignored() {
-        // Standard SSE event: lines should be ignored (not data: lines).
         assert!(parse_openai_sse_line("event: message").unwrap().is_none());
         assert!(
             parse_openai_sse_line("event: completion")
@@ -194,7 +191,6 @@ mod tests {
 
     #[test]
     fn openai_line_with_crlf_ending() {
-        // \r\n line endings (common in HTTP) should be stripped.
         let line = "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"gpt-4\",\"choices\":[]}\r\n";
         let chunk = parse_openai_sse_line(line).unwrap().unwrap();
         assert!(!chunk.done);
@@ -208,7 +204,6 @@ mod tests {
 
     #[test]
     fn openai_long_line() {
-        // A very long SSE data line (10KB payload) should parse without issues.
         let long_content = "x".repeat(10_000);
         let payload = serde_json::json!({"content": long_content});
         let line = format!("data: {}", serde_json::to_string(&payload).unwrap());
@@ -242,7 +237,6 @@ mod tests {
 
     #[test]
     fn openai_multiple_sequential_lines_processed_independently() {
-        // Simulate processing multiple SSE lines one by one, as a real stream would.
         let lines = vec![
             r#"data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"gpt-4","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}"#,
             r#"data: {"id":"1","object":"chat.completion.chunk","created":0,"model":"gpt-4","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}"#,
@@ -286,7 +280,6 @@ mod tests {
 
     #[test]
     fn openai_data_prefix_with_extra_spaces() {
-        // "data:  {" (extra space) should still work — trim_start handles it.
         let line = r#"data:  {"id":"x","object":"chat.completion.chunk","created":0,"model":"gpt-4","choices":[]}"#;
         let chunk = parse_openai_sse_line(line).unwrap().unwrap();
         assert!(!chunk.done);

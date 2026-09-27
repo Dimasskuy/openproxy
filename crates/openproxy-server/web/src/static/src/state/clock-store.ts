@@ -1,7 +1,6 @@
-// state/clock-store.ts — global 250ms clock tick feeding relative
-// timestamps. Visibility-aware: the tick pauses while the tab is
-// hidden and runs once immediately on resume (no backlog), so
-// background tabs don't burn CPU re-rendering elapsed-time labels.
+// 250ms clock tick feeding relative timestamps. Pauses while the tab is hidden
+// and runs once immediately on resume, so a background tab does not re-render
+// elapsed-time labels.
 
 import {
   createVisibilityAwareInterval,

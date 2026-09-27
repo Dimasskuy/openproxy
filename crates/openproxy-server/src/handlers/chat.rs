@@ -1,23 +1,12 @@
 //! `POST /v1/chat/completions` — the public entry point.
 //!
-//! Spec §2.1 describes the contract:
-//! 1. Parse the incoming JSON as an [`OpenAIRequest`].
-//! 2. Resolve the routing plan from the `model` field via
-//!    [`openproxy_core::routing::resolve`]. A model that matches a
-//!    row in the `models` table goes direct (via a synthetic
-//!    single-target combo); a `combo:<name>` matches a combo; anything
-//!    else is 404.
-//! 3. The optional `x-openproxy-combo` header is a legacy override
-//!    that forces a specific combo, bypassing model resolution.
-//! 4. Hand the resolved plan + the parsed request to the
-//!    [`Pipeline`] which dispatches it to the configured upstream,
-//!    with retries, timeouts, and usage writes.
-//! 5. Translate the pipeline's [`PipelineResult`] back into either
-//!    an OpenAI-shaped JSON response or a structured error.
-//!
-//! Streaming (`stream: true` in the request body) is intentionally
-//! not wired up: the MVP is non-streaming and the pipeline's SSE
-//! plumbing is a follow-up.
+//! Spec §2.1 contract: parse the JSON as an [`OpenAIRequest`], resolve the
+//! routing plan from `model` via [`openproxy_core::routing::resolve`] (a
+//! `models` row routes direct through a synthetic single-target combo, a
+//! `combo:<name>` matches a combo, anything else is 404), honour the legacy
+//! `x-openproxy-combo` override, run the [`Pipeline`] (dispatch, retries,
+//! timeouts, usage writes), and translate the [`PipelineResult`] into an
+//! OpenAI-shaped JSON response or a structured error.
 
 use axum::{
     Json,
@@ -54,31 +43,21 @@ pub fn router(state: &AppState) -> axum::Router<AppState> {
     )
 }
 
-/// SSE keepalive interval. Sends `: keep-alive\n\n` (an SSE comment)
-/// periodically to keep the connection alive while the upstream is
-/// generating. This is critical for streaming requests where the
-/// upstream takes a long time to produce the first token (e.g. large
-/// prompts, reasoning models). Without frequent keepalives,
-/// intermediate proxies (nginx, cloudflare) and client HTTP
-/// libraries may close the connection due to inactivity, causing
-/// false-positive "client disconnected" errors.
+/// SSE keepalive interval: emits `: keep-alive\n\n` while the upstream generates,
+/// so nginx/Cloudflare and client HTTP libraries do not drop the connection on
+/// inactivity (large prompts, reasoning models with slow first tokens) and report
+/// a false "client disconnected".
 ///
-/// CRITICAL: the first keepalive is DELAYED by this interval (not
-/// sent immediately). The previous code used `tokio::time::interval`
-/// which fires on the FIRST tick (immediately), sending `: keep-alive\n\n`
-/// as the VERY FIRST bytes of the response body — before any `data: {...}`
-/// frame. Some SSE clients (notably the OpenAI Python library's httpx-sse
-/// parser) may not handle a leading SSE comment correctly and close the
-/// connection. Using `interval_at` with a delayed start ensures the first
-/// keepalive only fires after `SSE_KEEPALIVE_INTERVAL` of inactivity,
-/// giving the upstream time to send the first real data frame.
+/// CRITICAL: the first keepalive is DELAYED by this interval, never sent
+/// immediately. `tokio::time::interval` fires on its first tick, which put
+/// `: keep-alive\n\n` ahead of any `data: {...}` frame; some SSE clients (notably
+/// the OpenAI Python library's httpx-sse parser) mishandle a leading comment and
+/// close the connection. `interval_at` gives the upstream time to send real data.
 const SSE_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
 
-/// A stream that yields pre-formatted SSE frames (`Bytes`) from an
-/// mpsc channel, interleaved with periodic SSE keepalive comments.
-/// Unlike `axum::response::Sse`, this writes raw `Bytes` directly to
-/// the HTTP body with zero additional wrapping — the pipeline already
-/// formats each chunk as `data: {payload}\n\n`.
+/// A stream yielding pre-formatted SSE frames (`Bytes`) from an mpsc channel,
+/// interleaved with keepalive comments. Unlike `axum::response::Sse` it writes raw
+/// `Bytes` with no extra wrapping: the pipeline already emits `data: {payload}\n\n`.
 struct SseBytesStream {
     inner: futures::stream::SelectAll<ReceiverStream<Bytes>>,
     keepalive: tokio::time::Interval,
@@ -91,14 +70,12 @@ impl Stream for SseBytesStream {
         // All fields are `Unpin`, so `get_mut()` is safe.
         let this = self.get_mut();
 
-        // Check keepalive first (biased): if the keepalive timer
-        // has elapsed, emit a comment to keep the connection alive
-        // without adding data to the stream.
+        // Biased poll: check the keepalive first, emitting a comment adds no data.
         if this.keepalive.poll_tick(cx).is_ready() {
             return Poll::Ready(Some(Ok(Bytes::from_static(b": keep-alive\n\n"))));
         }
 
-        // Poll the merged channel stream and wrap each item in Ok.
+        // Poll the merged channel, wrapping each item in Ok.
         match Pin::new(&mut this.inner).poll_next(cx) {
             Poll::Ready(Some(chunk)) => Poll::Ready(Some(Ok(chunk))),
             Poll::Ready(None) => Poll::Ready(None),
@@ -247,15 +224,13 @@ pub(crate) async fn handle_sync_response(
     Ok(Json(body_value).into_response())
 }
 
-/// N1 (GAP-2): non-streaming Responses path. Mirrors
-/// [`handle_sync_response`] but wraps the final `OpenAIResponse` in
-/// the OpenAI Responses envelope (`{object: "response", output: [...]}`)
-/// expected by `POST /v1/responses` clients.
+/// Non-streaming Responses path (GAP-2). Mirrors [`handle_sync_response`] but
+/// wraps the final `OpenAIResponse` in the Responses envelope
+/// (`{object: "response", output: [...]}`).
 ///
-/// MUST be invoked from `responses_completions` (not
-/// `handle_sync_response`) — using the chat path on a Responses
-/// endpoint would silently ship a chat-completion JSON shape to the
-/// client and break the wire contract.
+/// MUST be called from `responses_completions`, never from the chat path:
+/// `handle_sync_response` would silently ship a chat-completion shape and break
+/// the wire contract.
 pub(crate) async fn handle_sync_response_responses(
     pipeline: Pipeline,
     req: PipelineRequest,

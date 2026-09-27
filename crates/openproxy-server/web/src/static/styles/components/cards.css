@@ -1,8 +1,4 @@
-/* ============================================
-   CARDS, TOASTS, BANNERS & SELECTION SURFACES
-   ============================================ */
 
-/* ----- Toast Notifications Container & Items ----- */
 .toast-container {
   position: fixed;
   bottom: var(--space-6);
@@ -78,7 +74,6 @@
 .toast-warning { background: var(--color-warn-soft);    color: var(--color-warn);    border-color: var(--color-warn);    }
 .toast-warn    { background: var(--color-warn-soft);    color: var(--color-warn);    border-color: var(--color-warn);    }
 
-/* ----- Banner ----- */
 .banner {
   padding: 0.9rem 1.1rem;
   border: var(--border-w) var(--border-style) var(--color-border);
@@ -101,7 +96,6 @@
   color: var(--color-text);
 }
 
-/* ----- Bulk actions bar ----- */
 .bulk-actions-bar {
   display: flex;
   align-items: center;
@@ -114,7 +108,6 @@
   flex-wrap: wrap;
 }
 
-/* ----- Filter bar ----- */
 .filter-bar {
   display: flex;
   align-items: center;
@@ -128,7 +121,6 @@
 .filter-bar input[type="text"] { flex: 1; min-width: 200px; }
 .filter-bar .filter-info { font-size: var(--fs-xs); color: var(--color-text-muted); }
 
-/* ----- Combo card ----- */
 .combo-card {
   display: block;
   padding: var(--space-3);
@@ -157,7 +149,6 @@
   font-family: var(--font-mono);
 }
 
-/* ----- Key display ----- */
 .key-display {
   display: flex;
   align-items: center;
@@ -175,7 +166,6 @@
   border: var(--border-w) var(--border-style) var(--color-border);
 }
 
-/* ----- Model picker ----- */
 .model-picker-display {
   display: flex;
   align-items: center;
@@ -195,7 +185,6 @@
   font-size: var(--fs-sm);
 }
 
-/* ----- Scope cards (create / edit key modal) ----- */
 .scopes-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -253,9 +242,7 @@
 .model-picker-row .model-id { font-family: var(--font-mono); flex: 1; font-size: var(--fs-sm); }
 .model-picker-row .model-provider { font-size: var(--fs-xs); color: var(--color-text-muted); }
 
-/* ============================================
-   MULTI-SELECT MODEL CHECKBOXES (add-target modal)
-   ============================================ */
+/* MULTI-SELECT MODEL CHECKBOXES (add-target modal) */
 .model-search-wrap {
   display: flex;
   flex-direction: column;

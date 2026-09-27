@@ -121,7 +121,6 @@ async fn mock_codebuddy_token_handler(
     );
 
     if count == 0 {
-        // First poll: pending
         (
             StatusCode::OK,
             axum::Json(serde_json::json!({
@@ -130,7 +129,6 @@ async fn mock_codebuddy_token_handler(
             })),
         )
     } else {
-        // Subsequent poll: success
         (
             StatusCode::OK,
             axum::Json(serde_json::json!({
@@ -217,13 +215,11 @@ async fn test_codebuddy_oauth_full_device_code_wire_mock() {
     let provider = CodeBuddyOAuthProvider::with_base_url(&mock_base);
     let client = Arc::new(UpstreamClient::new());
 
-    // 1. Contract & Spec verification
     assert_eq!(provider.name(), "codebuddy");
     assert_eq!(provider.flow(), OAuthFlow::DeviceCode);
     assert!(provider.aliases().contains(&"codebuddy-code"));
     assert!(provider.aliases().contains(&"@tencent-ai/codebuddy-code"));
 
-    // 2. Unsupported flows return validation error
     assert!(provider.build_auth_url("http://example.com").await.is_err());
     assert!(
         provider
@@ -232,7 +228,6 @@ async fn test_codebuddy_oauth_full_device_code_wire_mock() {
             .is_err()
     );
 
-    // 3. Request device code
     let dar = provider
         .request_device_code(&client)
         .await
@@ -251,14 +246,14 @@ async fn test_codebuddy_oauth_full_device_code_wire_mock() {
     assert_eq!(dar.interval, Some(2));
     assert_eq!(mock_state.state_requests.load(Ordering::SeqCst), 1);
 
-    // 4. Poll 1: pending (code 11217)
+    // first poll returns pending (code 11217)
     let poll_pending = provider
         .poll_device_token(&dar.device_code, &client)
         .await
         .expect("poll succeeds");
     assert!(poll_pending.is_none(), "first poll must be pending (None)");
 
-    // 5. Poll 2: success (code 0)
+    // second poll returns the token (code 0)
     let poll_success = provider
         .poll_device_token(&dar.device_code, &client)
         .await
@@ -272,13 +267,12 @@ async fn test_codebuddy_oauth_full_device_code_wire_mock() {
     assert_eq!(poll_success.expires_in, Some(7200));
     assert_eq!(poll_success.token_type, "Bearer");
 
-    // 6. DB Storage & AES-256-GCM Encryption verification
     let pool =
         openproxy_db::conn::DbPool::test_pool_with_prefix("openproxy-codebuddy-test").unwrap();
     let master_key = MasterKey::generate().unwrap();
     let (account_id, decrypted_at, decrypted_rt) = {
         let conn = pool.writer();
-        // Seed dummy provider row for foreign key
+        // provider row required by the account foreign key
         conn.execute(
             "INSERT INTO providers (id, name, base_url, auth_type, format) VALUES ('codebuddy', 'CodeBuddy', 'https://www.codebuddy.ai/v2', 'oauth', 'openai')",
             [],
@@ -322,7 +316,6 @@ async fn test_codebuddy_oauth_full_device_code_wire_mock() {
     assert_eq!(decrypted_at, "cb_access_token_wire_abc");
     assert_eq!(decrypted_rt.as_deref(), Some("cb_refresh_token_wire_def"));
 
-    // 7. TokenRefreshCoordinator refresh
     let refreshed = TokenRefreshCoordinator::global()
         .refresh_and_store(OAuthRefreshParams {
             provider_id: "codebuddy",
@@ -342,7 +335,6 @@ async fn test_codebuddy_oauth_full_device_code_wire_mock() {
         Some("cb_refresh_token_new_888")
     );
 
-    // Verify DB updated with refreshed credentials
     let (new_at, new_rt) = {
         let conn2 = pool.writer();
         let new_at = decrypt_access_token(&conn2, account_id, &master_key).unwrap();
@@ -352,7 +344,6 @@ async fn test_codebuddy_oauth_full_device_code_wire_mock() {
     assert_eq!(new_at, "cb_access_token_refreshed_999");
     assert_eq!(new_rt.as_deref(), Some("cb_refresh_token_new_888"));
 
-    // 8. Refresh failure handling
     mock_state
         .simulate_refresh_error
         .store(true, Ordering::SeqCst);

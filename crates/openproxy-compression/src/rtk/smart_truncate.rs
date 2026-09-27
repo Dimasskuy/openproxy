@@ -1,11 +1,9 @@
 use std::fmt::Write;
 
-/// Pre-compiled truncation configuration.
-///
-/// Built ONCE at startup (alongside its owning `CompiledFilter`) and shared
-/// across all requests via `Arc<CompiledFilter>`. The `priority_patterns`
-/// are stored as compiled `regex::Regex` values, eliminating the per-call
-/// `Regex::new` loop that the old `TruncateConfig` performed.
+/// Pre-compiled truncation configuration, built once at startup alongside its
+/// owning `CompiledFilter` and shared through `Arc<CompiledFilter>`.
+/// `priority_patterns` holds compiled regexes, so no per-call `Regex::new`
+/// loop runs.
 pub struct CompiledTruncateConfig {
     pub max_lines: usize,
     pub head_lines: usize,
@@ -13,18 +11,12 @@ pub struct CompiledTruncateConfig {
     pub priority_patterns: Box<[regex::Regex]>,
 }
 
-/// Trunca texto manteniendo head + priority + tail, con marcador.
+/// Escribe el tramo central de una truncación, añadiendo las líneas que casan
+/// con `patterns` y que no están ya en `head` ni en `tail`.
 ///
-/// Receives a `&CompiledTruncateConfig` whose `priority_patterns` are
-/// already-compiled regexes — no per-call `Regex::new` is performed.
-///
-/// The function:
-///  - Counts newlines via `memchr::memchr_iter` (SIMD-accelerated) to take
-///    the early-return fast path without materializing a `Vec<&str>`.
-///  - Writes the result directly into a single `String` (no
-///    `Vec<String>` + `join`).
-///  - Preserves the exact `split('\n')` semantics of the original
-///    implementation (a trailing newline yields a trailing empty element).
+/// Cuenta saltos con `memchr::memchr_iter` para el fast path sin materializar
+/// un `Vec<&str>`, escribe en una sola `String`, y preserva la semántica exacta
+/// de `split('\n')` (un salto final produce un elemento vacío final).
 fn append_priority_middle(
     out: &mut String,
     middle: &[&str],

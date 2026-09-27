@@ -41,29 +41,24 @@ pub struct DbPool {
     writer: Arc<Mutex<Connection>>,
     readers: Arc<Vec<Arc<Mutex<Connection>>>>,
     next_reader: Arc<AtomicUsize>,
-    /// Path to the SQLite file the pool was opened against. Used by
-    /// [`DbPool::open_connection`] to spin up an *additional* owned
-    /// handle on the same handle when a caller needs an owned
-    /// `Connection` (rusqlite 0.31's `Connection: !Clone`, so the
-    /// only way to get a second handle is to open a new one).
+    /// Path of the SQLite file. [`DbPool::open_connection`] needs it to open an
+    /// extra owned `Connection`, since `Connection` is not `Clone` and a second
+    /// handle requires opening the file again.
     path: Arc<Path>,
     _cleanup: Option<Arc<crate::testing::TempDir>>,
 }
 
-/// Time budget for the writer lock on hot-path inserts.
+/// Writer-lock budget for hot-path inserts.
 ///
-/// The hot path is `cost::record`: every chat request takes the
-/// writer briefly to persist a usage row. If the writer is held by
-/// a long-running admin query (e.g. a 30-day usage summary that
-/// touches ~10k rows), every concurrent chat request would block
-/// until the admin query finishes. With 100ms ceiling the worst
-/// case is a lost usage row (logged + returned as `None`), never
-/// a hung client request.
+/// `cost::record` takes the writer on every chat request to persist a usage
+/// row. A long admin query holding it (e.g. a 30-day usage summary over ~10k
+/// rows) would block every concurrent chat request. At a 100ms ceiling the
+/// worst case is one lost usage row (logged, returned as `None`), never a hung
+/// client.
 pub const HOT_PATH_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 
-/// Time budget for the writer lock on admin/dashboard queries. Much
-/// longer than the hot path because the operator explicitly asked
-/// for the result; we'd rather wait a few seconds than 500.
+/// Writer-lock budget for admin/dashboard queries. Longer than the hot path
+/// because the operator explicitly asked for the result.
 pub const ADMIN_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Reason a `try_lock` returned `None` instead of a guard. Used by
@@ -81,16 +76,14 @@ impl std::fmt::Debug for DbPool {
 }
 
 impl DbPool {
-    /// Open or create a SQLite database at `path`, configure pragmas, and return
-    /// a ready-to-use pool. The caller is expected to run migrations on the
-    /// writer before issuing any queries.
+    /// Open (or create) the SQLite database at `path`, configure pragmas and
+    /// return a ready pool. Run migrations on the writer before querying.
     ///
-    /// Wraps the entire open path in `with_busy_retry`: if another process
-    /// holds the DB file lock (e.g. a crash-restart loop where the previous
-    /// openproxy instance hasn't fully released the writer mutex), the
-    /// `Connection::open_with_flags` call may surface `SQLITE_BUSY` after
-    /// the per-connection `busy_timeout` elapses. Retrying with 50ms+100ms
-    /// backoff covers the typical handover window without making legitimate
+    /// `with_busy_retry` wraps the whole open path: when another process holds
+    /// the DB file lock (e.g. a crash-restart loop where the previous instance
+    /// never released the writer mutex), `Connection::open_with_flags` can
+    /// surface `SQLITE_BUSY` once `busy_timeout` elapses. Retrying with
+    /// 50ms+100ms backoff covers the handover window without making real
     /// failures noisy.
     pub fn open(path: &Path) -> Result<Self> {
         with_busy_retry("DbPool::open", || Self::open_inner(path)).inspect_err(|e| {
@@ -102,8 +95,8 @@ impl DbPool {
         })
     }
 
-    /// Inner open path: actually constructs the pool. Public callers go
-    /// through [`DbPool::open`] which wraps this in `with_busy_retry`.
+    /// Builds the pool. Public callers go through [`DbPool::open`], which
+    /// wraps this in `with_busy_retry`.
     fn open_inner(path: &Path) -> Result<Self> {
         let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE;
 
@@ -114,8 +107,8 @@ impl DbPool {
         configure_temp_dir(&writer, path);
         configure_connection(&writer, true)?;
 
-        // Readers: open multiple handles on the same file to avoid mutex contention
-        // on high-throughput API endpoints.
+        // Extra handles on the same file keep mutex contention off the
+        // high-throughput API endpoints.
         let num_readers = 2;
         let mut readers = Vec::with_capacity(num_readers);
         for i in 0..num_readers {
@@ -132,13 +125,13 @@ impl DbPool {
         })
     }
 
-    /// Create an isolated test pool backed by a temporary directory with all
-    /// migrations applied. Automatically cleans up the directory on drop.
+    /// Isolated test pool on a temporary directory with all migrations
+    /// applied. The directory is cleaned up on drop.
     pub fn test_pool() -> Result<Self> {
         Self::test_pool_with_prefix("openproxy-test")
     }
 
-    /// Create an isolated test pool with a custom directory prefix.
+    /// Isolated test pool under a custom directory prefix.
     pub fn test_pool_with_prefix(prefix: &str) -> Result<Self> {
         let temp_dir = Arc::new(
             crate::testing::TempDir::new(prefix)
@@ -169,24 +162,17 @@ impl DbPool {
         self.writer.lock()
     }
 
-    /// Try to acquire the writer lock for at most `timeout` (blocking).
-    /// Returns `None` if the lock could not be acquired in time — the
-    /// caller decides what to do (drop the write, log + retry, 503 the
-    /// request, etc.).
-    ///
-    /// This is the LOW fix for `db_pool` write-lock starvation: a
-    /// long-running admin query holding the writer no longer freezes
-    /// the hot path indefinitely.
+    /// Try to acquire the writer lock for at most `timeout`, returning `None`
+    /// on expiry and leaving the drop/retry/503 decision to the caller. Bounded
+    /// this way, a long admin query holding the writer cannot freeze the hot
+    /// path indefinitely.
     pub fn try_writer_for(&self, timeout: std::time::Duration) -> Option<WriterGuard<'_>> {
         self.writer.try_lock_for(timeout)
     }
 
-    /// Clone the writer mutex's [`Arc`] handle. Used by long-lived consumers
-    /// (e.g. the request [`crate::pipeline::Pipeline`]) that need to lock
-    /// the connection repeatedly without going through the borrow checker
-    /// each time. The returned `Arc` is `Clone` and can be moved into
-    /// spawned tasks; multiple consumers can hold the same handle and each
-    /// `lock()` call serializes as before.
+    /// Clone the writer mutex's [`Arc`] handle, for long-lived consumers (e.g.
+    /// [`crate::pipeline::Pipeline`]) that lock the connection repeatedly and
+    /// move the handle into spawned tasks. Every `lock()` still serializes.
     pub fn writer_arc(&self) -> Arc<Mutex<Connection>> {
         Arc::clone(&self.writer)
     }
@@ -215,9 +201,9 @@ impl DbPool {
         *spins = spins.saturating_add(1);
     }
 
-    /// Acquire the serialized reader with an owned guard backed by Arc.
-    /// Performs an opportunistic non-blocking scan across readers with adaptive
-    /// backoff to prevent Head-of-Line blocking or deadlocks on busy readers.
+    /// Acquire the serialized reader with an owned guard backed by Arc. Scans
+    /// readers non-blockingly with adaptive backoff, so a busy reader cannot
+    /// cause Head-of-Line blocking or a deadlock.
     pub fn reader_guard(&self) -> ArcReaderGuard {
         let n = self.readers.len();
         let mut spins = 0u32;
@@ -329,21 +315,15 @@ impl DbPool {
 
     /// Reopen ALL connections (writer + readers) against the database file.
     ///
-    /// This closes every existing `rusqlite::Connection` and opens a fresh
-    /// one in-place, preserving the same `DbPool` instance. This is
-    /// necessary after a VACUUM that changes the DB file structure,
-    /// or after an offline DB repair — the long-lived connections
-    /// hold stale page caches that reference pages that no longer
-    /// exist in the rebuilt DB file.
+    /// Closes every existing `rusqlite::Connection` and opens a fresh one
+    /// in place, keeping the same `DbPool`. Needed after a VACUUM that changes
+    /// the file structure, or after an offline repair: the long-lived
+    /// connections hold page caches referencing pages the rebuilt file no
+    /// longer has. The new connections see the current on-disk state (fresh
+    /// page cache, schema and prepared-statement cache).
     ///
-    /// **BLOCKING**: takes ALL locks (writer then readers). Must not
-    /// be called while any query is in flight — the caller must hold
-    /// the writer lock before calling this (or ensure no concurrent
-    /// access by other means).
-    ///
-    /// After reopening, the new connections see the current state of
-    /// the DB file on disk (fresh page cache, fresh schema, fresh
-    /// prepared-statement cache).
+    /// Takes every lock, writer then readers, so it must not run while a
+    /// query is in flight: the caller holds the writer lock across this call.
     pub fn reopen(&self) -> Result<()> {
         let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE;
 
@@ -606,7 +586,6 @@ mod tests {
             "reader() took {elapsed:?}; should have bypassed reader 0 immediately"
         );
 
-        // Verify we can execute a read query on the acquired reader
         let val: i64 = acquired
             .query_row("SELECT 42", [], |row| row.get(0))
             .expect("query_row on reader");

@@ -5,8 +5,7 @@ import type { Snapshot, SnapshotWindow, LiveConnectionState } from "../../state/
 
 export type { Snapshot, SnapshotWindow, LiveConnectionState };
 
-/** The uPlot instances + their resize observers. Created after the first
- *  lit-html render, destroyed on view unmount. Null before creation. */
+/** uPlot instances + resize observers. Null before the first render. */
 export interface ChartInstances {
   throughput: uPlot;
   statusCodes: uPlot;
@@ -19,9 +18,7 @@ export interface ChartInstances {
   resizeDisposers: Array<() => void>;
 }
 
-/** Saved scroll state for the activity feed. Set in the subscriber
- *  callback (before lit-html render), restored in the post-render
- *  `requestAnimationFrame`. */
+/** Scroll state saved pre-render, restored in the post-render `requestAnimationFrame`. */
 export interface SavedScroll {
   scrollTop: number;
   scrollHeight: number;

@@ -8,9 +8,8 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-/// List all known models for a provider, optionally filtered.
-///
-/// When `provider` is `None`, every row in the `models` table is returned.
+/// Known models for a provider, optionally filtered. `provider = None` returns
+/// every row in the `models` table.
 pub fn list_models(conn: &Connection, provider: Option<&ProviderId>) -> Result<Vec<models::Model>> {
     match provider {
         Some(p) => Ok(models::list_all(conn)?
@@ -21,11 +20,10 @@ pub fn list_models(conn: &Connection, provider: Option<&ProviderId>) -> Result<V
     }
 }
 
-/// Inputs for [`create_custom_model`]. Distinct from the adapter-driven
-/// [`refresh_models`] path: the operator hand-picks the `(provider_id,
-/// model_id)` pair, the optional human-readable `display_name`, the
-/// output `target_format` (the wire format the upstream speaks), and a
-/// `ttl_seconds` cache lifetime (`0` means "never expire").
+/// Inputs for [`create_custom_model`], distinct from the adapter-driven
+/// [`refresh_models`] path: the operator hand-picks `(provider_id, model_id)`,
+/// `display_name`, the upstream's `target_format` wire format, and a
+/// `ttl_seconds` cache lifetime (`0` never expires).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateCustomModelInput {
     pub provider_id: String,
@@ -46,8 +44,8 @@ pub struct UpdateModelInput {
     pub target_format: Option<String>,
 }
 
-/// Create a hand-picked model row. See [`models::create_custom`] for the
-/// SQL semantics. Returns the row id of the new (or upserted) row.
+/// Create a hand-picked model row, returning the id of the new (or upserted) row.
+/// See [`models::create_custom`] for the SQL semantics.
 pub fn create_custom_model(conn: &Connection, input: CreateCustomModelInput) -> Result<ModelRowId> {
     let provider = ProviderId::new(input.provider_id);
     let model = ModelId::new(input.model_id);
@@ -63,7 +61,7 @@ pub fn create_custom_model(conn: &Connection, input: CreateCustomModelInput) -> 
     )
 }
 
-/// Update details (display_name, model_type, target_format) for an existing model row.
+/// Update display_name, model_type and target_format on an existing model row.
 pub fn update_model(conn: &Connection, id: ModelRowId, input: UpdateModelInput) -> Result<()> {
     let target_format = if let Some(tf) = input.target_format.as_deref() {
         Some(models::TargetFormat::parse(tf)?)
@@ -79,28 +77,17 @@ pub fn update_model(conn: &Connection, id: ModelRowId, input: UpdateModelInput) 
     )
 }
 
-/// Refresh the model list for a provider by calling the adapter's
-/// `fetch_models` and upserting the results.
+/// Fetch a provider's model list through the adapter and upsert the results.
 ///
-/// The caller is responsible for:
-/// - resolving the right adapter for `provider`,
-/// - decrypting an account's API key and passing it in plaintext,
-/// - supplying the shared [`openproxy_adapters::upstream::UpstreamClient`] (the
-///   hyper-based client, with per-phase timeouts driven by
-///   `TimeoutProfile::ModelDiscovery`),
-/// - choosing `ttl_seconds` (typically the duration after which rows
-///   should be re-discovered).
+/// The caller resolves the adapter, decrypts an account's API key into plaintext,
+/// and supplies the shared upstream client and `ttl_seconds`.
 ///
-/// On success, returns an [`models::UpsertResult`] with the touched
-/// count and the list of `model_id`s that were newly inserted (i.e.
-/// not present in the table for this provider before the call). On
-/// failure, returns an [`CoreError`] describing the upstream or DB
-/// failure.
-/// ## Concurrency and Connection Safety
+/// Returns [`models::UpsertResult`] with the touched count and the newly inserted
+/// `model_id`s, or a [`CoreError`] describing the upstream or DB failure.
 ///
-/// Verifies the provider exists in SQLite without holding the writer lock,
-/// fetches models asynchronously over HTTP with no database locks or connections held,
-/// and then persists the discovered models in `spawn_blocking` via the pool's writer.
+/// Lock safety: the provider existence check runs without the writer lock, the
+/// HTTP fetch holds no database lock, and the write goes through `spawn_blocking`
+/// on the pool's writer.
 pub async fn refresh_models<A: openproxy_adapters::adapters::ProviderAdapter>(
     pool: &openproxy_db::DbPool,
     provider: &ProviderId,
@@ -145,24 +132,20 @@ pub async fn refresh_models<A: openproxy_adapters::adapters::ProviderAdapter>(
     .map_err(|e| CoreError::Internal(format!("join error: {e}")))?
 }
 
-/// Inputs for [`set_active_bulk`]. The dashboard sends one of these from
-/// the "Enable all" / "Disable all" buttons; the handler does a single
-/// SQL UPDATE over every non-custom row of the given provider.
+/// Inputs for [`set_active_bulk`], sent by the "Enable all" / "Disable all" buttons
+/// to toggle every non-custom row of the provider in one UPDATE.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BulkToggleInput {
     pub provider_id: String,
     pub active: bool,
 }
 
-/// Bulk set `active` for all non-custom models of a provider. Atomic
-/// at the SQL level: a single `UPDATE ... WHERE provider_id = ? AND
-/// custom = 0` statement flips every row in one shot, so a concurrent
-/// `apply_auto_activation` cannot interleave and leave the table
-/// half-toggled (the writer mutex on the pool already serializes the
-/// two statements against each other).
+/// Bulk set `active` for all non-custom models of a provider. One
+/// `UPDATE ... WHERE provider_id = ? AND custom = 0` flips every row at once, so a
+/// concurrent `apply_auto_activation` cannot interleave and leave the table
+/// half-toggled.
 ///
-/// Returns the number of rows updated. Missing provider is a no-op
-/// (the WHERE clause just doesn't match anything).
+/// Returns the updated row count. A missing provider matches nothing.
 pub fn set_active_bulk(conn: &Connection, input: BulkToggleInput) -> Result<u64> {
     let provider = ProviderId::new(input.provider_id);
     models::set_active_bulk(conn, &provider, input.active)

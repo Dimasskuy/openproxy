@@ -14,12 +14,11 @@ pub(crate) fn init_database(
     Ok(openproxy_db::DbPool::open(&path)?)
 }
 
-/// Migrations and persisted-config hydration run inline at boot because
-/// the rest of `AppState::new` (load_adapters, supervisor wiring, etc.)
-/// depends on the schema being current. The slow backfill (provider
-/// re-pricing + `backfill_usage_pricing` full-table scan) is deferred
-/// to [`crate::background::BackfillService`] so the listener socket can
-/// bind immediately.
+/// Migrations and persisted-config hydration run inline at boot because the rest
+/// of `AppState::new` (load_adapters, supervisor wiring, …) needs a current
+/// schema. The slow backfill (provider re-pricing + `backfill_usage_pricing`
+/// full-table scan) is deferred to [`crate::background::BackfillService`] so the
+/// listener socket can bind immediately.
 pub(crate) fn run_database_maintenance(
     w: &mut WriterGuard<'_>,
     config: &mut openproxy_core::AppConfig,
@@ -188,11 +187,9 @@ fn run_model_and_usage_backfills(w: &WriterGuard<'_>) -> anyhow::Result<usize> {
         total += repriced;
     }
 
-    // Also run the cost-rs backfill which targets rows the recompute
-    // pass missed (e.g. when pricing was unknown at record time but
-    // became available later via a models.dev sync). Wrapped in
-    // with_busy_retry because this is the slowest writer op and the
-    // most likely to race with concurrent vacuum/usage inserts.
+    // cost-rs backfill covers rows `recompute_costs` missed (pricing unknown at
+    // record time, available later via a models.dev sync). `with_busy_retry` because
+    // this is the slowest writer op and the likeliest to race vacuum/usage inserts.
     let cost_backfilled = openproxy_db::with_busy_retry("backfill::backfill_usage_pricing", || {
         openproxy_db::cost::backfill_usage_pricing(w)
     })
@@ -222,13 +219,13 @@ fn ensure_bootstrap_key_logged(w: &WriterGuard<'_>) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Full boot-time backfill: provider seed, model-metadata backfill,
-/// usage repricing, and bootstrap key creation. Intended to be called
-/// from the background [`crate::background::BackfillService`] so the
-/// listener socket can bind before the slow operations finish.
+/// Full boot-time backfill: provider seed, model-metadata backfill, usage
+/// repricing, bootstrap key creation. Meant to be called from
+/// [`crate::background::BackfillService`] so the listener socket binds before the
+/// slow operations finish.
 ///
-/// Returns the total number of rows touched across all steps; the
-/// caller uses this to update the admin UI's "warming up" banner.
+/// Returns the total rows touched across all steps; the caller uses it to update
+/// the admin UI's "warming up" banner.
 pub(crate) fn run_boot_backfill(w: &WriterGuard<'_>) -> anyhow::Result<usize> {
     run_provider_and_combo_seeding(w)?;
     let total = run_model_and_usage_backfills(w)?;

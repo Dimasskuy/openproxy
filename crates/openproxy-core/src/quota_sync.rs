@@ -1,8 +1,6 @@
-//! Background daemon for Quota Synchronization.
-//!
-//! Periodically iterates over all accounts of providers that support quota fetching,
-//! and refreshes their quota. Also includes the shared logic for refreshing a single account's quota
-//! (used by both the daemon and the manual UI endpoint).
+//! Background quota synchronization: periodically refreshes quota for every account
+//! of a provider that supports it, and hosts the single-account refresh shared with
+//! the manual UI endpoint.
 
 use crate::AppConfig;
 use crate::accounts;
@@ -69,7 +67,7 @@ pub fn start_quota_sync_scheduler_with_cancel(
     let token = cancel.clone();
 
     tokio::spawn(async move {
-        // Initial delay to avoid hammering DB/network immediately on boot alongside other tasks
+        // initial delay: do not hit DB/network during the boot stampede
         tokio::select! {
             () = token.cancelled() => {
                 tracing::info!("[QuotaSync] Scheduler cancelled during initial delay");
@@ -425,12 +423,9 @@ pub async fn refresh_single_account_quota(
         .await;
     }
 
-    // GAP-6: after a healthy quota refresh, prune any per-(account, model)
-    // "live-limited" sentinels. The TTL-bounded filter (`until_ts <= now`)
-    // is applied inside `clear_for_account` so an in-flight `mark_limited`
-    // racing with this refresh is not silently wiped (see
-    // `docs/specs/antigravity-gaps-p2.md` §4.4 "Race condition").
-    //
+    // prune "live-limited" sentinels only after a healthy fetch. `clear_for_account`
+    // applies the `until_ts <= now` filter, so a `mark_limited` racing this refresh
+    // is not wiped (docs/specs/antigravity-gaps-p2.md §4.4).
     if q.fetch_error.is_none() {
         let db_pool_health = Arc::clone(db_pool);
         let _ = tokio::task::spawn_blocking(move || {
@@ -547,12 +542,11 @@ pub async fn refresh_single_account_quota(
     Ok(Some(q))
 }
 
-/// GAP-6: prune expired per-(account, model) "live-limited" rows.
+/// Prune expired per-(account, model) "live-limited" rows. Split out so it can be
+/// tested without the full `refresh_single_account_quota` machinery.
 ///
-/// Extracted so it can be unit-tested without spinning up the full
-/// `refresh_single_account_quota` machinery. The Writer is acquired
-/// and released entirely inside `spawn_blocking` — no guard is held
-/// across `.await` (AGENTS.md §4.3).
+/// The writer guard is acquired and released entirely inside `spawn_blocking`: no
+/// guard crosses an `.await` (AGENTS.md §4.3).
 pub(crate) async fn clear_live_limited_after_refresh(db_pool: &Arc<DbPool>, account_id: AccountId) {
     let db_pool_for_clear = Arc::clone(db_pool);
     let _ = tokio::task::spawn_blocking(move || {
@@ -601,9 +595,8 @@ mod tests {
     use openproxy_db::DbPool;
     use openproxy_types::ids::{AccountId, ModelId};
 
-    /// Build an in-memory `DbPool` with all migrations applied and one
-    /// provider + account seeded. Returns the pool plus the freshly
-    /// inserted `AccountId` (always `1` after the seed).
+    /// In-memory `DbPool` with migrations applied and one provider + account
+    /// seeded. Returns the pool and the seeded `AccountId` (always `1`).
     fn fresh_pool() -> (Arc<DbPool>, AccountId) {
         let pool = DbPool::test_pool_with_prefix("openproxy-quota-sync-test").expect("open pool");
         let aid = AccountId(1);
@@ -629,7 +622,7 @@ mod tests {
         let (pool, aid) = fresh_pool();
         let mid = ModelId::new("gemini-2.5");
 
-        // Seed two expired rows on the writer.
+        // seed two expired rows
         {
             let w = pool.writer();
             let expired = (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
@@ -637,8 +630,7 @@ mod tests {
                 .expect("mark expired");
         }
 
-        // The wiring helper (what `refresh_single_account_quota` calls
-        // when `fetch_error.is_none()`) drops expired rows.
+        // the helper `refresh_single_account_quota` calls when `fetch_error.is_none()`
         clear_live_limited_after_refresh(&pool, aid).await;
 
         let w = pool.writer();
@@ -648,11 +640,8 @@ mod tests {
 
     #[tokio::test]
     async fn quota_sync_clear_helper_preserves_active_rows() {
-        // The helper must not touch rows whose TTL is still in the
-        // future (race-correctness, N2 fix). Without the
-        // `until_ts <= now` filter in `clear_for_account`, a quota
-        // refresh that runs 1ms after `mark_limited` would silently
-        // wipe a freshly-emitted live-limit sentinel.
+        // a future-TTL row must survive: without the `until_ts <= now` filter, a
+        // refresh 1ms after `mark_limited` would wipe a fresh sentinel
         let (pool, aid) = fresh_pool();
         let mid = ModelId::new("gemini-2.5");
         let active = (chrono::Utc::now() + chrono::Duration::minutes(5)).to_rfc3339();
@@ -671,19 +660,9 @@ mod tests {
 
     #[tokio::test]
     async fn quota_sync_does_not_clear_when_fetch_error_present() {
-        // Mirrors `refresh_single_account_quota`'s gating: the
-        // `if q.fetch_error.is_none()` check must skip the clear when
-        // the previous fetch was unhealthy. The full refresh path
-        // needs OAuthClient / providers / etc. which is too heavy for
-        // a unit test; here we exercise the *contract* by directly
-        // checking the call-site condition: when the helper is gated
-        // by a non-empty `fetch_error`, the live-limit rows stay.
-        //
-        // The actual gating is one line in `refresh_single_account_quota`:
-        //   if q.fetch_error.is_none() {
-        //       clear_live_limited_after_refresh(db_pool, account_id).await;
-        //   }
-        // This test documents that contract.
+        // mirrors `refresh_single_account_quota`'s `if q.fetch_error.is_none()` gate.
+        // The full refresh path is too heavy for a unit test, so this pins the
+        // call-site contract: with a non-empty `fetch_error` the rows stay.
         let (pool, aid) = fresh_pool();
         let mid = ModelId::new("gemini-2.5");
         let expired = (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
@@ -694,9 +673,8 @@ mod tests {
                 .expect("mark");
         }
 
-        // Simulate "fetch_error was Some(_)" by NOT calling the helper.
-        // We assert the row would survive in that case (the unit test
-        // for `clear_for_account` already proves the SQL filter).
+        // "fetch_error was Some(_)": skip the helper and assert the row survives.
+        // `clear_for_account`'s own test covers the SQL filter.
         {
             let w = pool.writer();
             assert!(openproxy_db::live_limited::has_row(&w, aid, &mid).expect("has_row"));

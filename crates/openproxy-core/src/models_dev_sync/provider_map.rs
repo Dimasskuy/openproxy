@@ -6,11 +6,8 @@ use std::sync::LazyLock;
 /// models.dev API source URL.
 pub const MODELS_DEV_URL: &str = "https://models.dev/api.json";
 
-/// Provider mapping: models.dev provider id → our internal IDs.
-///
-/// Static fallback/supplemental table for mapping models.dev provider IDs to
-/// internal OpenProxy provider IDs when adapters are not directly registered
-/// or for aliases (e.g. `minimax-cn`).
+/// models.dev provider id → internal ids. Static supplement for the adapter-driven
+/// map, covering unregistered providers and aliases such as `minimax-cn`.
 pub const PROVIDER_MAP: &[(&str, &[&str])] = &[
     ("openai", &["openrouter"]),
     ("anthropic", &["openrouter"]),
@@ -59,7 +56,7 @@ fn ingest_static_provider_map(map: &mut HashMap<String, Vec<String>>) {
 
 pub type ProviderTargetMap = HashMap<Box<str>, Box<[Box<str>]>>;
 
-/// Builds the mapping of canonical models.dev provider ID -> OpenProxy internal provider IDs.
+/// Canonical models.dev provider id → internal provider ids.
 pub fn build_provider_mapping() -> ProviderTargetMap {
     let mut map: HashMap<String, Vec<String>> = HashMap::new();
     ingest_adapter_mappings(&mut map);
@@ -72,7 +69,7 @@ pub fn build_provider_mapping() -> ProviderTargetMap {
         .collect()
 }
 
-/// Pre-indexed provider map built from adapter metadata + static fallback table.
+/// Provider map pre-indexed from adapter metadata plus the static table.
 pub static RESOLVED_PROVIDER_MAP: LazyLock<ProviderTargetMap> =
     LazyLock::new(build_provider_mapping);
 

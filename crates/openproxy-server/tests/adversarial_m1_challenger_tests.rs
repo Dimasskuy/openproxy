@@ -124,22 +124,20 @@ async fn test_memory_cleanup_service_inflight_synthetic_concurrency() {
     let prefix = format!("ch_stress_{}_", now_epoch_ms());
     let now = now_epoch_ms();
 
-    // Insert pre-configured edge cases:
-    // 1. Stale entry (>5 min old: 301s old)
+    // Pre-configured edge cases: stale (301s), almost-stale (299s), future
+    // timestamp (clock skew).
     let k_stale_exact = format!("{prefix}stale_exact");
     INFLIGHT_REGISTRY.insert(
         k_stale_exact.clone(),
         make_attempt(&k_stale_exact, now.saturating_sub(301_000)),
     );
 
-    // 2. Active entry (almost stale: 299s old)
     let k_fresh_exact = format!("{prefix}fresh_exact");
     INFLIGHT_REGISTRY.insert(
         k_fresh_exact.clone(),
         make_attempt(&k_fresh_exact, now.saturating_sub(299_000)),
     );
 
-    // 3. Clock skew / future timestamp entry (e.g. now + 60s)
     let k_future = format!("{prefix}future");
     INFLIGHT_REGISTRY.insert(k_future.clone(), make_attempt(&k_future, now + 60_000));
 
@@ -185,7 +183,7 @@ async fn test_memory_cleanup_service_inflight_synthetic_concurrency() {
         }));
     }
 
-    // Concurrently run cleanup passes while workers are actively writing
+    // Cleanup passes run concurrently with the writers.
     let service_clone = Arc::clone(&service);
     let done_cleanup = Arc::clone(&done);
     let cleaner_task = tokio::spawn(async move {
@@ -195,38 +193,28 @@ async fn test_memory_cleanup_service_inflight_synthetic_concurrency() {
         }
     });
 
-    // Wait for insertion workers
     for t in tasks {
         t.await.expect("worker task join");
     }
 
-    // Signal cleaner to stop and wait
     done.store(true, Ordering::Relaxed);
     cleaner_task.await.expect("cleaner task join");
 
-    // Final decisive cleanup pass
     service.run_cleanup_pass().await;
 
-    // Verify:
-    // 1. k_stale_exact must be evicted
     assert!(
         !INFLIGHT_REGISTRY.contains_key(&k_stale_exact),
         "Exact stale entry (>300s) must be evicted"
     );
-
-    // 2. k_fresh_exact must be retained
     assert!(
         INFLIGHT_REGISTRY.contains_key(&k_fresh_exact),
         "Exact fresh entry (<300s) must be retained"
     );
-
-    // 3. k_future must be retained (clock skew resilience)
     assert!(
         INFLIGHT_REGISTRY.contains_key(&k_future),
         "Future timestamp entry must be retained without underflow"
     );
 
-    // 4. Scan all entries with our prefix
     let mut surviving_stale = 0usize;
     let mut surviving_fresh = 0usize;
     let verify_now = now_epoch_ms();
@@ -246,7 +234,7 @@ async fn test_memory_cleanup_service_inflight_synthetic_concurrency() {
         })
         .collect();
 
-    // Clean up our keys to preserve clean global registry
+    // Clean up our keys so the global registry stays clean.
     for k in keys_to_remove {
         INFLIGHT_REGISTRY.remove(&k);
     }
@@ -268,7 +256,6 @@ async fn test_dual_pool_trimming_under_concurrent_transactions() {
     let db_path = temp_dir.path().join("test_stress.db");
     let pool = Arc::new(DbPool::open(&db_path).expect("open pool"));
 
-    // Set up a stress table
     {
         let w = pool.writer();
         w.execute_batch(
@@ -289,7 +276,6 @@ async fn test_dual_pool_trimming_under_concurrent_transactions() {
 
     let mut handles = Vec::new();
 
-    // 4 Concurrent Writers
     for w_id in 0..4 {
         let pool = Arc::clone(&pool);
         let stop = Arc::clone(&stop);

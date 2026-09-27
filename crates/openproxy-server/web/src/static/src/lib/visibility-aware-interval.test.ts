@@ -16,8 +16,8 @@ describe("createVisibilityAwareInterval", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
-    // Drop the own `hidden` property (value or getter) so the jsdom
-    // prototype getter is visible again for the next test.
+    // Drop the own `hidden` property (value or getter) so the jsdom prototype getter is
+    // visible again for the next test.
     Reflect.deleteProperty(document, "hidden");
   });
 

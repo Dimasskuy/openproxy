@@ -1,11 +1,9 @@
-// Minimal i18n client. Loads a single language pack from the backend at
-// boot, exposes a `t(key, params?)` function with {{param}} interpolation.
+// Minimal i18n client. Loads a single language pack from the backend at boot and exposes
+// `t(key, params?)` with {{param}} interpolation.
 //
-// Pluralization: keys ending in `_one` / `_other` are picked based on a
-// `count` param. English plural rule: count === 1 → _one, else _other.
-// For languages with more plural forms (Arabic, Russian), the plural rule
-// function would need to be extended — see the `make-plural` library if
-// you need it later.
+// Pluralization: keys ending in `_one` / `_other` are picked from a `count` param (English rule:
+// count === 1 → _one, else _other). Languages with more plural forms (Arabic, Russian) would need
+// the plural rule function extended — see the `make-plural` library if you need it later.
 
 export type Lang = 'en'; // | 'es' | 'fr' | ... — add when we ship more
 
@@ -23,26 +21,21 @@ export async function loadLang(lang: Lang): Promise<void> {
   loadPromise = (async () => {
     try {
       const res = await fetch(`/admin/i18n/${lang}.json`, {
-        // TRIPLE-FIX (Bug 3): was `cache: 'force-cache'`, which made the
-        // browser serve a stale copy of en.json indefinitely — even after
-        // a server upgrade that added new keys (e.g. analytics.*). The
-        // stale pack would have none of the new keys, so `t()` fell back
-        // to returning the raw key string (e.g. "analytics.chart.daily_usage"
-        // appeared verbatim in the UI). `no-cache` revalidates with the
-        // server on every fetch (sends an `If-Modified-Since` /
-        // `If-None-Match` and accepts a 304 Not Modified response, so the
-        // payload is only re-downloaded when it actually changes). This
-        // is the correct cache strategy for a versioned, server-served
-        // JSON asset whose lifetime is decoupled from the JS bundle hash.
+        // TRIPLE-FIX (Bug 3): was `cache: 'force-cache'`, which made the browser serve a stale
+        // en.json indefinitely — even after a server upgrade added new keys (e.g. analytics.*). The
+        // stale pack had none of them, so `t()` fell back to returning the raw key string (e.g.
+        // "analytics.chart.daily_usage" appeared verbatim in the UI). `no-cache` revalidates with the
+        // server on every fetch (sends `If-Modified-Since` / `If-None-Match` and accepts 304, so the
+        // payload is only re-downloaded when it actually changes) — the right strategy for a
+        // versioned, server-served JSON asset whose lifetime is decoupled from the JS bundle hash.
         cache: 'no-cache',
       });
       if (!res.ok) {
         console.error(`i18n: failed to load ${lang}:`, res.status);
         if (lang !== 'en') {
-          // Fall back to English silently. NOTE: this branch is
-          // unreachable while Lang = 'en' only — see concerns in the
-          // F3 worklog entry for a latent self-reference bug if more
-          // languages are added without refactoring this fn first.
+          // Fall back to English silently. The branch is unreachable while
+          // Lang = 'en'; the F3 worklog entry records a latent self-reference
+          // bug to fix before adding another language.
           return loadLang('en');
         }
         return;
@@ -60,24 +53,21 @@ export async function loadLang(lang: Lang): Promise<void> {
 
 /** Synchronous translate. Returns the key itself if not found. */
 export function t(key: string, params?: Record<string, string | number>): string {
-  // Pluralization: if `count` is in params, try the _one/_other variant
-  // FIRST. This allows keys like "notifications.unread_count" to exist
-  // ONLY as _one/_other variants without a base key — the previous
-  // logic looked up the base key first and returned the raw key string
-  // if the base didn't exist, never reaching the pluralization check.
+  // Pluralization: when `count` is in params, try the _one/_other variant FIRST, so keys like
+  // "notifications.unread_count" can exist ONLY as plural variants. The previous logic looked up
+  // the base key first and returned the raw key when it didn't exist, never reaching the check.
   let template: string | undefined;
   if (params && typeof params['count'] === 'number') {
     const pluralKey = params['count'] === 1 ? `${key}_one` : `${key}_other`;
     template = strings[pluralKey];
   }
-  // Fall back to the base key if no plural variant was found (or if
-  // there's no `count` param).
+  // Fall back to the base key when no plural variant matched (or there is no `count` param).
   if (template == null) {
     template = strings[key];
   }
   if (template == null) {
-    // Fall back to the key itself — visible in the UI so missing strings
-    // are obvious during development.
+    // Fall back to the key itself, which stays visible in the UI so a missing
+    // string is obvious during development.
     return key;
   }
   // {{param}} interpolation

@@ -205,14 +205,11 @@ mod tests {
         assert_eq!(cb.record_failure(key), Health::Healthy);
         assert_eq!(cb.record_failure(key), Health::Healthy);
 
-        // 3rd failure triggers Unhealthy
         let outcome = cb.record_failure_outcome(key);
         assert_eq!(outcome.health, Health::Unhealthy);
         assert!(outcome.just_opened);
 
         assert_eq!(cb.is_healthy(key), Health::Unhealthy);
-
-        // Sleep to let it recover
         std::thread::sleep(Duration::from_millis(150));
         assert_eq!(cb.is_healthy(key), Health::Healthy);
     }
@@ -229,14 +226,13 @@ mod tests {
         assert_eq!(cb.record_failure(key), Health::Unhealthy);
         assert_eq!(cb.len(), 1);
 
-        // Immediately, it's actively unhealthy, so prune_idle should not prune it
+        // Actively unhealthy: not prunable yet.
         assert_eq!(cb.prune_idle(Duration::from_millis(0)), 0);
         assert_eq!(cb.len(), 1);
 
-        // Wait for unhealthy duration to expire
         std::thread::sleep(Duration::from_millis(30));
 
-        // Now that unhealthy_until has expired and activity is older than max_idle (0ms), it gets pruned
+        // `unhealthy_until` expired and activity is older than max_idle (0ms).
         assert_eq!(cb.prune_idle(Duration::from_millis(0)), 1);
         assert_eq!(cb.len(), 0);
     }

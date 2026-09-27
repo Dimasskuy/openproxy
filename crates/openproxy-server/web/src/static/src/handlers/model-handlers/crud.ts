@@ -1,9 +1,8 @@
-// handlers/model-handlers/crud.ts — single-model CRUD handlers:
-// the legacy edit modal, update, delete, and the custom-model form.
+// handlers/model-handlers/crud.ts — single-model CRUD: the legacy edit modal, update, delete and
+// the custom-model form.
 //
-// The legacy "Edit model" modal is preserved for backwards
-// compatibility — older UI surfaces still call it. New code
-// should use the in-table Enable/Disable buttons instead.
+// The legacy "Edit model" modal is kept for backwards compatibility (older UI surfaces still call
+// it); new code should use the in-table Enable/Disable buttons.
 
 import { state } from "../../state/index.js";
 import { api } from "../../state/api.js";
@@ -15,7 +14,7 @@ import { ensureModalRoot, showApiError } from "../../lib/ui-utils.js";
 import { showConfirm } from "../../lib/show-confirm.js";
 import { mutateAndRefresh } from "../../lib/mutate.js";
 
-// ===== Edit model (legacy) =====
+// ── Edit model (legacy) ────────────────────────────────────────────────────
 
 export async function showEditModel(rowId: number): Promise<void> {
   if (!state.modelsComplete) {
@@ -26,9 +25,8 @@ export async function showEditModel(rowId: number): Promise<void> {
   if (!m) { showToast("Model row not found", "error"); return; }
   const wrapper = document.createElement("div");
   ensureModalRoot().appendChild(wrapper);
-  // Mount on <body> via #modal-root (not #main) so the 3s background
-  // poll doesn't destroy the form mid-edit. lit-html auto-escapes
-  // the model id / display name so we no longer call `escapeAttr`.
+  // Mount on <body> via #modal-root (not #main) so the 3s background poll can't destroy the
+  // form mid-edit. lit-html auto-escapes the model id / display name, so no `escapeAttr`.
   render(html`
     <div class="modal-bg" id="edit-model-modal"
          @click=${(e: Event) => { if (e.target === e.currentTarget) wrapper.remove(); }}>
@@ -103,17 +101,15 @@ export async function deleteModel(rowId: number): Promise<void> {
   });
 }
 
-// ===== Custom model form =====
+// ── Custom model form ──────────────────────────────────────────────────────
 
-// Re-exported from components/model-custom-form.js so the data-
-// action shim has a single place to find them.
+// Re-exported from components/model-custom-form.js so the data-action shim has one place to
+// find them.
 export { showCustomModelForm, closeCustomModelForm } from "../../components/model-custom-form.js";
 
-// POST /admin/models/custom — hand-create a model row. The
-// server stamps the row with `custom = 1` and `active = 1` so
-// it's routable as soon as the modal closes. We do the close-
-// modal-then-refetch dance to avoid the re-render of the parent
-// clobbering the modal mid-close.
+// POST /admin/models/custom — hand-create a model row. The server stamps it `custom = 1`,
+// `active = 1` so it is routable as soon as the modal closes. Close-then-refetch order avoids the
+// parent's re-render clobbering the modal mid-close.
 export async function createCustomModel(providerId: string, e: Event): Promise<void> {
   const target = e.target;
   if (!(target instanceof HTMLFormElement)) return;

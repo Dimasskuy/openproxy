@@ -24,10 +24,8 @@ const ENCLOSING_TAG_PAIRS: &[(&str, &str)] = &[
     ("<tool", "</tool>"),
 ];
 
-/// Extracts inline tool calls from a text content string using all registered parsers.
-///
-/// Strips the inline tool call blocks from `content` and returns both the cleaned text
-/// and the parsed structured tool calls.
+/// Strips the inline tool call blocks out of `content` and returns the
+/// cleaned text alongside the parsed tool calls.
 pub fn extract_inline_tools(content: &str) -> ExtractedInlineTools {
     let mut all_calls = Vec::new();
     let mut spans_to_remove: Vec<(usize, usize)> = Vec::new();
@@ -35,7 +33,7 @@ pub fn extract_inline_tools(content: &str) -> ExtractedInlineTools {
     let xml_parser = MiniMaxXmlParser::new();
     let json_parser = HermesJsonParser::new();
 
-    // 1. Look for enclosing tag pairs: <tool_call>...</tool_call>, etc. (allowing attributes)
+    // 1. Enclosing tag pairs, e.g. <tool_call>...</tool_call>.
     let mut cursor = 0;
     while cursor < content.len() {
         let remainder = &content[cursor..];
@@ -66,10 +64,8 @@ pub fn extract_inline_tools(content: &str) -> ExtractedInlineTools {
             }
         };
 
-        // Try XML parser first (MiniMax / Anthropic format)
         let parsed_calls = xml_parser
             .parse_block(block_content)
-            // Then Hermes JSON format
             .or_else(|| json_parser.parse_block(block_content));
 
         if let Some(calls) = parsed_calls {
@@ -80,7 +76,7 @@ pub fn extract_inline_tools(content: &str) -> ExtractedInlineTools {
         cursor = minimax_xml::advance_cursor(content, cursor, abs_close);
     }
 
-    // 2. Look for [TOOL_CALLS] blocks
+    // 2. [TOOL_CALLS] blocks.
     cursor = 0;
     while cursor < content.len() {
         let remainder = &content[cursor..];
@@ -91,7 +87,6 @@ pub fn extract_inline_tools(content: &str) -> ExtractedInlineTools {
         let abs_start = cursor + pos;
         let after_marker = &content[abs_start + "[TOOL_CALLS]".len()..];
 
-        // The JSON array/object should start near the marker
         if let Some(json_start_rel) = after_marker.find(['[', '{']) {
             let json_body = after_marker[json_start_rel..].trim_start();
             if let Some(calls) = json_parser.parse_block(json_body) {
@@ -104,11 +99,10 @@ pub fn extract_inline_tools(content: &str) -> ExtractedInlineTools {
         cursor = minimax_xml::advance_cursor(content, cursor, abs_start + "[TOOL_CALLS]".len());
     }
 
-    // 3. If no enclosing tags were matched, search for bare <invoke ...>...</invoke>, <function ...>, etc.
+    // 3. No enclosing tags: bare <invoke ...>...</invoke>, <function ...>.
     if spans_to_remove.is_empty() {
         let bare_calls = minimax_xml::parse_xml_invokes(content);
         if !bare_calls.is_empty() {
-            // Find and strip individual invocation blocks
             let mut search_cursor = 0;
             while search_cursor < content.len() {
                 let rem = &content[search_cursor..];
@@ -146,7 +140,6 @@ pub fn extract_inline_tools(content: &str) -> ExtractedInlineTools {
         };
     }
 
-    // Merge overlapping/contiguous spans
     spans_to_remove.sort_by_key(|&(s, _)| s);
     let mut merged_spans: Vec<(usize, usize)> = Vec::new();
     for (start, end) in spans_to_remove {
@@ -159,7 +152,6 @@ pub fn extract_inline_tools(content: &str) -> ExtractedInlineTools {
         merged_spans.push((start, end));
     }
 
-    // Construct clean_content
     let mut clean = String::with_capacity(content.len());
     let mut last_idx = 0;
     for (start, end) in merged_spans {
@@ -190,7 +182,6 @@ pub fn extract_inline_tools(content: &str) -> ExtractedInlineTools {
     }
 }
 
-/// Extracts inline tool calls from an assistant choice message.
 pub fn extract_inline_tools_from_choice(choice: &mut OpenAIChoice) {
     if choice.message.role != "assistant" {
         return;
@@ -218,7 +209,6 @@ pub fn extract_inline_tools_from_choice(choice: &mut OpenAIChoice) {
     choice.finish_reason = Some("tool_calls".to_string());
 }
 
-/// Post-processes an entire [`OpenAIResponse`] to extract inline tool calls across all choices.
 pub fn extract_inline_tools_from_response(mut resp: OpenAIResponse) -> OpenAIResponse {
     for choice in &mut resp.choices {
         extract_inline_tools_from_choice(choice);

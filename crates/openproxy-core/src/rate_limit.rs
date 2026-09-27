@@ -1,8 +1,7 @@
 //! Simple per-key rate limiter using a sliding window.
 //!
-//! Not a production-grade token bucket — just a "max N requests per
-//! minute per API key" guard. Uses a DashMap for O(1) lookups.
-//! Entries are lazily cleaned up on insert.
+//! Not a token bucket: a "max N requests per minute per API key" guard backed by
+//! a DashMap for O(1) lookups, with entries cleaned lazily on insert.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -165,12 +164,12 @@ mod tests {
         let key2 = RateLimitKey::Key(ApiKeyId(2));
         let key3 = RateLimitKey::Key(ApiKeyId(3));
 
-        // Insert first two keys, staying within capacity
+        // Two keys within capacity
         assert!(rl.check(key1));
         assert!(rl.check(key2));
         assert_eq!(rl.windows.len(), 2);
 
-        // Third key should trigger cleanup, and since none are expired, clear the map
+        // The third key triggers cleanup; none expired, so the map is cleared
         assert!(rl.check(key3));
         assert_eq!(rl.windows.len(), 1); // Only key3 remains
     }

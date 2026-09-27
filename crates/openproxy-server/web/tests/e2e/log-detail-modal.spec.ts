@@ -1,19 +1,14 @@
-// e2e/log-detail-modal.spec.ts — ADVERSARIAL tests for the log
-// detail modal tab behavior. Targets Fix 3 of the recent batch:
+// tests/e2e/log-detail-modal.spec.ts — adversarial coverage for the log
+// detail modal tabs. Targets:
+//   Bug 3a: jsonSection did not emit data-log-tab, so the 4 sections stacked.
+//   Bug 3b: the "Stages" tab bound to log.requests || log.stages, which the
+//           backend never sends.
+//   Fix 3: rename "Stages" -> "Request", render request_body_json, and emit
+//          data-log-tab so the registry handler hides non-active sections.
 //
-//   Bug 3a: jsonSection did not emit data-log-tab, so the 4
-//           sections stacked on top of each other.
-//   Bug 3b: "Stages" tab bound to log.requests || log.stages
-//           (the backend never sends those).
-//   Fix 3: rename "Stages" -> "Request", render request_body_json,
-//          emit data-log-tab on jsonSection so the registry handler
-//          can hide non-active sections.
-//
-// The TESTER wants to verify:
-//   - The "Request" tab shows request_body_json, not the raw log.
-//   - The 4 tabs are mutually exclusive (no stacking).
-//   - Empty request body renders the "No request body recorded."
-//     fallback instead of crashing or showing `{}`.
+// Asserts: the "Request" tab shows request_body_json (not the raw log), the 4
+// tabs are mutually exclusive, and an empty body renders the
+// "No request body recorded." fallback instead of crashing or showing `{}`.
 //
 import { test, expect, type Page } from '@playwright/test';
 
@@ -173,10 +168,8 @@ test.describe('Log detail modal — adversarial', () => {
       await expect(btn).toHaveClass(/active/);
 
       // The matching section should be visible (display !== "none").
-      // Some sections ("errors") are only rendered when the row
-      // has errors — if the section is absent, skip the visibility
-      // assert and just verify the other-present sections are
-      // display: none.
+      // Sections like "errors" render only when the row has errors, so an
+      // absent section is skipped.
       const active = page.locator(`#log-detail-content [data-log-tab="${tab}"]`);
       const activeCount = await active.count();
       if (activeCount > 0) {

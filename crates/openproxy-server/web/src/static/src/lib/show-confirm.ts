@@ -1,13 +1,11 @@
 // lib/show-confirm.ts — Promise-based confirm() / prompt() replacements.
 //
-// Renders a lit-html modal (same .modal-bg / .modal structure the rest
-// of the dashboard uses) into a temporary wrapper under <body> and
-// resolves a Promise when the user picks an action or dismisses.
-// Escape / backdrop click / X resolve as "cancelled".
+// Renders a lit-html modal (same .modal-bg / .modal structure the rest of the dashboard uses) into
+// a temporary wrapper under <body> and resolves a Promise when the user picks an action or
+// dismisses. Escape / backdrop click / X all resolve as "cancelled".
 //
-// Replaces native `confirm()` / `prompt()` per refactor spec Q5:
-// native dialogs can't be styled, block the main thread, and leak
-// un-translated browser chrome into the UI.
+// Replaces native confirm() / prompt() per refactor spec Q5: native dialogs can't be styled, block
+// the main thread, and leak un-translated browser chrome into the UI.
 
 import { html, render, type TemplateResult } from "lit-html";
 import { showToast } from "../components/toast.js";
@@ -27,8 +25,8 @@ interface ConfirmOptions {
 const DIALOG_ID = "show-confirm-dialog";
 
 /**
- * Show a modal confirmation. Resolves `true` when the user confirms,
- * `false` on dismiss (Cancel button, Escape, backdrop click, X).
+ * Show a modal confirmation. Resolves `true` when the user confirms, `false` on dismiss
+ * (Cancel, Escape, backdrop click, X).
  */
 export function showConfirm(options: ConfirmOptions): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
@@ -61,7 +59,7 @@ export function showConfirm(options: ConfirmOptions): Promise<boolean> {
         aria-modal="true"
         aria-labelledby=${DIALOG_ID + "-title"}
         @click=${(e: Event) => {
-          // Only close on backdrop clicks (the .modal-bg itself).
+          // Only backdrop clicks close (the .modal-bg itself).
           if (e.target === wrapper.firstElementChild) finish(false);
         }}
       >
@@ -89,9 +87,8 @@ export function showConfirm(options: ConfirmOptions): Promise<boolean> {
 }
 
 /**
- * Show a modal text prompt. Resolves the trimmed input value when the
- * user confirms, `null` on dismiss (Cancel button, Escape, backdrop
- * click, X). Rejects never.
+ * Show a modal text prompt. Resolves the trimmed input value on confirm and `null` on dismiss
+ * (Cancel, Escape, backdrop click, X). Never rejects.
  */
 export function showPrompt(title: string, message: string, initial = ""): Promise<string | null> {
   return new Promise<string | null>((resolve) => {

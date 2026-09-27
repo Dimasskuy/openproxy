@@ -29,15 +29,11 @@ impl SessionAffinityRegistry {
         }
     }
 
-    /// Extract a 64-bit session fingerprint hash from a request.
-    ///
-    /// Priority order:
-    /// 1. Explicit headers (`x-session-id`, `x-conversation-id`, `x-thread-id`)
-    /// 2. `req.openai_request.user`
-    /// 3. Conversation fingerprint: hash of the root non-system user message.
-    ///    Returns None if no session identity or valid message can be found.
+    /// Extract a 64-bit session fingerprint hash, by priority: explicit
+    /// headers (`x-session-id`, `x-conversation-id`, `x-thread-id`), then
+    /// `req.openai_request.user`, then a hash of the root non-system user
+    /// message. `None` if no session identity or valid message exists.
     pub fn extract_session_hash(req: &crate::PipelineRequest) -> Option<u64> {
-        // 1. Explicit headers
         for header_key in &["x-session-id", "x-conversation-id", "x-thread-id"] {
             if let Some(val) = req.request_headers.get(*header_key) {
                 let trimmed = val.trim();
@@ -49,7 +45,6 @@ impl SessionAffinityRegistry {
             }
         }
 
-        // 2. OpenAI request `user` field
         if let Some(ref user) = req.openai_request.user {
             let trimmed = user.trim();
             if !trimmed.is_empty() {
@@ -59,8 +54,7 @@ impl SessionAffinityRegistry {
             }
         }
 
-        // 3. Conversation fingerprint: hash of the root user message
-        // In multi-turn agent/chat conversations, the initial user prompt is invariant.
+        // Root user prompt: invariant across a multi-turn agent/chat session.
         for msg in &req.openai_request.messages {
             if msg.role == "user" {
                 let text = msg.extract_text_cow();

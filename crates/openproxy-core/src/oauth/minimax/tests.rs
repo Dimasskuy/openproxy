@@ -71,7 +71,7 @@ fn test_checkin_streak_progression() {
         },
     ];
 
-    // Day 1 & 2 are claimed, day 3 is today and claimable -> current streak is 2
+    // day 3 is today and claimable, so the streak stops at the 2 claimed days
     assert_eq!(calculate_streak(&days), 2);
 }
 
@@ -96,7 +96,6 @@ fn test_build_complete_verification_uri() {
 
 #[test]
 fn test_minimax_identity_display_label() {
-    // 1. Has email -> email wins
     let id1 = identity::MiniMaxIdentity {
         real_user_id: Some("12345".into()),
         email: Some("dev@example.com".into()),
@@ -104,7 +103,7 @@ fn test_minimax_identity_display_label() {
     };
     assert_eq!(id1.display_label(), "dev@example.com");
 
-    // 2. Email is empty or None -> display_name wins (e.g. phone / OAuth username)
+    // empty or absent email falls through to the display name
     let id2 = identity::MiniMaxIdentity {
         real_user_id: Some("12345".into()),
         email: None,
@@ -119,7 +118,6 @@ fn test_minimax_identity_display_label() {
     };
     assert_eq!(id2_empty_email.display_label(), "wanton beis");
 
-    // 3. Neither email nor display_name -> MiniMax User {real_user_id}
     let id3 = identity::MiniMaxIdentity {
         real_user_id: Some("524030836983414789".into()),
         email: None,

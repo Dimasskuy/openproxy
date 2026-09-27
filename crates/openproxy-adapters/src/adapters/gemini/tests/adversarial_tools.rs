@@ -1,7 +1,7 @@
 use super::super::*;
 use serde_json::json;
 
-// --- Boundary / Type Violation tests for `parameters` ---
+// Boundary / Type Violation tests for `parameters`
 
 #[test]
 fn adv_parameters_invalid_types_skip_tool() {
@@ -43,7 +43,7 @@ fn adv_tool_name_edge_cases() {
     }
 }
 
-// --- Description edge cases ---
+// Description edge cases
 
 #[test]
 fn adv_description_very_long_preserved() {
@@ -61,7 +61,7 @@ fn adv_description_very_long_preserved() {
     assert_eq!(desc.len(), 1_000_000);
 }
 
-// --- tool_choice edge cases ---
+// tool_choice edge cases
 
 #[test]
 fn adv_tool_choice_fallbacks_to_auto() {
@@ -97,7 +97,7 @@ fn adv_tool_choice_object_huge_function_name_preserved() {
     assert_eq!(names[0].len(), 10_000);
 }
 
-// --- Duplicate tools ---
+// Duplicate tools
 
 #[test]
 fn adv_duplicate_tool_names_both_preserved() {
@@ -112,7 +112,7 @@ fn adv_duplicate_tool_names_both_preserved() {
     assert_eq!(tools[0].function_declarations[1].name, "dup");
 }
 
-// --- Enum in parameters preserved ---
+// Enum in parameters preserved
 
 #[test]
 fn adv_enum_in_parameters_preserved() {
@@ -139,7 +139,7 @@ fn adv_enum_in_parameters_preserved() {
     assert_eq!(params["properties"]["color"]["enum"][2], "blue");
 }
 
-// --- 1000 tools: all should be mapped ---
+// 1000 tools: all should be mapped
 
 #[test]
 fn adv_1000_tools_all_mapped() {
@@ -163,7 +163,7 @@ fn adv_1000_tools_all_mapped() {
     ));
 }
 
-// --- Non-object tool values ---
+// Non-object tool values
 
 #[test]
 fn adv_non_object_tool_skipped() {
@@ -173,7 +173,7 @@ fn adv_non_object_tool_skipped() {
     }
 }
 
-// --- Parameters null vs missing: different behavior ---
+// Parameters null vs missing: different behavior
 
 #[test]
 fn adv_parameters_null_vs_absent() {
@@ -193,7 +193,7 @@ fn adv_parameters_null_vs_absent() {
     assert!(tools[0].function_declarations[0].parameters.is_none());
 }
 
-// --- tool_choice None + tools present → config emitted ---
+// tool_choice None + tools present → config emitted
 
 #[test]
 fn adv_tools_present_tool_choice_none_emits_auto_config() {
@@ -212,7 +212,7 @@ fn adv_tools_present_tool_choice_none_emits_auto_config() {
     );
 }
 
-// --- tool_choice None + tools=None → both None ---
+// tool_choice None + tools=None → both None
 
 #[test]
 fn adv_no_tools_no_tool_choice_both_none() {
@@ -221,7 +221,7 @@ fn adv_no_tools_no_tool_choice_both_none() {
     assert!(cfg.is_none());
 }
 
-// --- Circular $ref in parameters: should not panic (depth limit) ---
+// Circular $ref in parameters: should not panic (depth limit)
 
 #[test]
 fn adv_circular_ref_in_parameters_no_panic() {
@@ -254,7 +254,7 @@ fn adv_circular_ref_in_parameters_no_panic() {
     );
 }
 
-// --- Serialized output omits tools/toolConfig when None ---
+// Serialized output omits tools/toolConfig when None
 
 #[test]
 fn adv_serialized_output_omits_tools_when_none() {
@@ -270,7 +270,7 @@ fn adv_serialized_output_omits_tools_when_none() {
     );
 }
 
-// --- Adversarial: Tool calls with empty arguments ---
+// Adversarial: Tool calls with empty arguments
 
 #[test]
 fn adv_tool_calls_empty_arguments() {
@@ -359,7 +359,7 @@ fn adv_tool_calls_empty_arguments() {
     }
 }
 
-// --- Adversarial: Multiple tool calls ---
+// Adversarial: Multiple tool calls
 
 #[test]
 fn adv_multiple_tool_calls() {
@@ -451,7 +451,7 @@ fn adv_multiple_tool_calls() {
     );
 }
 
-// --- Adversarial: Tool responses with structured JSON content ---
+// Adversarial: Tool responses with structured JSON content
 
 #[test]
 fn adv_tool_responses_structured_json_content() {

@@ -1,4 +1,3 @@
-/* ----- Home dashboard ----- */
 .home-kpi-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -43,9 +42,7 @@
 }
 
 
-/* ============================================
-   F6: LIVE DASHBOARD — home view
-   ============================================ */
+/* F6: LIVE DASHBOARD — home view */
 
 .home-dashboard {
   display: flex;
@@ -56,7 +53,6 @@
   margin: 0 auto;
 }
 
-/* ----- Page header with window selector ----- */
 .home-header {
   display: flex;
   align-items: flex-start;
@@ -96,7 +92,6 @@
   flex-shrink: 0;
 }
 
-/* ----- Connection state dot (in header) ----- */
 .home-conn-dot {
   display: inline-block;
   width: 8px;
@@ -121,7 +116,6 @@
   50% { opacity: 0.4; }
 }
 
-/* ----- Connection state banner (above KPIs) ----- */
 .home-banner {
   display: flex;
   align-items: center;
@@ -147,7 +141,6 @@
   color: var(--color-error);
 }
 
-/* ----- Window selector (segmented control) ----- */
 .home-window-selector {
   display: inline-flex;
   border: var(--border-w) var(--border-style) var(--color-border);
@@ -179,7 +172,6 @@
   font-weight: 700;
 }
 
-/* ----- KPI tiles grid ----- */
 .home-kpi-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -228,13 +220,10 @@
   width: 100%;
   min-width: 0;
   margin-top: var(--space-1);
-  /* The uPlot instance is mounted inside this div; it fills the
-     container via the global `.uplot { width: 100%; height: 100% }`
-     rule (see uPlot overrides section below) and the ResizeObserver
-     in uplot-chart.ts. `width: 100%` + `min-width: 0` are required
-     so the `.uplot` div (which uPlot's own CSS sizes to `min-content`
-     by default — overridden globally below) has a real reference
-     width to fill, instead of feeding back off the canvas size. */
+  /* `width: 100%` + `min-width: 0` give the global `.uplot` rule a
+     real reference width, so the div fills the container instead of
+     feeding back off its canvas size (uPlot sizes `.uplot` to
+     min-content by default). */
 }
 .home-kpi-live {
   display: flex;
@@ -252,7 +241,6 @@
   box-shadow: 0 0 0 4px var(--color-success-soft);
 }
 
-/* ----- Charts grid (2x2) ----- */
 .home-charts-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -289,11 +277,8 @@
   padding: 0;
   min-width: 0;
   overflow: hidden;
-  /* The uPlot instance is mounted inside this div. `width: 100%` +
-     `min-width: 0` + `overflow: hidden` give the global `.uplot`
-     rule (below) a real reference width to fill, and clip any
-     transient canvas overflow before `resizeChart()` corrects the
-     canvas size on the next frame. */
+  /* `overflow: hidden` clips the transient canvas overflow that
+     precedes `resizeChart()` on the next frame. */
 }
 
 .home-race-summary { display: grid; grid-template-columns: 0.8fr 1.7fr; gap: var(--space-6); padding: var(--space-4); flex: 1; align-items: center; }
@@ -310,7 +295,6 @@
 .home-race-bars .single { background: var(--color-info); }
 .home-race-foot { padding: var(--space-2) var(--space-4); border-top: 1px solid var(--color-border-soft); color: var(--color-text-muted); font-size: var(--fs-xs); }
 
-/* ----- Activity feed ----- */
 .home-activity-card {
   padding: 0;
   display: flex;
@@ -332,7 +316,7 @@
 .home-activity-list {
   max-height: 320px;
   overflow-y: auto;
-  /* Smooth scrolling for new row prepends. */
+  /* Smooth scroll when a new row is prepended. */
   scroll-behavior: smooth;
 }
 .home-activity-row {
@@ -400,7 +384,7 @@
   font-size: var(--fs-sm);
 }
 
-/* ----- Responsive: tablet (768-1024px) ----- */
+/* Tablet 768-1024px */
 @media (max-width: 1024px) and (min-width: 768px) {
   .home-kpi-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -414,12 +398,11 @@
   }
 }
 
-/* ==========================================================================
-   Home Dashboard — Mobile Responsive Specification (<= 768px)
-   ========================================================================== */
+/* Home dashboard — mobile responsive rules (<= 768px).
+   Desktop is the default block above; these are progressive
+   overrides. */
 
 @media (max-width: 768px) {
-  /* Contenedor y Scroll */
   .home-dashboard {
     width: 100%;
     max-width: 100%;
@@ -445,7 +428,7 @@
     font-size: var(--fs-xs);
   }
 
-  /* KPIs en 2 Columnas */
+  /* KPIs in two columns */
   .home-kpi-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -473,7 +456,7 @@
     height: 230px;
   }
 
-  /* Tabla de Actividad Reciente en 2 Líneas */
+  /* Recent activity table in two lines */
   .home-activity-card {
     padding: 10px;
     box-sizing: border-box;

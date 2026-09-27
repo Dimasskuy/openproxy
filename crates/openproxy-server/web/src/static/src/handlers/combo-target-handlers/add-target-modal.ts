@@ -1,6 +1,6 @@
-// handlers/combo-target-handlers/add-target-modal.ts — add-target
-// modal: templates, model search/checkbox, global search, add logic.
-//
+// handlers/combo-target-handlers/add-target-modal.ts — add-target modal: templates, model
+// search/checkbox, global search, add logic. Split from combo-target-handlers.ts to keep
+// each module < 600 LOC.
 // Split from combo-target-handlers.ts to keep each module < 600 LOC.
 
 import { state } from "../../state/index.js";
@@ -12,18 +12,15 @@ import { showToast } from "../../components/toast.js";
 import { ensureModalRoot, showApiError } from "../../lib/ui-utils.js";
 import { invalidateSubCombo } from "../../views/combos/subcombo-group.js";
 
-// Local helper type for the model shape that the add-target modal
-// deals with.
+// Local helper type for the model shape this modal deals with.
 type ModelWithFallbacks = Model & { id?: string; owned_by?: string };
 
-// ---- Add-target modal: existing-targets cache ----
-//
-// Stash the combo's current target `model_row_id` values here.
-// `buildGlobalSearchGroups` skips any model whose `row_id` is in
-// this set.
+// ── Add-target modal: existing-targets cache ───────────────────────────────
+// The combo's current target `model_row_id` values; `buildGlobalSearchGroups` skips any
+// model whose `row_id` is in this set.
 let existingTargetModelRowIds: Set<number> = new Set();
 
-// ---- Templates ----
+// ── Templates ──────────────────────────────────────────────────────────────
 
 export function subComboOptionsTemplate(subCombos: ComboSummary[], totalOtherCombos: number): TemplateResult {
   if (subCombos.length === 0) {
@@ -188,7 +185,7 @@ function modelCheckboxListTemplate(models: ModelWithFallbacks[]): TemplateResult
   })}`;
 }
 
-// ---- Global model search ----
+// ── Global model search ────────────────────────────────────────────────────
 
 function globalModelSearchTemplate(groups: Map<string, ModelWithFallbacks[]>): TemplateResult {
   if (groups.size === 0) {
@@ -206,14 +203,10 @@ function globalModelSearchTemplate(groups: Map<string, ModelWithFallbacks[]>): T
   })}`;
 }
 
-/** Check if a model matches the search query.
- * Supports:
- * - Direct model ID or display name: "Qwen3.8", "gpt-4o"
- * - Provider-prefixed searches: "hcnsec/Qwen3.8-Flash-Next", "openai:gpt-4o"
- * - Partial provider + model token: "hcnsec/flash"
- * - Quoted queries: '"hcnsec/Qwen3.8-Flash-Next"'
- * - Provider only with trailing slash: "hcnsec/"
- */
+/** Whether a model matches the search query. Supports a direct model id or display name
+ *  ("Qwen3.8", "gpt-4o"), provider-prefixed searches ("hcnsec/Qwen3.8-Flash-Next",
+ *  "openai:gpt-4o"), a partial provider + model token ("hcnsec/flash"), quoted queries
+ *  ('"hcnsec/Qwen3.8-Flash-Next"') and a provider-only prefix ("hcnsec/"). */
 export function modelMatchesSearch(
   m: { provider_id?: string; model_id?: string; display_name?: string | null; id?: string },
   query: string,
@@ -248,7 +241,7 @@ export function modelMatchesSearch(
   });
 }
 
-// Build the grouped-by-provider map of models matching the search query.
+// Group the models matching the search query by provider.
 export function buildGlobalSearchGroups(
   query: string,
   models: ModelWithFallbacks[] = (state.models || []) as ModelWithFallbacks[],
@@ -320,7 +313,7 @@ function renderInitialModelList(): void {
   updateAddButtonLabel();
 }
 
-// ---- Exported handlers ----
+// ── Exported handlers ──────────────────────────────────────────────────────
 
 export async function showAddTarget(comboId: number): Promise<void> {
   const [modelsResp, accountsResp, providersResp, sResp, allCombosResp] = await Promise.all([
@@ -436,18 +429,14 @@ export function deselectAllModelsInModal(): void {
   onModelCheckboxChange();
 }
 
-/** Read the "add as sub-combo" branch of the add-target form and
- *  produce the JSON body sent to `POST /admin/combos/:id/targets`.
+/** Read the "add as sub-combo" branch of the add-target form into the JSON body for
+ *  `POST /admin/combos/:id/targets`.
  *
- *  Shape follows the `AddTargetInput` XOR contract: `sub_combo_id`
- *  is set and `model_row_id`/`account_id` are explicitly `null`
- *  (not omitted — the Rust deserializer rejects `Option`/`Some(null)`
- *  mismatches). `provider_id` is the literal `"combo"` marker.
+ *  Follows the `AddTargetInput` XOR contract: `sub_combo_id` is set while `model_row_id` and
+ *  `account_id` are explicitly `null` (not omitted — the Rust deserializer rejects
+ *  `Option`/`Some(null)` mismatches). `provider_id` is the literal `"combo"` marker.
  *
- *  Pure (only `form` reads + `parseInt`). Exported for unit testing
- *  in `add-target-modal.test.ts`. The inferred return type matches
- *  `AddTargetInput` with `sub_combo_id: number` set; tests assert
- *  against it via `toEqual`. */
+ *  Pure (form reads + `parseInt`); exported for `add-target-modal.test.ts`. */
 export function buildSubComboTargetBodyFromForm(form: HTMLFormElement) {
   const f = new FormData(form);
   const desc = String(f.get("description") || "").trim();

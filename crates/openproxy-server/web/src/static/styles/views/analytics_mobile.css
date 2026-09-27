@@ -1,10 +1,5 @@
-/* ======================================================================
-   Analytics — Mobile Responsive Specification (<= 768px)
-   ====================================================================== */
 @media (max-width: 768px) {
-  /* ==========================================================================
-     Analytics Dashboard & Recent Errors — Dell 1996 Specification (<= 768px)
-     ========================================================================== */
+  /* Analytics dashboard and recent errors */
 
   .analytics-dashboard {
     display: flex;
@@ -15,7 +10,7 @@
     box-sizing: border-box;
   }
 
-  /* Cabecera limpia (ocultar eyebrow redundante) */
+  /* Hide the redundant eyebrow */
   .analytics-header .page-eyebrow,
   .page-eyebrow {
     display: none;
@@ -43,7 +38,7 @@
     margin: 2px 0 0;
   }
 
-  /* Toolbar de Filtros sin Overflow */
+  /* Filter toolbar, no overflow */
   .analytics-toolbar {
     background: var(--color-surface-2);
     border: var(--border-w, 1px) var(--border-style, solid) var(--color-border);
@@ -96,7 +91,7 @@
     text-overflow: ellipsis;
   }
 
-  /* Selector de Tiempo Deslizable */
+  /* Scrollable time selector */
   .analytics-time-range,
   .time-range-picker,
   .analytics-range-row,
@@ -138,7 +133,7 @@
     font-weight: 700;
   }
 
-  /* Métricas KPIs en Cuadrícula 2x2 */
+  /* KPI metrics in a 2x2 grid */
   .analytics-metrics {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -182,7 +177,7 @@
     font-family: var(--font-mono);
   }
 
-  /* Tarjetas de Recent Errors */
+  /* Recent errors cards */
   .card.analytics-data-card,
   .analytics-table-wrap {
     padding: 8px;
@@ -279,7 +274,7 @@
     white-space: nowrap;
   }
 
-  /* Botón de Inspección Ojo SVG */
+  /* Eye SVG inspect button */
   .analytics-error-link {
     width: 24px;
     min-width: 24px;
@@ -349,7 +344,7 @@
     max-width: 60%;
   }
 
-  /* ----- Analytics Stat Cards on Mobile ----- */
+  /* Analytics stat cards */
   .analytics-stat-card-row {
     display: flex;
     flex-direction: column;
@@ -388,7 +383,7 @@
     margin-right: 4px;
   }
 
-  /* ----- Key-Value Metrics Tables on Mobile ----- */
+  /* Key-value metrics tables */
   .responsive-kv-table {
     width: 100%;
   }

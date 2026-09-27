@@ -3,9 +3,7 @@ use super::{
     ProviderAdapterConfig, ProviderId, Result, TargetFormat, UpstreamClient, upstream_get_json,
 };
 
-// =====================================================================
 // OpenRouter
-// =====================================================================
 
 /// Adapter for <https://openrouter.ai>.
 ///

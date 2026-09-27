@@ -1,15 +1,5 @@
-// views/home/index.ts — live dashboard (F6).
-//
-// Mounts the live-store (F5), subscribes to its throttled re-render
-// callback (4 Hz max), and creates the 4 main uPlot charts + 4 KPI
-// sparklines after the first lit-html render. Returns a cleanup function
-// that unsubscribes, destroys the charts, and unmounts the live-store.
-//
-// This file is the orchestrator — it coordinates the sub-modules:
-//   - banner.ts: WS connection status banner + header dot
-//   - kpis.ts: KPI tile grid + sparkline builders
-//   - charts.ts: main uPlot charts + race card + window selector
-//   - activity-feed.ts: recent rows + scroll preservation
+// views/home/index.ts — live-dashboard orchestrator: mounts the live store,
+// re-renders at up to 4 Hz, and creates the main charts + sparklines.
 
 import { html, type TemplateResult } from "lit-html";
 import type uPlot from "uplot";
@@ -44,16 +34,13 @@ import {
   resetActivityScroll,
 } from "./activity-feed.js";
 
-// ==========
 // Module-local state
-// ==========
 
 let currentSnapshot: Snapshot | null = null;
 let currentConnectionState: LiveConnectionState = "disconnected";
 let windowSecs: SnapshotWindow = 300;
 
-/** uPlot instances + their resize observers. Created after the first
- *  lit-html render, destroyed on view unmount. Null before creation. */
+/** uPlot instances + resize observers. Null before the first render. */
 let activeMainCharts: uPlot[] | null = null;
 let activeSparklines: SparklineInstances | null = null;
 let resizeDisposers: Array<() => void> = [];
@@ -62,9 +49,7 @@ let unsubLive: (() => void) | null = null;
 let disposeStore: (() => void) | null = null;
 let cleanupReactive: (() => void) | null = null;
 
-// ==========
 // Main render function
-// ==========
 
 function renderHome(): TemplateResult {
   const snapshot: Snapshot | null = currentSnapshot;
@@ -91,9 +76,7 @@ function renderHome(): TemplateResult {
   `;
 }
 
-// ==========
 // Live-store subscriber callback
-// ==========
 
 function onLiveUpdate(): void {
   saveActivityScroll();
@@ -114,9 +97,7 @@ function pushSnapshotToCharts(): void {
   if (activeSparklines) pushSparklineData(activeSparklines, snapshot);
 }
 
-// ==========
 // Window change handler
-// ==========
 
 function onWindowChange(newWindow: SnapshotWindow): void {
   if (newWindow === windowSecs) return;
@@ -129,18 +110,14 @@ function onWindowChange(newWindow: SnapshotWindow): void {
   });
 }
 
-// ==========
 // Theme refresh
-// ==========
 
 function refreshChartTheme(): void {
   destroyAllCharts();
   requestAnimationFrame(() => createAllCharts());
 }
 
-// ==========
 // Chart lifecycle
-// ==========
 
 function destroyAllCharts(): void {
   // Disconnect ResizeObservers first.
@@ -181,9 +158,7 @@ function createAllCharts(): void {
   resizeDisposers.push(...sparks.disposers);
 }
 
-// ==========
 // Mount
-// ==========
 
 export async function mountHome(): Promise<(() => void) | void> {
   const main: HTMLElement | null = document.getElementById("main");
@@ -197,31 +172,24 @@ export async function mountHome(): Promise<(() => void) | void> {
   resizeDisposers = [];
   resetActivityScroll();
 
-  // Mount the live-store. First consumer opens the WS + rehydrates from
-  // /usage/recent. The store stays mounted across quick navigations
-  // (home → logs → home) so the data stays warm.
+  // First consumer opens the WS and rehydrates from /usage/recent; the store
+  // survives quick navigations to stay warm.
   disposeStore = mountLiveStore();
 
-  // Subscribe to live-store updates. The store calls subscribers on a
-  // throttled cadence (max 4 Hz).
+  // Subscribers fire on a throttled cadence (max 4 Hz).
   unsubLive = subscribe(onLiveUpdate);
 
-  // Mount the lit-html view.
   cleanupReactive = mountView(main, renderHome);
   document.addEventListener("themechange", refreshChartTheme);
   onLiveUpdate();
 
-  // Create the uPlot charts after the first lit-html render. We use
-  // requestAnimationFrame (rather than queueMicrotask) so the browser
-  // has laid out the chart containers — clientWidth / clientHeight are
-  // correct by then.
+  // rAF, not queueMicrotask: clientWidth/clientHeight are only valid after layout.
   requestAnimationFrame(() => {
     createAllCharts();
     pushSnapshotToCharts();
   });
 
-  // Cleanup: destroy charts → unsubscribe → unmount store → release
-  // lit-html container.
+  // Cleanup order: charts, subscription, store, lit-html container.
   return () => {
     destroyAllCharts();
     document.removeEventListener("themechange", refreshChartTheme);

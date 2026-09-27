@@ -1,15 +1,10 @@
-// handlers/combo-handlers.ts — combo CRUD: create, delete, race
-// size, test-all, priority/cooldown settings. Target-specific
-// actions live in combo-target-handlers.ts.
+// handlers/combo-handlers.ts — combo CRUD: create, delete, race size, test-all and
+// priority/cooldown settings. Target-specific actions live in combo-target-handlers.ts.
+// Per spec §3 + §13.8 nothing is attached to `window.*`.
 //
-// Per spec §3 + §13.8 we do not attach to `window.*`.
-//
-// Migrated to lit-html: the create-combo modal is rendered into
-// a wrapper `<div>` under `#modal-root` via `render()`. All
-// `data-action` attributes have been replaced with direct
-// `@click` / `@submit` / `@change` handlers; lit-html auto-escapes
-// the combo id / labels so we no longer call `escapeHtml` /
-// `escapeAttr`.
+// Migrated to lit-html: the create-combo modal renders into a wrapper `<div>` under `#modal-root`
+// via `render()`, and every `data-action` became a direct `@click` / `@submit` / `@change`
+// handler. lit-html auto-escapes the combo id / labels, so `escapeHtml` / `escapeAttr` are gone.
 
 import { state } from "../state/index.js";
 import { api } from "../state/api.js";
@@ -38,13 +33,13 @@ const COOLDOWN_MODE_LABELS = {
   none: "Disabled (None)",
 } satisfies Record<CooldownMode, string>;
 
-/** Render the priority-mode `<option>`s with the given value preselected. */
+/** Render the priority-mode `<option>`s with `value` preselected. */
 export function priorityModeOptions(selected: PriorityMode): TemplateResult {
   const modes: PriorityMode[] = ["strict", "lkgp", "weighted", "least_used", "p2c", "decision"];
   return html`${modes.map((m) => html`<option value=${m} ?selected=${m === selected}>${PRIORITY_MODE_LABELS[m]}</option>`)}`;
 }
 
-/** Render the cooldown-mode `<option>`s with the given value preselected. */
+/** Render the cooldown-mode `<option>`s with `value` preselected. */
 export function cooldownModeOptions(selected: CooldownMode): TemplateResult {
   const modes: CooldownMode[] = ["flat", "exponential", "none"];
   return html`${modes.map((m) => html`<option value=${m} ?selected=${m === selected}>${COOLDOWN_MODE_LABELS[m]}</option>`)}`;
@@ -145,9 +140,8 @@ export function closeCreateCombo(): void {
   }
 }
 
-/** Show/hide the conditional priority-mode parameter fields in the
- *  create-combo modal based on the currently selected option. Mirrors
- *  the existing `onTargetKindChange` pattern in combo-target-handlers. */
+/** Show/hide the create-combo modal's conditional priority-mode fields, mirroring
+ *  `onTargetKindChange` in combo-target-handlers. */
 export function onCreatePriorityModeChange(): void {
   const sel = document.getElementById("combo-priority-mode") as HTMLSelectElement | null;
   if (!sel) return;
@@ -162,8 +156,7 @@ export function onCreatePriorityModeChange(): void {
   if (label) label.setAttribute("title", PRIORITY_MODE_TOOLTIPS[mode]);
 }
 
-/** Show/hide the conditional cooldown parameter fields in the
- *  create-combo modal based on the currently selected option. */
+/** Show/hide the create-combo modal's conditional cooldown parameter fields. */
 export function onCreateCooldownModeChange(): void {
   const sel = document.getElementById("combo-cooldown-mode") as HTMLSelectElement | null;
   if (!sel) return;
@@ -174,19 +167,15 @@ export function onCreateCooldownModeChange(): void {
   if (label) label.setAttribute("title", COOLDOWN_MODE_TOOLTIPS[mode]);
 }
 
-/** Read the create-combo form and produce the JSON body sent to
- *  `POST /admin/combos`.
+/** Read the create-combo form into the JSON body for `POST /admin/combos`.
  *
- *  Always-present fields keep their server defaults when the form is
- *  blank (`name` is `""`, `strategy` is `"priority"`, `race_size` is
- *  `1`, `preventive_rate_limit` is `false`). Optional fields
- *  (`lkgp_exploration_rate`, `selection_window_secs`, the three
- *  `cooldown_*` knobs) are OMITTED from the body when blank or NaN
- *  so the Rust deserializer uses its server-side defaults — empty
- *  strings would fail u64/f64 coercion on the backend.
+ *  Always-present fields keep their server defaults when blank (`name` `""`, `strategy`
+ *  `"priority"`, `race_size` `1`, `preventive_rate_limit` `false`). Optional fields
+ *  (`lkgp_exploration_rate`, `selection_window_secs`, the three `cooldown_*` knobs) are OMITTED
+ *  when blank or NaN so the Rust deserializer applies its own defaults — empty strings would
+ *  fail u64/f64 coercion.
  *
- *  Pure (only `form` reads + numeric parsing). Exported for unit
- *  testing in `combo-handlers.test.ts`. */
+ *  Pure (form reads + numeric parsing). Exported for `combo-handlers.test.ts`. */
 export function buildComboBodyFromForm(form: HTMLFormElement): CreateComboInput {
   const f = new FormData(form);
   const priorityMode = String(f.get("priority_mode") || "strict");
@@ -199,9 +188,8 @@ export function buildComboBodyFromForm(form: HTMLFormElement): CreateComboInput 
     priority_mode: priorityMode,
     cooldown_mode: cooldownMode,
   };
-  // Parameter fields are only sent when their mode is selected AND
-  // the user entered a value. Empty strings would fail u64 / f64
-  // parsing on the backend, so we skip them.
+  // Optional params are sent only when their mode is selected AND a value was entered;
+  // empty strings would fail u64 / f64 parsing on the backend.
   if (priorityMode === "lkgp") {
     const rateRaw = String(f.get("lkgp_exploration_rate") || "").trim();
     if (rateRaw !== "") {
@@ -249,11 +237,9 @@ export async function createCombo(e: Event, wrapper?: HTMLElement): Promise<void
   const target = e.target;
   if (!(target instanceof HTMLFormElement)) return;
   const body = buildComboBodyFromForm(target);
-  // POST /combos answers `{ "id": n }` — not a full Combo — so the grid
-  // (which renders from `state.combos`, populated only by the route
-  // loader) is refreshed by re-fetching GET /combos into the state
-  // BEFORE `requestUpdate()`. The modal closes only after the POST
-  // succeeded; a failed POST keeps it open with the form intact.
+  // POST /combos answers `{ "id": n }`, not a full Combo, so GET /combos is re-fetched into
+  // `state.combos` BEFORE `requestUpdate()` (the grid renders only from that state). The modal
+  // closes only after a successful POST; a failure keeps it open with the form intact.
   await mutateAndRefresh({
     apiCall: () => api("/combos", { method: "POST", body: JSON.stringify(body) }),
     onSuccess: async () => {
@@ -287,7 +273,7 @@ export async function updateRaceSize(id: number, e: Event | null): Promise<void>
 }
 
 export async function updateContextWindow(id: number, e: Event | null): Promise<void> {
-  // Only fire on "change" (blur/enter), not on every "input" keystroke.
+  // Fire on "change" (blur/enter), not on every "input" keystroke.
   if (e && e.type === "input") return;
   const raw = e && e.target ? (e.target as HTMLInputElement).value.trim() : "";
   const body = raw === "" ? { context_window: null } : { context_window: parseInt(raw, 10) };
@@ -297,8 +283,7 @@ export async function updateContextWindow(id: number, e: Event | null): Promise<
   }
   try {
     await api("/combos/" + id, { method: "PATCH", body: JSON.stringify(body) });
-    // Update state WITHOUT re-rendering — see patchComboField for
-    // the rationale (avoid closing dropdowns / stealing focus).
+    // Update state WITHOUT re-rendering — see patchComboField for the rationale.
     const combo = (state.combos || []).find((c) => c.id === id);
     if (combo) combo.context_window = body.context_window;
   } catch (err: unknown) {
@@ -307,13 +292,12 @@ export async function updateContextWindow(id: number, e: Event | null): Promise<
   }
 }
 
-// ---- Priority mode + cooldown PATCH handlers ----
+// -- Priority mode + cooldown PATCH handlers --------------------------------
 //
-// Each handler is a thin wrapper around `patchComboField` so the
-// boilerplate (state update, error toast, re-render) lives in one
-// place. Selects fire only on "change"; number inputs fire on both
-// "input" and "change", so the wrappers for the latter pass
-// `onlyOnChange: true` to filter out per-keystroke PATCHes.
+// Thin wrappers around `patchComboField` so the boilerplate (state update, error toast,
+// re-render) lives in one place. Selects fire only on "change"; number inputs fire on both
+// "input" and "change", so those wrappers pass `onlyOnChange: true` to drop per-keystroke
+// PATCHes.
 
 async function patchComboField(
   id: number,
@@ -325,26 +309,20 @@ async function patchComboField(
       method: "PATCH",
       body: JSON.stringify({ [field]: value }),
     });
-    // Optimistically update the in-memory combo so the value
-    // persists across any future re-render. We do NOT call
-    // requestUpdate() here — a full DOM rebuild would
-    // close any open dropdowns and steal focus from inputs,
-    // making the UI feel broken (the exact "me cierra el
-    // dropdown" bug the user reported). The state update is
-    // enough; the next natural re-render (page nav, bg-poll)
-    // will pick up the new value.
+    // Optimistically update the in-memory combo so the value survives a future re-render.
+    // Deliberately NO requestUpdate(): a full DOM rebuild would close open dropdowns and steal
+    // focus ("me cierra el dropdown"). The state update is enough — the next natural re-render
+    // (page nav, bg-poll) picks the value up.
     const combo = (state.combos || []).find((c) => c.id === id);
     if (combo) {
       Object.assign(combo, { [field]: value });
     }
-    // For select elements, the DOM already reflects the user's
-    // choice. For number inputs, the value is already in the
-    // input. No re-render needed.
+    // Selects already reflect the user's choice in the DOM; number inputs already hold the
+    // value. No re-render needed.
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Show error but DON'T re-render — the user might be in the
-    // middle of editing another field. A re-render would lose
-    // their focus and unsaved changes.
+    // Show the error but DON'T re-render — the user may be mid-edit elsewhere and a
+    // re-render would lose their focus and unsaved changes.
     console.error("[openproxy] combo PATCH failed:", msg);
     showToast("Error: " + msg, "error");
   }
@@ -425,14 +403,11 @@ export async function updateSelectionWindow(id: number, e: Event | null): Promis
   await patchComboField(id, "selection_window_secs", val);
 }
 
-// testAllTargets: receives (comboId, e). The e.target is the button
-// that was clicked; we toggle a "Testing…" state on it. The
-// original code used `window.event` to find the button, which is
-// non-standard; the e.target path is more reliable.
+// testAllTargets receives (comboId, e); e.target is the clicked button, whose "Testing…"
+// state is toggled here. The original code used the non-standard `window.event` to find it.
 export async function testAllTargets(comboId: number, e: Event | null): Promise<void> {
-  // intentionally not using mutateAndRefresh because: Tier 3 —
-  // button disable/relabel lifecycle (finally block) around the
-  // call; the helper has no hook for per-request UI affordances.
+  // Deliberately not mutateAndRefresh (Tier 3): this needs a per-request button
+  // disable/relabel lifecycle in a `finally` block, which the helper has no hook for.
   const btn = e && e.target ? (e.target as HTMLElement).closest("button") : null;
   const oldText = btn ? btn.textContent : null;
   if (btn) { btn.disabled = true; btn.textContent = "Testing..."; }
@@ -447,8 +422,8 @@ export async function testAllTargets(comboId: number, e: Event | null): Promise<
   }
 }
 
-// Re-exported for the detail view; it reads `Combo.priority_mode` /
-// `cooldown_mode` as `PriorityMode | null` and needs a typed default.
+// Re-exported for the detail view, which reads `Combo.priority_mode` / `cooldown_mode` as
+// `PriorityMode | null` and needs a typed default.
 export function priorityModeOf(c: Combo): PriorityMode {
   return (c.priority_mode ?? "strict") as PriorityMode;
 }

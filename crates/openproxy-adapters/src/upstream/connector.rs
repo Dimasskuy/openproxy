@@ -1,66 +1,32 @@
 //! Real per-phase connector for the `upstream/` client.
 //!
-//! ## Why this file exists (bug 2b/2c fix)
-//!
 //! `hyper_util::client::legacy::Client::request` is a single future that
-//! collapses DNS, dial, TLS, write, and wait-for-headers into one. The
-//! previous version of this module worked around that by picking
-//! `min(headers_ms, write_ms, dial_ms, tls_ms, total_ms)` as the
-//! effective deadline of that single future and labelling every timeout
-//! as `Timeout(Headers)`. That is "soft-accumulation" — a `write_ms =
-//! 200ms` config cap on the body upload never produced `Timeout(Write)`
-//! because hyper never told us where the body upload stopped and the
-//! wait-for-headers started.
+//! collapses DNS, dial, TLS, write and wait-for-headers into one. Timing that
+//! one future with `min(headers_ms, write_ms, dial_ms, tls_ms, total_ms)`
+//! ("soft-accumulation") can never emit `Timeout(Write)`: hyper does not say
+//! where the body upload stopped, so a `write_ms = 200ms` cap on the upload
+//! goes unreported. This module enforces the phases for real:
 //!
-//! This module replaces that workaround with **real per-phase
-//! enforcement**:
-//!
-//! - **DNS**, **Dial**, **TLS** are enforced INSIDE the connector with
-//!   independent `tokio::time::timeout` calls. A stalled DNS lookup
-//!   fires `Timeout(Dns)`, a stalled dial fires `Timeout(Dial)`, a
-//!   stalled TLS handshake fires `Timeout(Tls)`. The connector reports
-//!   the stalled phase to the upper layer via a `PhasedConnectorError`
-//!   downcast on the boxed error.
-//!
-//! - **Write** vs **Headers** are separated with a NESTED
-//!   `tokio::time::timeout` in `client::call_inner`. The outer race
-//!   has `write_ms` and reports `Timeout(Write)`; the inner race has
-//!   `headers_ms` and reports `Timeout(Headers)`. Whichever ceiling
-//!   fires first wins. With `write_ms=200` and `headers_ms=30000` the
-//!   outer race fires first and the caller sees `Timeout(Write)` —
-//!   which is the contract the previous version silently violated.
-//!
+//! - **DNS**, **Dial** and **TLS** are bounded inside the connector by
+//!   independent `tokio::time::timeout` calls. A stall reports
+//!   `Timeout(Dns|Dial|Tls)` through a `PhasedConnectorError` downcast on the
+//!   boxed error.
+//! - **Write** vs **Headers** are split by a nested `tokio::time::timeout` in
+//!   `client::call_inner`: the outer race carries `write_ms` and reports
+//!   `Timeout(Write)`, the inner one `headers_ms` and reports
+//!   `Timeout(Headers)`. Whichever ceiling fires first wins.
 //! - **Total** is the outermost ceiling.
 //!
-//! ## TLS
+//! TLS: the HTTPS path upgrades the `TcpStream` via
+//! `tokio_rustls::TlsConnector::connect`, bounded by `timeouts.tls`. This
+//! module is the only place TLS is configured. `PhasedConnection` holds
+//! either shape; both satisfy hyper-util's `Connect` blanket impl
+//! (`Read + Write + Connection + Unpin + Send`).
 //!
-//! The production HTTPS path upgrades the `TcpStream` to TLS via
-//! `tokio_rustls::TlsConnector::connect`, bounded by `timeouts.tls`.
-//! The per-phase timeout infrastructure is fully wired up; this module
-//! is the only place TLS is configured. The HTTP path stays plain
-//! `TcpStream` and skips this step entirely. The `PhasedConnection`
-//! enum below holds either shape; both satisfy hyper-util's
-//! `Connect` blanket impl (`Read + Write + Connection + Unpin + Send`).
-//!
-//! Historical note: an earlier revision of this module used a
-//! no-op `tls_handshake` placeholder that returned `Ok(())` for
-//! HTTPS URIs, with a `// TODO (gate 1+)` comment. The symptom was
-//! that hyper wrote a plaintext `HTTP/1.1` request line on top of
-//! the unencrypted TCP socket, and the upstream (e.g. NVIDIA NIM)
-//! replied with `400 The plain HTTP request was sent to HTTPS port`.
-//! Every HTTPS upstream failed. The fix is the real
-//! `tokio-rustls` integration below.
-//!
-//! ## Why a custom connector (not wrap-the-future)
-//!
-//! The alternative ("wrap the hyper `Service::call` future and
-//! `tokio::select!` on progress events") was considered and rejected:
-//! hyper-util's `legacy::Client` does not expose progress events for
-//! its internal `Service::call`, so any wrapper would be a best-effort
-//! `tokio::time::timeout` on the whole future — which is exactly the
-//! soft-accumulation we are trying to fix. A custom connector
-//! implementing `tower_service::Service<Uri>` is the only way to get
-//! real per-step deadlines.
+//! A wrapper around the hyper `Service::call` future was rejected: hyper-util
+//! exposes no progress events for its internal `Service::call`, so any wrapper
+//! degrades to a single timeout over the whole future. A custom
+//! `tower_service::Service<Uri>` is the only way to get per-step deadlines.
 
 use std::future::Future;
 use std::io;
@@ -86,65 +52,37 @@ use super::proxy_tunnel::{ProxyConfig, parse_proxy_url, run_proxy_tunnel};
 /// A `tower::Service<Uri>` connector that enforces DNS, dial, and TLS
 /// timeouts independently and reports the stalled phase on error.
 ///
-/// ## How it separates phases
-///
-/// `PhasedConnector::call(uri)` parses the URI, resolves the hostname
-/// to one or more socket addresses (DNS phase, time-bounded by
-/// `timeouts.dns`), dials the first address that succeeds (Dial phase,
-/// time-bounded by `timeouts.dial`), and (for `https`) wraps the
-/// resulting TCP stream in a TLS handshake (Tls phase, time-bounded
-/// by `timeouts.tls`). Each phase is a separate `tokio::time::timeout`;
-/// on expiry the future resolves to
+/// `call(uri)` resolves the hostname (DNS, bounded by `timeouts.dns`), dials
+/// the first address that answers (Dial, `timeouts.dial`) and, for `https`,
+/// wraps the stream in a TLS handshake (Tls, `timeouts.tls`). Each phase is a
+/// separate `tokio::time::timeout`; on expiry the future resolves to
 /// `Err(PhasedConnectorError { phase, Timeout })`.
 ///
-/// The `HttpConnector` from `hyper-util` collapses all three phases
-/// into a single future, which is why we don't reuse it: we want the
-/// per-phase attribution. We still reuse `hyper_util::rt::TokioIo` as
-/// the `Read + Write + Connection` wrapper, which is the only piece
-/// the hyper-util `Connect` blanket impl needs from us.
-///
-/// See the `CALL_TIMEOUTS` task-local below for the per-call timeout
-/// injection mechanism (HIGH-5 fix).
+/// `hyper-util`'s `HttpConnector` collapses all three into one future, which
+/// is why the per-phase attribution needs a custom connector. Only
+/// `hyper_util::rt::TokioIo` is reused from it, as the `Read + Write +
+/// Connection` wrapper the `Connect` blanket impl requires.
 #[derive(Clone)]
 pub struct PhasedConnector {
-    /// Fallback timeouts used when the `CALL_TIMEOUTS` task-local is
-    /// not set (e.g. tests that build a `PhasedConnector` directly).
-    /// Production paths always set the task-local via
-    /// `UpstreamClient::call_inner`.
+    /// Fallback for tests that build a `PhasedConnector` directly. Production
+    /// paths set the `CALL_TIMEOUTS` task-local via `UpstreamClient::call_inner`.
     defaults: PhasedTimeouts,
 }
 
-// Per-call timeout injection (HIGH-5 fix)
+// Per-call timeout injection.
 //
-// The hyper-util `legacy::Client` clones its connector for each
-// request, so the connector is a `Clone` value that is **shared**
-// across concurrent calls. We don't have a per-call setup hook
-// (hyper-util calls `Service::call` directly on the cloned
-// connector), so we cannot thread the per-call timeouts into
-// `call()` by argument.
+// hyper-util clones the connector per request, so the connector is a `Clone`
+// value shared across concurrent calls with no per-call setup hook, and the
+// deadlines cannot travel as a `call()` argument.
 //
-// Previous design (RACE): the per-phase deadlines were stored in
-// `Arc<AtomicU64>` fields shared across every concurrent request that
-// borrowed the same `UpstreamClient`. The caller wrote the timeouts
-// via `set_timeouts(...)` immediately before polling the dispatch
-// future, but `tokio::select!` does not poll that future synchronously
-// — between `set_timeouts` and the first poll, another request's
-// `call_inner` could call `set_timeouts` and clobber the atomics. The
-// race window was tiny but real, and under high concurrency one
-// request could inherit another request's per-phase budget.
+// Storing them in `Arc<AtomicU64>` fields was race-prone: the caller wrote the
+// timeouts before polling the dispatch future, and `tokio::select!` does not
+// poll that future synchronously. Between the write and the first poll another
+// request's `call_inner` could clobber the atomics and inherit them.
 //
-// Current design (RACE-FREE): a `tokio::task_local!` slot
-// (`CALL_TIMEOUTS`) carries the per-call `PhasedTimeouts` from
-// `UpstreamClient::call_inner` down to `PhasedConnector::call`. The
-// caller wraps the dispatch future in `CALL_TIMEOUTS.scope(value,
-// future)`; the connector reads the slot via `try_with` and falls
-// back to its stored `defaults` if the slot is unset. Each task has
-// its own slot, no shared mutable state, no clobbering.
-//
-// The `defaults` field is kept for tests that build a `PhasedConnector`
-// directly without going through `UpstreamClient::call_inner`. In
-// production, the task-local is always set before the connector's
-// `call()` is polled.
+// A `tokio::task_local!` slot gives each task its own copy: the caller wraps
+// the dispatch future in `CALL_TIMEOUTS.scope(value, future)` and the
+// connector reads it via `try_with`, falling back to `defaults` when unset.
 tokio::task_local! {
     pub(crate) static CALL_TIMEOUTS: PhasedTimeouts;
 }
@@ -153,44 +91,33 @@ tokio::task_local! {
 }
 
 impl PhasedConnector {
-    /// Build a connector with the given per-phase timeouts (used as
-    /// the fallback when the `CALL_TIMEOUTS` task-local is unset).
+    /// Build a connector with the given per-phase timeouts, used as the
+    /// fallback when the `CALL_TIMEOUTS` task-local is unset.
     pub fn new(timeouts: PhasedTimeouts) -> Self {
         Self { defaults: timeouts }
     }
 
-    /// Build a connector with the system default timeouts (5s each).
+    /// Build a connector with the system default timeouts.
     pub fn with_defaults() -> Self {
         Self::new(PhasedTimeouts::default())
     }
 
-    /// Read the effective per-phase timeouts. Checks the `CALL_TIMEOUTS`
-    /// task-local first (set by `UpstreamClient::call_inner`); falls
-    /// back to the stored `defaults` if the slot is unset.
-    ///
-    /// This replaces the old `set_timeouts` + `timeouts()` pair. The
-    /// caller no longer needs to write atomics before issuing the
-    /// request — the task-local is set once per call via `scope(...)`
-    /// and read here.
+    /// Read the effective per-phase timeouts: the `CALL_TIMEOUTS` task-local
+    /// first, then the stored `defaults` when the slot is unset.
     pub fn effective_timeouts(&self) -> PhasedTimeouts {
         CALL_TIMEOUTS.try_with(|t| *t).unwrap_or(self.defaults)
     }
 
-    /// Backward-compat: set the fallback timeouts. Kept for any test
-    /// that calls `set_timeouts` directly; production code should use
-    /// the task-local via `UpstreamClient::call_inner`.
+    /// Source-compat no-op kept for tests that call `set_timeouts` directly.
+    /// Per-call timeouts arrive through the `CALL_TIMEOUTS` task-local.
+    /// `defaults` is not mutated: the connector is shared across concurrent
+    /// requests via `Clone`, so writing it would restore the race.
     pub fn set_timeouts(&self, _timeouts: PhasedTimeouts) {
-        // No-op: the per-call timeouts are now passed via the
-        // `CALL_TIMEOUTS` task-local. This method is kept only for
-        // source compatibility with tests that called it directly.
-        // The `defaults` are NOT mutated because the connector is
-        // shared across concurrent requests via `Clone` — mutating
-        // `defaults` would re-introduce the race we just fixed.
+        // No-op: per-call timeouts travel in the `CALL_TIMEOUTS` task-local.
     }
 
-    /// Backward-compat: read the fallback timeouts (NOT the per-call
-    /// task-local). Kept for the `Debug` impl. Production code should
-    /// use `effective_timeouts()` instead.
+    /// The fallback timeouts, not the per-call task-local. Used by the
+    /// `Debug` impl and by tests; production reads `effective_timeouts()`.
     pub fn timeouts(&self) -> PhasedTimeouts {
         self.defaults
     }
@@ -208,33 +135,24 @@ impl Service<Uri> for PhasedConnector {
     type Response = PhasedConnection;
     type Error = Box<dyn std::error::Error + Send + Sync>;
     // The hyper-util `Connect` blanket impl requires
-    // `S::Future: Unpin + Send`. We use a trait object `Pin<Box<dyn
-    // Future + Send>>`: this is `Unpin` for ANY inner type (because
-    // `Pin<Box<T>>: Unpin` regardless of `T: Unpin`), so the inner
-    // async block — which awaits non-`Unpin` futures like
-    // `tokio::time::Timeout` and `TcpStream::connect` — does NOT need
-    // to itself be `Unpin`.
+    // `S::Future: Unpin + Send`. A `Pin<Box<dyn Future + Send>>` is `Unpin`
+    // for any inner type, so the async block below can await non-`Unpin`
+    // futures (`tokio::time::Timeout`, `TcpStream::connect`) without itself
+    // being `Unpin`.
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // We are always ready: the per-call future does not share
-        // state with `poll_ready` (no rate limit, no resolver pool,
-        // no connect semaphore). This matches the `HttpConnector`
-        // behavior in `hyper-util` for the common case where the
-        // resolver is `GaiResolver`.
+        // Always ready: the per-call future shares no state with `poll_ready`
+        // (no rate limit, resolver pool or connect semaphore), matching
+        // `HttpConnector` with `GaiResolver`.
         Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, uri: Uri) -> Self::Future {
-        // HIGH-5 fix: read the per-call timeouts from the task-local
-        // (set by `UpstreamClient::call_inner` via `CALL_TIMEOUTS.scope`).
-        // Falls back to `defaults` if the slot is unset (tests).
+        // Read the per-call timeouts from the task-local set by
+        // `UpstreamClient::call_inner`; fall back to `defaults` when unset.
         let timeouts = self.effective_timeouts();
         let is_https = uri.scheme_str() == Some("https");
-        // See the comment on `type Future` for why we don't write
-        // `+ Unpin` here: the inner async block is not `Unpin`
-        // (it awaits `tokio::time::Timeout`), but the boxed trait
-        // object IS.
         Box::pin(run_phased_connect(uri, is_https, timeouts))
     }
 }
@@ -510,8 +428,8 @@ async fn establish_raw_tcp_stream(
     Ok(dial_phase(filtered_addrs, connect_deadline, timeouts.dial).await?)
 }
 
-/// The actual connect future. Pulled out as a free function so the
-/// `Service::call` signature stays simple.
+/// The connect future, pulled out so the `Service::call` signature stays
+/// simple.
 async fn run_phased_connect(
     uri: Uri,
     is_https: bool,
@@ -551,9 +469,8 @@ async fn run_phased_connect(
     }
 }
 
-/// `host:port` -> (host, port) with sensible defaults. Returns an
-/// error string (not a `PhasedConnectorError`) so the caller can wrap
-/// it with the right phase.
+/// `host:port` -> (host, port), defaulting the port from the scheme. Returns a
+/// plain `String` error so the caller can attach the phase.
 fn parse_authority(uri: &Uri) -> Result<(&str, u16), String> {
     let host = uri
         .host()
@@ -575,18 +492,12 @@ fn parse_literal_ip(host: &str, port: u16) -> Option<SocketAddr> {
         .map(|ip| SocketAddr::new(ip, port))
 }
 
-// ---------------------------------------------------------------------
-// Downcast helper used by `client::call_inner` to recover the phase
-// from a boxed connector error.
-// ---------------------------------------------------------------------
-
-/// If `err` (or anything in its `source` chain) is a
-/// `PhasedConnectorError`, return its phase. Otherwise `None`. The
-/// caller falls back to a different attribution (e.g. the legacy
-/// `Headers` default) when this returns `None`.
+/// If `err` (or anything in its `source` chain) is a timed-out
+/// `PhasedConnectorError`, return its phase. `None` means the caller falls
+/// back to a different attribution (e.g. the `Headers` default).
 pub fn phased_phase(err: &(dyn std::error::Error + 'static)) -> Option<UpstreamPhase> {
-    // Walk the source chain so wrapped errors (e.g. a hyper-util
-    // `Connect` wrapping our boxed error) are also detected.
+    // Walk the source chain so wrapped errors (e.g. a hyper-util `Connect`
+    // wrapping our boxed error) are detected too.
     let mut current: Option<&(dyn std::error::Error + 'static)> = Some(err);
     while let Some(e) = current {
         if let Some(p) = e.downcast_ref::<PhasedConnectorError>()
@@ -599,17 +510,10 @@ pub fn phased_phase(err: &(dyn std::error::Error + 'static)) -> Option<UpstreamP
     None
 }
 
-// Compile-time pin: the production `PhasedConnection` (both
-// variants) must satisfy the hyper-util `Connect` blanket impl's
-// bounds. The blanket impl lives in
-// `hyper_util::client::legacy::connect` and is applied to any
-// `S::Response` that implements `Read + Write + Connection +
-// Unpin + Send + 'static`. We hand-implement `Connection` for
-// `PhasedConnection` above; the assertions below make the
-// contract statically checkable from the editor (and from CI via
-// `cargo check`). Wrapped in an anonymous const block so the
-// inner `_assert` is referenced (and thus the bound checks fire)
-// without producing a dead_code warning on an uncalled function.
+// Compile-time pin: `PhasedConnection` and `TokioIo<TcpStream>` must satisfy
+// the hyper-util `Connect` blanket impl's `Read + Write + Connection + Unpin +
+// Send + 'static` bounds. The anonymous const block references `_assert` so
+// the bound checks fire without a dead_code warning.
 const _: () = {
     fn _assert<R: Read + Write + HyperConnection + Unpin + Send + 'static>() {}
     let _ = _assert::<PhasedConnection>;

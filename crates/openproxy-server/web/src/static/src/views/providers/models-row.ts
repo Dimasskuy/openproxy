@@ -1,10 +1,6 @@
-// views/providers/models-row.ts — per-row model handlers and the
-// renderModelRow template.
-//
-// Split out of the former detail.ts monolith (FU1). Each handler
-// operates on a single `row_id` (the server-side primary key), while
-// renderModelRow produces the full <tr> for a model row (desktop + mobile
-// card variant) and wires the per-row button @click callbacks back here.
+// views/providers/models-row.ts — per-row handlers keyed on `row_id` (the
+// server-side primary key) plus `renderModelRow`, which emits the full <tr>
+// (desktop + mobile card) and wires the per-row @click callbacks.
 
 import { html, type TemplateResult } from 'lit-html';
 import { state } from '../../state/index.js';
@@ -20,7 +16,6 @@ import { formatContextBadge } from '../../lib/format.js';
 import { renderCapabilityBadges } from './shared.js';
 import type { Model } from '../../lib/types/api.js';
 
-// ---- Per-row action handlers ----
 
 export async function onChangeModelType(rowId: number, e: Event): Promise<void> {
   const target = e.target instanceof HTMLSelectElement ? e.target : null;
@@ -142,7 +137,6 @@ export async function onCopyUsageModel(text: string, e: Event): Promise<void> {
   }
 }
 
-// ---- renderModelRow (desktop + mobile card) ----
 
 export function renderModelRow(m: Model): TemplateResult {
   const isSelected: boolean = (state.selectedModels as Set<number>).has(
@@ -296,7 +290,6 @@ export function renderModelRow(m: Model): TemplateResult {
   </tr>`;
 }
 
-// ---- Per-provider checkbox helpers (exported for models.ts renderModelsSection) ----
 
 export function onToggleModelSelection(rowId: number, e: Event | null): void {
   const target =

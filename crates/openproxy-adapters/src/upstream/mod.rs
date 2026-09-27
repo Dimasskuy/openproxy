@@ -1,40 +1,25 @@
-//! `UpstreamClient` — a hyper-based HTTP client with per-phase timeouts
-//! and a per-host connection pool.
+//! `UpstreamClient`: a hyper-based HTTP client with per-phase timeouts and a
+//! per-host connection pool.
 //!
-//! This module is gated by the `upstream-hyper` feature (default-on in
-//! `openproxy-core`'s `Cargo.toml`). Disabling the feature at build time
-//! keeps this module out of the compilation; re-exports below are
-//! stubs that satisfy the public API surface but return
-//! `UpstreamError::Invalid("upstream-hyper disabled")` from `call`.
+//! Gated by the `upstream-hyper` feature (default-on in `openproxy-core`).
+//! With the feature off, `stubs` keeps the public surface resolving and `call`
+//! returns `UpstreamError::Invalid("upstream-hyper disabled")`.
 //!
-//! ## Deviations from the spec
+//! Deviations from the spec:
 //!
-//! - **Connection pool primitive.** The spec describes a
-//!   `Mutex<HashMap<HostKey, hyper::client::conn::http1::SendRequest>>`.
-//!   `SendRequest` in hyper 1.10 is **not** `Clone` and owns its half
-//!   of the connection, so holding it in a shared map would force
-//!   `&mut` access for every send. The actual primitive used is
-//!   `hyper_util::client::legacy::Client` (which is `Clone` and shares
-//!   an internal per-host pool). The user-facing surface is unchanged:
-//!   `UpstreamConnectionPool` exposes `reuses()` and `total()` counters
-//!   and a `Default` impl, matching the spec's intent. See
-//!   `conn_pool.rs` for the full rationale.
-//!
-//! - **Granular TLS timeout.** hyper 1.10 has no per-phase timeout on
-//!   the `HttpConnector` / `HttpsConnector` path: DNS, dial, and TLS
-//!   are a single `Service::call` future. To attribute a stalled
-//!   `UpstreamError::Timeout(phase)` to the right step, the
-//!   unit-test connector in `tests.rs` reports the stalling phase
-//!   directly. The production `DefaultConnector` reports a
-//!   single `Connection` error and the client attributes it to
-//!   `UpstreamPhase::Headers` (the closest phase boundary that
-//!   includes connect+TLS). Splitting connect from TLS in production
-//!   requires a custom DNS resolver and is a follow-up gate.
-//!
-//! - **Body limit.** Non-streaming bodies are bounded by `NON_STREAMING_BODY_LIMIT_BYTES`
-//!   (32 MiB) to cap memory when buffering the full payload. Streaming bodies are
-//!   unbounded (`STREAMING_BODY_LIMIT_BYTES`), streaming chunks directly to the client
-//!   without accumulating memory while governed by idle-chunk and total timeouts.
+//! - **Connection pool primitive.** hyper 1.10's `SendRequest` is not `Clone`
+//!   and owns its half of the connection, so a shared map would need `&mut`
+//!   per send. The primitive is `hyper_util::client::legacy::Client`; the
+//!   user-facing `UpstreamConnectionPool` surface (`reuses()`, `total()`,
+//!   `Default`) is unchanged. Rationale in `conn_pool.rs`.
+//! - **Granular TLS timeout.** The spec path collapses DNS, dial and TLS into
+//!   one `Service::call` future, so a production stall attributes to
+//!   `UpstreamPhase::Headers`; the test connector in `tests.rs` reports the
+//!   stalling phase directly.
+//! - **Body limit.** `NON_STREAMING_BODY_LIMIT_BYTES` (32 MiB) caps memory
+//!   when buffering a whole payload. `STREAMING_BODY_LIMIT_BYTES` is
+//!   unbounded, since chunks go straight to the client under idle-chunk and
+//!   total timeouts.
 
 #[cfg(feature = "upstream-hyper")]
 mod cancel;
@@ -90,13 +75,8 @@ pub use response::{
     UpstreamResponse,
 };
 
-// -- Stubs for builds with the feature disabled -----------------------------
-//
-// When `upstream-hyper` is off, the module compiles but the types are
-// not constructible. We provide marker types and re-exports so that
-// `crate::upstream::UpstreamClient` etc. always resolve (call sites
-// that aren't yet migrated don't notice the difference; new code can
-// branch on the feature to use real types).
+// Stubs for builds with the feature disabled, so
+// `crate::upstream::UpstreamClient` and friends always resolve.
 
 #[cfg(not(feature = "upstream-hyper"))]
 mod stubs;

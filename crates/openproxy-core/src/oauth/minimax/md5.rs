@@ -1,6 +1,4 @@
-//! RFC 1321 compliant MD5 implementation in pure Rust.
-//!
-//! Zero dependencies, safe, constant memory.
+//! RFC 1321 MD5 in pure Rust, no dependencies, constant memory.
 
 const S: [u32; 64] = [
     7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, // Round 1
@@ -20,7 +18,7 @@ const K: [u32; 64] = [
     0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391,
 ];
 
-/// Computes the MD5 digest of the input and returns 16 bytes.
+/// MD5 digest as 16 raw bytes.
 pub fn md5_bytes(data: &[u8]) -> [u8; 16] {
     let mut a0: u32 = 0x6745_2301;
     let mut b0: u32 = 0xefcd_ab89;
@@ -29,7 +27,7 @@ pub fn md5_bytes(data: &[u8]) -> [u8; 16] {
 
     let bit_len = (data.len() as u64) * 8;
 
-    // Pad message: append 1 bit (0x80), then zeros, then 64-bit length
+    // 0x80 bit, zero padding, then the 64-bit length
     let mut padded = Vec::with_capacity(data.len() + 72);
     padded.extend_from_slice(data);
     padded.push(0x80);
@@ -94,7 +92,7 @@ pub fn md5_bytes(data: &[u8]) -> [u8; 16] {
     result
 }
 
-/// Computes the MD5 digest of the input and returns a 32-character lowercase hex string.
+/// MD5 digest as 32 lowercase hex chars.
 pub fn md5_hex(data: impl AsRef<[u8]>) -> String {
     let digest = md5_bytes(data.as_ref());
     hex::encode(digest)

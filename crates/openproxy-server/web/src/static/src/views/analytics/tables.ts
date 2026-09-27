@@ -1,9 +1,4 @@
-// views/analytics/tables.ts — table renderers for the analytics view:
-// by-model ranking, by-provider ranking, monthly providers × months
-// cost matrix, and the recent-errors table. All four are tabular
-// (multi-column data) so a chart would lose detail; this module
-// emits the same `<table>` markup the previous monolithic analytics.ts
-// produced, just factored out so the entry point stays small.
+// views/analytics/tables.ts — by-model, by-provider, cost-matrix, and recent-errors tables.
 
 import { html, type TemplateResult } from "lit-html";
 import { t } from "../../i18n/index.js";
@@ -91,10 +86,9 @@ export function renderMonthlyMatrix(): TemplateResult {
   </table></div>`);
 }
 
-/** Recent errors table (latest 10 rows). Each row is clickable →
- *  `#/logs?request_id=…` to jump to the live-logs view filtered to
- *  that request. Renders a mobile card variant alongside the desktop
- *  table cells. */
+/** Recent errors table (latest 10 rows). Each row is clickable, which mirrors the
+ *  request into the log-detail modal and navigates to `#/logs?request_id=…`
+ *  filtered to it. Renders a mobile card variant alongside the desktop table. */
 export function renderRecentErrors(): TemplateResult {
   const slice = (errors || []).slice(0, 10);
   if (slice.length === 0) {

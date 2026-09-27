@@ -1,36 +1,14 @@
-// components/render-responsive-card-table.ts — generic responsive
-// table → cards render function.
+// Generic responsive table → cards renderer.
 //
-// Desktop (≥768px): renders a `<table>` whose columns come from the
-// `columns` prop. Each column has an optional `render(row)` for
-// custom cells, or falls back to `String(row[key])`.
+// Desktop (≥768px): a `<table>` built from the `columns` prop.
+// Mobile (<768px): the same `<table>` with class `responsive-card-table`.
+// The `@media (max-width: 768px)` rules in components.css read the
+// per-cell `data-label` to restyle each row as a stack of cards.
 //
-// Mobile (<768px): renders a stack of cards, one per row, with each
-// column shown as `label: value` pairs. The card layout is pure CSS
-// (`@media (max-width: 768px)` in components.css) — the markup is
-// the same `<table>` with class `responsive-card-table` so existing
-// stylesheets continue to apply, but the cell sequence inside a row
-// uses a `data-label` attribute that the mobile rules pick up.
-//
-// Empty state: a single full-width row with `emptyMessage` (defaults
-// to "No items.").
-//
-// CAUTION (Phase 2 deviation): the codebase already has a rich
-// per-view responsive card layout (e.g. `tr.proxy-card-row > td
-// .p-card-line-1`, `tr.api-key-card-row > td.mobile-key-card-cell`,
-// `tr.model-card-row > td.mobile-model-card-cell`, etc.) that gives
-// each table a much more polished mobile view than this generic
-// helper can produce from column metadata alone. Until a view is
-// deliberately migrated, prefer the per-view markup — this helper
-// is intended for new tables (e.g. ad-hoc admin pages) or for
-// callers that do not need the bespoke mobile card design.
-//
-// MIGRATED in Phase 2: views/proxies.ts, views/keys.ts.
-// FOLLOW-UP (Phase 3+): views/proxy-sources.ts (drag/touch handlers
-// require bespoke per-row markup), views/analytics.ts (3 distinct
-// table shapes), views/providers.ts (imperative DOM patching on
-// `model-row-*` rows, which would lose the focus-preserving
-// in-place updates).
+// Views with bespoke per-row mobile markup (proxies, keys, providers,
+// proxy-sources) must keep that markup: drag/touch handlers and
+// focus-preserving in-place updates cannot be expressed through column
+// metadata. This helper targets new tables and simple callers.
 
 import { html, nothing, type TemplateResult } from "lit-html";
 
@@ -119,6 +97,5 @@ export function renderResponsiveCardTable<T>(props: ResponsiveTableProps<T>): Te
   `;
 }
 
-// Re-export `nothing` for callers that want to omit a column value
-// in their `render(row)` callback.
+// Re-exported so callers can omit a column value from `render(row)`.
 export { nothing };

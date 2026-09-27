@@ -207,9 +207,9 @@ pub fn parse_commandcode_sse_line(
                     .copied()
                     .unwrap_or(false)
                 {
-                    // Tool call arguments were already streamed via tool-input-delta.
-                    // Do not emit another delta chunk with the full arguments to avoid
-                    // duplicating arguments downstream in SSE client accumulators.
+                    // Arguments already streamed via tool-input-delta.
+                    // Re-emitting them would duplicate them in the client's
+                    // SSE accumulator.
                     return Ok(None);
                 }
                 if index < state.tool_calls_streamed.len() {
@@ -582,7 +582,6 @@ mod tests {
         assert_eq!(c2.delta_tool_calls.len(), 1);
         assert_eq!(c2.delta_tool_calls[0]["function"]["arguments"], "{\"a\":1}");
 
-        // When tool-call event follows tool-input-delta, it must not duplicate arguments
         let l3 = r#"data: {"type":"tool-call","id":"call_123","name":"calc","input":{"a":1}}"#;
         let c3 = parse_commandcode_sse_line(l3, "chunk_3", 1000, "claude", &mut state).unwrap();
         assert!(c3.is_none(), "tool-call after deltas must be deduplicated");
@@ -733,7 +732,6 @@ mod tests {
         let step_line = "{\"type\":\"finish-step\",\"finishReason\":\"length\",\"usage\":{\"inputTokens\":100,\"outputTokens\":16}}";
         let chunk_step =
             parse_commandcode_sse_line(step_line, "c1", 1000, "muse-spark", &mut state).unwrap();
-        // finish-step must NOT emit a finish frame in streaming mode
         assert!(chunk_step.is_none());
         assert_eq!(state.last_finish_step_reason.as_deref(), Some("length"));
 
@@ -742,7 +740,6 @@ mod tests {
             parse_commandcode_sse_line(finish_line, "c1", 1000, "muse-spark", &mut state)
                 .unwrap()
                 .unwrap();
-        // finish MUST emit the single terminal done frame with finish_reason
         assert!(chunk_finish.done);
         assert_eq!(chunk_finish.stop_reason.as_deref(), Some("length"));
         assert_eq!(
@@ -768,7 +765,8 @@ mod tests {
         let stream = "{\"type\":\"start\"}\n\
                       {\"type\":\"start-step\"}\n";
         let resp = parse_commandcode_sse_to_unary(stream, "empty-model").unwrap();
-        // Without any content or finish event, finish_reason must be None so is_empty_response catches it
+        // No content or finish event: finish_reason stays None so
+        // is_empty_response catches the turn.
         assert_eq!(resp.choices[0].finish_reason, None);
         assert_eq!(
             resp.choices[0]

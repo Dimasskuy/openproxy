@@ -1,6 +1,3 @@
-/* ==========
-   API KEYS & KEY USAGE VIEW STYLES
-   ========== */
 
 .keys-list {
   display: flex;
@@ -91,7 +88,6 @@
   gap: var(--space-1);
 }
 
-/* ----- Key usage view (post-refactor selectors) ----- */
 .key-usage-table {
   width: 100%;
   border-collapse: collapse;
@@ -181,12 +177,12 @@
  .round {
   border-radius: var(--radius-pill);
 }
-/* Note: button sizing/colour variants (button.primary, button.small,
-   button.danger, button.secondary, button.success) live in
-   components/forms.css. The .responsive-card-table mobile card-mode
-   is owned by components/tables.css inside @media (max-width:768px).
-   Don't redefine them here — it would override the desktop table
-   layout in proxies, debug-logs, combos, providers models, etc. */
+/* Button sizing/colour variants (button.primary, button.small,
+   button.danger, button.secondary, button.success) belong to
+   components/forms.css, and the .responsive-card-table mobile card
+   mode to components/tables.css. Redefining either here would
+   override the desktop table layout in proxies, debug-logs, combos
+   and providers models. */
 .banner-warning {
   background: var(--color-warn-soft);
   color: var(--color-warn);

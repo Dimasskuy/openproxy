@@ -5,10 +5,8 @@ use rusqlite::Connection;
 /// Maximum variable number allowed by SQLite in standard configurations.
 pub const SQLITE_MAX_VARIABLE_NUMBER: usize = 999;
 
-/// Default chunk size for batch operations.
 pub const DEFAULT_CHUNK_SIZE: usize = 900;
 
-/// Returns comma-separated `?` placeholders for an `IN (...)` clause: `"?, ?, ?"`.
 pub fn in_placeholders(count: usize) -> String {
     if count == 0 {
         return String::new();
@@ -23,8 +21,7 @@ pub fn in_placeholders(count: usize) -> String {
     out
 }
 
-/// Returns comma-separated tuple placeholders for a `VALUES` clause:
-/// `values_placeholders(2, 3)` -> `"(?, ?, ?), (?, ?, ?)"`.
+/// `"(?, ?, ?), (?, ?, ?)"` for `values_placeholders(2, 3)`.
 pub fn values_placeholders(num_rows: usize, num_cols: usize) -> String {
     if num_rows == 0 || num_cols == 0 {
         return String::new();
@@ -40,13 +37,10 @@ pub fn values_placeholders(num_rows: usize, num_cols: usize) -> String {
     out
 }
 
-/// Builds a complete batch `INSERT` query.
-///
-/// Example:
-/// `build_insert_sql("INSERT INTO", "users", &["name", "email"], 2, None)`
-/// -> `"INSERT INTO users (name, email) VALUES (?, ?), (?, ?)"`
-///
-/// Suffix can include `ON CONFLICT ...` or `RETURNING ...`.
+/// Builds a complete batch `INSERT` query, e.g.
+/// `build_insert_sql("INSERT INTO", "users", &["name", "email"], 2, None)` ->
+/// `"INSERT INTO users (name, email) VALUES (?, ?), (?, ?)"`. The suffix can carry
+/// `ON CONFLICT ...` or `RETURNING ...`.
 pub fn build_insert_sql(
     prefix: &str,
     table: &str,
@@ -82,10 +76,9 @@ pub fn build_insert_sql(
     sql
 }
 
-/// Helper to query rows in chunks when filtering by `IN ({})`.
-///
-/// `sql_template` must contain `{}` which will be replaced by `?, ?, ...` placeholders.
-/// Automatically clamps `chunk_size` so `chunk.len() <= SQLITE_MAX_VARIABLE_NUMBER`.
+/// Chunked query over an `IN ({})` filter. `sql_template` must contain the `{}`
+/// that receives the `?, ?, ...` placeholders. `chunk_size` is clamped so
+/// `chunk.len() <= SQLITE_MAX_VARIABLE_NUMBER`.
 pub fn query_in_chunks<T, R, F>(
     conn: &Connection,
     sql_template: &str,
@@ -130,9 +123,8 @@ where
     Ok(())
 }
 
-/// Helper to query rows in chunks with additional prefix parameters.
-///
-/// `sql_template` must contain `{}` which will be replaced by `?, ?, ...` placeholders.
+/// Same as [`query_in_chunks`], with prefix parameters bound ahead of the `{}`
+/// placeholders.
 pub fn query_in_chunks_with_params<T, R, F>(
     conn: &Connection,
     sql_template: &str,
@@ -169,7 +161,6 @@ where
     Ok(results)
 }
 
-/// Helper to query rows in chunks using an extraction closure to convert items to `ToSql`.
 pub fn query_in_chunks_by<'a, T, V, R, E, F>(
     conn: &Connection,
     sql_template: &str,
@@ -186,7 +177,6 @@ where
     query_in_chunks_by_with_params(conn, sql_template, &[], items, chunk_size, extract, map_row)
 }
 
-/// Helper to query rows in chunks with prefix parameters and an extraction closure.
 pub fn query_in_chunks_by_with_params<'a, T, V, R, E, F>(
     conn: &Connection,
     sql_template: &str,
@@ -247,9 +237,9 @@ where
     stmt.execute(rusqlite::params_from_iter(params.iter()))
 }
 
-/// Performs chunked batch inserts, splitting `items` so that `chunk.len() * columns.len() <= SQLITE_MAX_VARIABLE_NUMBER`.
-///
-/// Calls `row_fn` for each item to push values into the parameter list.
+/// Chunked batch insert: splits `items` so
+/// `chunk.len() * columns.len() <= SQLITE_MAX_VARIABLE_NUMBER`, calling `row_fn`
+/// per item to push values into the parameter list.
 pub fn batch_insert<T, F>(
     conn: &Connection,
     prefix: &str,
@@ -285,7 +275,6 @@ where
     Ok(total_affected)
 }
 
-/// Macro for convenient batch inserts into SQLite.
 #[macro_export]
 macro_rules! sqlite_batch_insert {
     ($conn:expr, $table:expr, [$($col:expr),+ $(,)?], $items:expr, |$item:pat, $params:ident| $body:block) => {
@@ -431,7 +420,6 @@ mod tests {
         )
         .unwrap();
 
-        // 1. Basic form
         let data1 = vec![("user1", 100), ("user2", 200)];
         let count1 = sqlite_batch_insert!(
             &conn,
@@ -446,7 +434,6 @@ mod tests {
         .unwrap();
         assert_eq!(count1, 2);
 
-        // 2. Custom prefix form
         let data2 = vec![("user2", 250), ("user3", 300)];
         let count2 = sqlite_batch_insert!(
             &conn,
@@ -460,10 +447,8 @@ mod tests {
             }
         )
         .unwrap();
-        // user2 is ignored, user3 is inserted
         assert_eq!(count2, 1);
 
-        // 3. Named fields form with suffix
         let data3 = vec![("user4", 400)];
         let count3 = sqlite_batch_insert!(
             &conn,

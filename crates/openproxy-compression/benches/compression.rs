@@ -2,13 +2,12 @@
 
 //! Benchmark for the compression module.
 //!
-//! Measures `apply_compression` throughput on realistic multi-message
-//! fixtures in `Lite`, `Rtk`, and `LiteRtk` modes. Run with:
+//! Measures `apply_compression` throughput on realistic multi-message fixtures in
+//! `Lite`, `Rtk` and `LiteRtk` modes. Numeric readout:
 //!
-//!   cargo bench -p openproxy-core --bench compression
-//!
-//! Or for a quick numeric readout:
-//!   cargo test -p openproxy-core --bench compression --release -- --nocapture
+//! ```text
+//! cargo test -p openproxy-core --bench compression --release -- --nocapture
+//! ```
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use openproxy_compression::{CompressionMode, apply_compression};
@@ -16,9 +15,8 @@ use serde_json::{Value, json};
 use std::fmt::Write;
 use std::hint::black_box;
 
-/// Build a realistic chat request with N messages: system prompt, user
-/// messages with tool outputs (git status, cargo test, etc.), and
-/// assistant responses. Total ~50 KB of content.
+/// N-message chat request with a system prompt, user turns carrying tool output,
+/// and assistant responses. Roughly 50 KB of content.
 fn build_fixture() -> Vec<openproxy_types::OpenAIMessage> {
     let mut messages = Vec::new();
 
@@ -219,4 +217,3 @@ fn bench_compression(c: &mut Criterion) {
 criterion_group!(benches, bench_compression);
 criterion_main!(benches);
 
-// Benchmark group remains standard.

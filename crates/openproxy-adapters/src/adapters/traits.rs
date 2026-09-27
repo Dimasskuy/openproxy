@@ -6,7 +6,6 @@ use openproxy_types::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-/// Static configuration for a single provider adapter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderAdapterConfig {
     pub id: ProviderId,
@@ -19,7 +18,6 @@ pub struct ProviderAdapterConfig {
     pub rate_limit_scope: String,
 }
 
-// Re-export / alias types from `openproxy_types` to eliminate duplicated enum definitions
 pub type AdapterAuthType = openproxy_types::AuthType;
 pub type AdapterFormat = openproxy_types::ProviderFormat;
 
@@ -27,7 +25,6 @@ thread_local! {
     static SERIALIZE_BUF: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// Helper to serialize a request object, overwrite its `model` field, and return `Bytes`.
 pub fn inject_model_and_serialize<T: Serialize>(
     req: &T,
     upstream_model: &str,
@@ -74,22 +71,17 @@ pub(crate) fn target_format_path(target_format: TargetFormat) -> &'static str {
     }
 }
 
-/// Per-provider adapter. One concrete impl per upstream.
 pub trait ProviderAdapter: Send + Sync {
-    /// Stable identifier of this provider (e.g. `"openrouter"`).
     fn id(&self) -> &ProviderId {
         &self.config().id
     }
 
-    /// Static configuration snapshot.
     fn config(&self) -> &ProviderAdapterConfig;
 
-    /// Mutable configuration access (for dynamic extra headers / overrides).
     fn config_mut(&mut self) -> Option<&mut ProviderAdapterConfig> {
         None
     }
 
-    /// Provider metadata for frontend/admin
     fn metadata(&self) -> ProviderMetadata {
         let built_in = true;
         ProviderMetadata {
@@ -102,27 +94,22 @@ pub trait ProviderAdapter: Send + Sync {
         }
     }
 
-    /// Canonical provider IDs in models.dev that map to this adapter.
     fn models_dev_canonical_ids(&self) -> &'static [&'static str] {
         &[]
     }
 
-    /// Whether this provider supports anonymous fallback requests without an API key.
     fn is_anonymous_fallback(&self) -> bool {
         false
     }
 
-    /// Shortcut for `self.config().auth_type`.
     fn auth_type(&self) -> AdapterAuthType {
         self.config().auth_type
     }
 
-    /// Shortcut for `self.config().format`.
     fn format(&self) -> AdapterFormat {
         self.config().format
     }
 
-    /// Build the URL to POST a chat completion to.
     fn build_chat_url(&self, target_format: TargetFormat, model: &ModelId) -> String {
         let base_url = &self.config().base_url;
         if self.format() == AdapterFormat::Gemini {
@@ -135,7 +122,6 @@ pub trait ProviderAdapter: Send + Sync {
         format!("{base_url}{}", target_format_path(eff_format))
     }
 
-    /// Build the chat URL with account-level context (label).
     fn build_chat_url_for_account(
         &self,
         target_format: TargetFormat,
@@ -145,17 +131,14 @@ pub trait ProviderAdapter: Send + Sync {
         self.build_chat_url(target_format, model)
     }
 
-    /// Build the URL for audio transcription (Whisper).
     fn build_transcription_url(&self) -> String {
         format!("{}/audio/transcriptions", self.config().base_url)
     }
 
-    /// Build the URL for embeddings.
     fn build_embeddings_url(&self) -> String {
         format!("{}/embeddings", self.config().base_url)
     }
 
-    /// Format an embedding request for upstream OpenAI-compatible embeddings endpoints.
     fn format_embedding_request(
         &self,
         req: &openproxy_types::embeddings::EmbeddingRequest,
@@ -164,22 +147,18 @@ pub trait ProviderAdapter: Send + Sync {
         inject_model_and_serialize(req, upstream_model)
     }
 
-    /// Build the URL for image generation.
     fn build_image_url(&self) -> String {
         format!("{}/images/generations", self.config().base_url)
     }
 
-    /// Build the URL for image edits.
     fn build_image_edits_url(&self) -> String {
         format!("{}/images/edits", self.config().base_url)
     }
 
-    /// Build the URL for image variations.
     fn build_image_variations_url(&self) -> String {
         format!("{}/images/variations", self.config().base_url)
     }
 
-    /// Format an image generation request for upstream OpenAI-compatible image endpoints.
     fn format_image_request(
         &self,
         req: &openproxy_types::images::ImageGenerationRequest,
@@ -188,17 +167,14 @@ pub trait ProviderAdapter: Send + Sync {
         inject_model_and_serialize(req, upstream_model)
     }
 
-    /// Build the URL for video generation.
     fn build_video_url(&self) -> String {
         format!("{}/video/generations", self.config().base_url)
     }
 
-    /// Build the URL for System One (Jev / Laya) requests.
     fn build_system_one_url(&self) -> String {
         format!("{}/systemone", self.config().base_url)
     }
 
-    /// Format a System One request.
     fn format_system_one_request(
         &self,
         req: &openproxy_types::systemone::SystemOneRequest,
@@ -227,7 +203,6 @@ pub trait ProviderAdapter: Send + Sync {
         inject_model_and_serialize(&normalized, upstream_model)
     }
 
-    /// Build the auth header pair `(header_name, header_value)` for the given API key.
     fn build_auth_header(&self, api_key: &str) -> Option<(String, String)> {
         match self.config().auth_type {
             AdapterAuthType::Bearer | AdapterAuthType::OAuth => {
@@ -239,7 +214,6 @@ pub trait ProviderAdapter: Send + Sync {
         }
     }
 
-    /// Build the full set of request headers for a chat completion call.
     fn build_headers(
         &self,
         api_key: &str,
@@ -257,17 +231,14 @@ pub trait ProviderAdapter: Send + Sync {
         headers
     }
 
-    /// URL of the provider's `/models` endpoint for live discovery.
     fn models_url(&self) -> Option<String> {
         Some(format!("{}/models", self.config().base_url))
     }
 
-    /// Models URL with account-level context (label).
     fn models_url_for_account(&self, _account_label: &str) -> Option<String> {
         self.models_url()
     }
 
-    /// Fetch the live model list using the provided hyper-based upstream client and API key.
     fn fetch_models(
         &self,
         upstream_client: &Arc<UpstreamClient>,
@@ -289,7 +260,6 @@ pub trait ProviderAdapter: Send + Sync {
         }
     }
 
-    /// Fetch models with account-level context (label).
     fn fetch_models_for_account(
         &self,
         upstream_client: &Arc<UpstreamClient>,
@@ -299,7 +269,6 @@ pub trait ProviderAdapter: Send + Sync {
         async move { self.fetch_models(upstream_client, api_key).await }
     }
 
-    /// Fetch models from the provider, optionally routing through a proxy.
     fn fetch_models_with_proxy(
         &self,
         upstream_client: &Arc<UpstreamClient>,
@@ -309,7 +278,6 @@ pub trait ProviderAdapter: Send + Sync {
         self.fetch_models(upstream_client, api_key)
     }
 
-    /// Fetch models for an account from the provider, optionally routing through a proxy.
     fn fetch_models_for_account_with_proxy(
         &self,
         upstream_client: &Arc<UpstreamClient>,
@@ -320,7 +288,6 @@ pub trait ProviderAdapter: Send + Sync {
         self.fetch_models_for_account(upstream_client, api_key, account_label)
     }
 
-    /// Fetch account quota from the provider.
     fn fetch_quota(
         &self,
         _: &Arc<UpstreamClient>,
@@ -332,7 +299,6 @@ pub trait ProviderAdapter: Send + Sync {
         std::future::ready(None)
     }
 
-    /// Fetch account quota from the provider, optionally routing auxiliary requests through a proxy.
     fn fetch_quota_with_proxy(
         &self,
         upstream_client: &Arc<UpstreamClient>,
@@ -345,14 +311,12 @@ pub trait ProviderAdapter: Send + Sync {
         self.fetch_quota(upstream_client, api_key, access_token, provider_specific)
     }
 
-    /// Normalize an OpenAI request view before serialization.
     fn normalize_openai_request(&self, view: &mut openproxy_types::OpenAIRequestView) {
         if view.extra.contains_key("disabled") {
             view.extra.to_mut().remove("disabled");
         }
     }
 
-    /// Allows the adapter to wrap or mutate the final request body before it is dispatched upstream.
     fn wrap_request_body(
         &self,
         body: bytes::Bytes,
@@ -363,7 +327,6 @@ pub trait ProviderAdapter: Send + Sync {
         Ok(body)
     }
 
-    /// Format/translate an OpenAI request into native request body bytes for this adapter.
     fn format_request(
         &self,
         target_format: TargetFormat,
@@ -383,7 +346,6 @@ pub trait ProviderAdapter: Send + Sync {
             })
     }
 
-    /// Translate a non-streaming response JSON Value into an OpenAIResponse.
     fn translate_non_streaming_response(
         &self,
         target_format: TargetFormat,
@@ -398,8 +360,6 @@ pub trait ProviderAdapter: Send + Sync {
     }
 }
 
-/// Helper to construct standard headers for providers with a client spoofer,
-/// merging auth, Content-Type, spoofed identity headers, and custom extra headers.
 pub fn build_spoofer_headers(
     auth: Option<(String, String)>,
     spoofer: &impl crate::spoofer::ClientSpoofer,

@@ -222,8 +222,8 @@ pub fn is_target_available(
     true
 }
 
-/// Standardizes target availability checking and circuit breaker failure recording
-/// across unary endpoints (images, audio, embeddings).
+/// Availability check and circuit-breaker failure recording for unary endpoints
+/// (images, audio, embeddings).
 #[macro_export]
 macro_rules! guarded_unary_target {
     (check: $db_pool:expr, $circuit_breaker:expr, $target:expr $(,)?) => {

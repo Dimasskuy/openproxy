@@ -1,4 +1,4 @@
-// views/playground/hyperparams.ts — Hyperparameter UI renderers.
+// views/playground/hyperparams.ts — hyperparameter UI renderers.
 import { html, type TemplateResult } from 'lit-html';
 import { requestUpdate } from '../../state/reactive.js';
 import type { PlaygroundState } from './shared.js';

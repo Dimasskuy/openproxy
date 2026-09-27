@@ -61,9 +61,8 @@ fn test_classify_opencode_target_format() {
     );
 }
 
-/// `union-alpha` is only served by `/zen/v1/messages` on both flavors; the
-/// family heuristic has no substring to key on and used to route it to
-/// `/chat/completions`, which answers 500 from upstream.
+/// `union-alpha` is only served by `/zen/v1/messages` on both flavors, and no
+/// substring in the id distinguishes it, so the exact-ID override has to carry it.
 #[test]
 fn union_alpha_uses_anthropic_messages_on_both_flavors() {
     assert_eq!(

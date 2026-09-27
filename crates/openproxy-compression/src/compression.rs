@@ -4,8 +4,8 @@
 //! - `Off`: No compression, zero overhead.
 //! - `Lite`: 5 deterministic text-normalization techniques + content-shape
 //!   routing (SmartCrusher for JSON arrays, LogCompressor for build logs,
-//!   DiffCompressor for git diffs). Zero semantic change for text; lossless-first
-//!   for JSON; lossy-but-recoverable for logs/diffs.
+//!   DiffCompressor for git diffs). Text is semantically unchanged, JSON
+//!   lossless-first, logs and diffs lossy-but-recoverable.
 //! - `Rtk`: Command-aware filtering for CLI tool output (git, test, build, etc.).
 //! - `LiteRtk`: Both Lite and Rtk, in that order.
 
@@ -67,8 +67,8 @@ impl TextCompressor for CompressionMode {
     }
 }
 
-/// Helper that measures character and token counts before and after running a `TextCompressor`,
-/// returning unified `CompressionStats`.
+/// Char and token counts before and after a `TextCompressor`, as unified
+/// `CompressionStats`.
 pub fn measure_compression<C: TextCompressor>(
     messages: &mut Vec<OpenAIMessage>,
     compressor: &C,
@@ -90,10 +90,8 @@ pub fn measure_compression<C: TextCompressor>(
     )
 }
 
-/// Aplica compresión a los mensajes del request según el modo.
-///
-/// Modifica `messages` in-place y retorna estadísticas de la compresión.
-/// Retorna true si la compresión aplicaría algún cambio. Evita clonación profunda.
+/// Indica si el modo comprimido superaría el umbral de chars, sin clonar los
+/// mensajes.
 pub fn would_compress(messages: &[OpenAIMessage], mode: CompressionMode) -> bool {
     match mode {
         CompressionMode::Off => false,
@@ -114,7 +112,7 @@ pub fn apply_compression(
     measure_compression(messages, &mode)
 }
 
-/// Cuenta chars totales del contenido textual de los mensajes.
+/// Chars totales del contenido textual de los mensajes.
 fn count_content_chars(msgs: &[OpenAIMessage]) -> usize {
     msgs.iter().map(|m| m.extract_text_cow().len()).sum()
 }
@@ -363,8 +361,7 @@ mod tests {
 
     #[test]
     fn test_rtk_does_not_route_user_messages() {
-        // User messages must never be compressed by the content router
-        // (they're the operator's intent).
+        // User messages are the operator's intent and never get compressed.
         let mut array = Vec::new();
         for i in 0..20 {
             array.push(serde_json::json!({"id": i, "name": format!("item{}", i)}));

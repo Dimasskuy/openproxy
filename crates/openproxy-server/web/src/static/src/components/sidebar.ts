@@ -1,5 +1,4 @@
 // components/sidebar.ts — renders the sidebar (brand, nav, health, collapse toggle).
-// Migrated to lit-html: uses render() instead of innerHTML.
 
 import { html, render, type TemplateResult } from 'lit-html';
 import { state } from "../state/index.js";
@@ -11,22 +10,15 @@ import {
   getUnreadCount,
   onUnreadCountChange,
 } from "../state/notifications-store.js";
-// B1 (Bug 3): the sidebar now also renders a badge on the "Debug
-// Logs" link showing the count of unviewed WARN+ERROR entries in
-// the server's debug-log ring buffer. The store polls every 30s
-// (independent of the debug-logs view's own 2s poll) so the badge
-// reflects new errors even when the user isn't on the Debug Logs
-// page.
+// Sidebar also badges the "Debug Logs" link with unviewed WARN+ERROR ring-buffer
+// entries. The store polls every 30s, independent of the debug-logs view's 2s poll.
 import {
   initDebugLogsStore,
   getUnviewedWarnErrorCount,
   onUnviewedWarnErrorCountChange,
 } from "../state/debug-logs-store.js";
-// DASHBOARD-FIX (Bug 2 / Step 2f): the sidebar now renders a Logout
-// button in its footer. The button calls `clearToken()` (wipes the
-// localStorage key + the in-memory cache) and navigates to `#/login`,
-// which the router's auth gate lets through because `isLoggedIn()`
-// is now false.
+// Footer Logout button: `clearToken()` wipes the localStorage key + in-memory cache and
+// navigates to `#/login`, which the router's auth gate admits once `isLoggedIn()` is false.
 import { clearToken, isLoggedIn } from "../state/auth.js";
 import { disconnectLogsWebSocket } from "../state/ws.js";
 
@@ -38,17 +30,12 @@ interface SidebarLink {
   href: string;
   icon: NavIconName;
   label: string;
-  /** Optional badge key. When set, the sidebar renders a small red
-   *  pill next to the label whose numeric value comes from the
-   *  corresponding store. Hidden when the value is 0. */
+  /** Badge key: renders a red pill with the matching store's count, hidden when 0. */
   badgeKind?: "notifications-unread" | "debug-logs-unviewed";
 }
 interface SidebarGroup { label: string; links: SidebarLink[]; }
 
-/** Q18: the 12 sidebar navigation glyphs are centralized in
- *  `lib/icons.ts` (section "Navigation (sidebar)"). This lookup maps
- *  the route-level nav names to their icon constructors so the
- *  sidebar contains no inline SVG markup. */
+/** Nav glyphs come from `lib/icons.ts` ("Navigation (sidebar)") so the sidebar has no inline SVG. */
 const NAV_ICONS: Record<NavIconName, (cls?: string) => TemplateResult> = {
   home: icons.navHome,
   providers: icons.navProviders,
@@ -64,7 +51,7 @@ const NAV_ICONS: Record<NavIconName, (cls?: string) => TemplateResult> = {
   "proxy-sources": icons.navProxySources,
 };
 
-/** Resolve a nav icon by name via the centralized `icons` registry. */
+/** Resolve a nav icon through the centralized `icons` registry. */
 function navIcon(name: NavIconName): TemplateResult {
   return NAV_ICONS[name]();
 }
@@ -103,8 +90,7 @@ function applyActiveState(): void {
     const aEl = a as HTMLElement;
     const active = isActive(aEl.getAttribute("href") || "");
     aEl.classList.toggle("active", active);
-    // a11y: announce the current page to screen readers so they
-    // can convey which nav link is active without visual context.
+    // a11y: mark the active link for screen readers (no visual context available).
     if (active) {
       aEl.setAttribute("aria-current", "page");
     } else {
@@ -116,30 +102,22 @@ function applyActiveState(): void {
 const STORAGE_KEY = "openproxy:sidebarCollapsed";
 
 function renderLink(l: SidebarLink, collapsed: boolean): TemplateResult {
-  // The notifications badge lives next to the nav label. It is hidden
-  // when the count is 0 (lit-html `nothing` sentinel — emits no DOM
-  // node, so the layout doesn't shift when the count drops to 0).
-  // B1 (Bug 3): added the `debug-logs-unviewed` badge kind, which
-  // surfaces the count of unviewed WARN+ERROR entries in the
-  // server's debug-log ring buffer so discovery failures (and other
-  // WARN-level events) are visible without navigating to the Debug
-  // Logs view.
+  // Badges render next to the nav label; count 0 uses lit-html's `nothing` sentinel so
+  // no DOM node is emitted and the layout does not shift. `debug-logs-unviewed` surfaces
+  // unviewed WARN+ERROR ring-buffer entries without navigating to the Debug Logs view.
   let badge: TemplateResult = html``;
   if (l.badgeKind === "notifications-unread") {
     const count: number = getUnreadCount();
     if (count > 0) {
-      // When collapsed, show only the count pill (no label). The pill
-      // sits in the same flex row so it visually replaces the label.
+      // Collapsed: the pill sits in the label's flex row, so it stands in for the label.
       const display: string = count > 99 ? "99+" : String(count);
       badge = html`<span class="sidebar-badge ${collapsed ? "collapsed" : ""}" title=${t("notifications.unread_count", { count })}>${display}</span>`;
     }
   } else if (l.badgeKind === "debug-logs-unviewed") {
     const count: number = getUnviewedWarnErrorCount();
     if (count > 0) {
-      // Same red pill style as the notifications badge (the base
-      // `.sidebar-badge` class already uses `var(--color-error)`
-      // as the background). The title gives hover-help in case the
-      // user wonders what the number means.
+      // Same red pill as the notifications badge (`.sidebar-badge` already uses
+      // `var(--color-error)`); the title explains the number.
       const display: string = count > 99 ? "99+" : String(count);
       badge = html`<span class="sidebar-badge ${collapsed ? "collapsed" : ""}" title=${count + " unviewed WARN/ERROR debug log entries"}>${display}</span>`;
     }
@@ -152,50 +130,34 @@ function renderLink(l: SidebarLink, collapsed: boolean): TemplateResult {
 let storeBootstrapped: boolean = false;
 let debugLogsStoreBootstrapped: boolean = false;
 
-/** Initialise the notifications store + WS subscription the first
- *  time the sidebar renders. Idempotent — safe to call from every
- *  `renderSidebar()`. The store bootstraps the WS, the 30s poll, and
- *  the ws-bus subscription; we then subscribe to count changes so
- *  the badge re-renders on every update.
+/** Bootstrap the notifications store + WS on first sidebar render. Idempotent.
  *
- *  IMPORTANT: we only bootstrap when the user is logged in. On the
- *  login page the sidebar is hidden via CSS (`body.on-login-page`),
- *  but `renderSidebar()` still runs (it's called by `mountShell()`
- *  at boot, before the router's auth gate redirects to #/login).
- *  Without this guard, `initNotificationsStore()` would open the
- *  WebSocket — which fails with 401 because there's no token yet,
- *  producing the "Firefox no puede establecer una conexión con el
- *  servidor en ws://.../admin/ws" console error on the login screen.
- *  The store is lazily bootstrapped on the first `renderSidebar()`
- *  call that happens AFTER login (when `isLoggedIn()` returns true). */
+ *  Only after login: on the login page the sidebar is CSS-hidden but
+ *  `renderSidebar()` still runs (mountShell() calls it before the auth gate), so
+ *  bootstrapping earlier would open a WebSocket with no token and log a 401
+ *  `ws://…/admin/ws` console error on the login screen. */
 function maybeBootstrapNotifications(): void {
   if (storeBootstrapped) return;
   if (!isLoggedIn()) return;
   storeBootstrapped = true;
   initNotificationsStore();
-  // Re-render the sidebar on every count change so the badge stays
-  // in sync. The notifications view also subscribes to count changes
-  // for its own header badge — both fire on every change, which is
-  // fine (lit-html's diff is cheap).
+  // Re-render on every count change; the notifications view also subscribes, which is fine
+  // (lit-html's diff is cheap).
   onUnreadCountChange(() => {
-    // Only re-render the sidebar — the view handles its own updates.
+    // Only the sidebar re-renders; the view handles its own updates.
     renderSidebar();
   });
 }
 
-/** Initialise the debug-logs store the first time the sidebar
- *  renders (after login). Idempotent. Mirrors the
- *  `maybeBootstrapNotifications` guard — the 30s poll hits an
- *  authenticated endpoint, so we don't want to start it until the
- *  user is logged in (otherwise it would 401 every 30s before
- *  login). */
+/** Bootstrap the debug-logs store on first render. Idempotent. Gated on login for the
+ *  same reason as `maybeBootstrapNotifications`: the 30s poll hits an authenticated
+ *  endpoint and would 401 every 30s before login. */
 function maybeBootstrapDebugLogs(): void {
   if (debugLogsStoreBootstrapped) return;
   if (!isLoggedIn()) return;
   debugLogsStoreBootstrapped = true;
   initDebugLogsStore();
-  // Re-render the sidebar on every unviewed-count change so the
-  // badge reflects new WARN+ERROR entries as they arrive.
+  // Re-render on every unviewed-count change so the badge tracks new WARN+ERROR entries.
   onUnviewedWarnErrorCountChange(() => {
     renderSidebar();
   });
@@ -306,19 +268,12 @@ export function toggleSidebar(): void {
   renderSidebar();
 }
 
-/** Wipe the stored admin token and bounce to the login route.
- *  Registered as `data-action="logout"` in `handlers/registry.ts`
- *  so the sidebar button can dispatch via the same shim every
- *  other data-action uses. We deliberately don't also stop the
- *  bg-poll or close the WS here — `navigate()` re-evaluates on
- *  hashchange, the auth gate redirects to login, and the login
- *  view's mount path doesn't call `startBgPoll()` (it's already
- *  running from boot, but its 401s are silently swallowed by
- *  `bg-poll.ts::healthTick`'s catch). The WS, if connected,
- *  will be torn down by its own close handler when the server
- *  rejects the next frame — and `state/ws.ts::connectLogsWebSocket`
- *  won't be re-invoked until the user logs in again and a
- *  live-store-viewing route is mounted. */
+/** Wipe the stored admin token and bounce to `#/login`; registered as `data-action="logout"`
+ *  in `handlers/registry.ts` so it dispatches through the same shim as every other action.
+ *  We deliberately don't stop the bg-poll or close the WS: the auth gate redirects to
+ *  login, `healthTick`'s catch swallows the poll's 401s, and the WS tears itself down when
+ *  the server rejects the next frame. `connectLogsWebSocket` is not re-invoked until the
+ *  user logs back in and mounts a live-store route. */
 export function logout(): void {
   disconnectLogsWebSocket();
   clearToken();

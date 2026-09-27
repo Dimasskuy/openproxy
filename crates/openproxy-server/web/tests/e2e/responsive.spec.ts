@@ -1,12 +1,6 @@
-// tests/e2e/responsive.spec.ts — verifies the base responsive
-// CSS at 768px and 480px breakpoints. Asserts that the sidebar
-// becomes a top-bar on mobile, the layout does not produce
-// horizontal scroll on the body, and the desktop layout is
-// unchanged at 1280px.
-//
-// Mirrors the spec's VERIFICATION section (375x667, 1280x800).
-// The project uses Playwright; the spec mentioned "puppeteer-core"
-// as the concept, not the library name.
+// tests/e2e/responsive.spec.ts — base responsive CSS at the 768px and
+// 480px breakpoints: the sidebar becomes a top-bar on mobile, the body
+// never scrolls horizontally, and the 1280px desktop layout is unchanged.
 //
 import { test, expect, type Page } from '@playwright/test';
 
@@ -46,7 +40,6 @@ test.describe('Responsive — mobile (375x667)', () => {
   test('home: sidebar is a top-bar, no horizontal body scroll, all nav links visible', async ({ page }: { page: Page }) => {
     await gotoHome(page);
 
-    // 1. Sidebar is at the top: its top edge must be at or above
     // main's top edge. (We allow a 1px tolerance for sub-pixel
     // rounding.) Crucially, the sidebar's `right` edge must
     // extend past main's right edge — i.e. it spans the full
@@ -64,13 +57,11 @@ test.describe('Responsive — mobile (375x667)', () => {
     // a 375px viewport the inner grid is 373px wide.
     expect(sbBox!.width).toBe(373);
 
-    // 2. All nav links are visible.
     for (const label of NAV_LINKS) {
       const link = page.locator(`.sidebar nav a`, { hasText: label });
       await expect(link).toBeVisible();
     }
 
-    // 3. No horizontal scroll on the body. The spec allows a 2px
     // tolerance for sub-pixel rounding on different platforms.
     const { scrollW, innerW } = await page.evaluate(() => ({
       scrollW: document.body.scrollWidth,
@@ -107,7 +98,6 @@ test.describe('Responsive — mobile (375x667)', () => {
     await page.setViewportSize({ width: 360, height: 720 });
     await gotoHome(page);
 
-    // 1. main padding: 0.75rem (var(--space-3)). Note that base.css
     // sets `font-size: var(--fs-md)` (= 0.95rem) on <html>, which
     // makes 1rem = 0.95 * 16px = 15.2px. So 0.75rem = 11.4px.
     const mainPad = await page.locator('#main').evaluate(
@@ -115,7 +105,6 @@ test.describe('Responsive — mobile (375x667)', () => {
     );
     expect(mainPad).toBe('11.4px');
 
-    // 2. page-header h2 font-size: 1.1rem. 1.1 * 15.2 = 16.72px.
     const h2Size = await page.locator('.page-header h2').evaluate(
       (el) => getComputedStyle(el).fontSize,
     );

@@ -309,7 +309,7 @@ fn write_antigravity_token_file(
         ))
     })?;
 
-    // Also sync ~/.gemini/oauth_creds.json for CLI in SSH sessions and containers
+    // Gemini CLI también lee ~/.gemini/oauth_creds.json (SSH y contenedores).
     let creds_file = gemini_dir.join("oauth_creds.json");
     let expiry_ms = expires_at
         .and_then(|exp| chrono::DateTime::parse_from_rfc3339(exp).ok())
@@ -416,8 +416,7 @@ pub async fn apply_account_local_cli(
 }
 
 // ==========
-// GAP-7: POST /admin/api/accounts/scan
-// (docs/specs/antigravity-gaps-p3.md §7)
+// GAP-7: POST /admin/api/accounts/scan (docs/specs/antigravity-gaps-p3.md §7)
 // ==========
 
 #[derive(Debug, Default, Deserialize)]
@@ -447,28 +446,25 @@ pub struct ImportSummary {
 /// opcionalmente, las importa como accounts.
 ///
 /// Body (todos los campos opcionales):
-/// * `sources:     Vec<String>` — reservado para follow-up multi-provider;
-///   hoy solo se escanea antigravity-cli.
-/// * `auto_import: bool`        — si true, crea accounts vía
-///   `services().accounts.create` y dispara
-///   `spawn_background_provider_refresh`.
-/// * `dry_run:     bool`        — si true (o `auto_import=false`), devuelve
-///   la lista de discoveries sin tocar la DB.
+/// * `auto_import: bool` — si true, crea accounts vía
+///   `services().accounts.create` y dispara `spawn_background_provider_refresh`.
+/// * `dry_run: bool`     — si true (o `auto_import=false`), devuelve la lista de
+///   discoveries sin tocar la DB.
 ///
-/// AGENTS §4.3: el scan offline corre en `spawn_blocking`; el writer guard
-/// de SQLite se libera antes de cualquier `.await`.
+/// AGENTS §4.3: el scan offline corre en `spawn_blocking`; el writer guard de
+/// SQLite se libera antes de cualquier `.await`.
 pub async fn scan_accounts(
     State(s): State<AppState>,
     identity: super::auth::Identity,
     Json(q): Json<ScanQuery>,
 ) -> Result<Json<ScanResponse>, ApiError> {
     super::auth::audit_secret_read(&identity, "host_cli_oauth_tokens_scan", "accounts:scan");
-    // 1. Scan offline (no DB lock tomado).
+    // Scan offline, sin tomar ningún lock de DB.
     let discovered = tokio::task::spawn_blocking(core_account_scanner::scan_external_accounts)
         .await
         .map_err(|e| ApiError(CoreError::Internal(format!("scan join error: {e}"))))?;
 
-    // 2. dry_run / sin auto_import: devolver sin tocar DB.
+    // dry_run o sin auto_import: devolver sin tocar la DB.
     if q.dry_run || !q.auto_import {
         return Ok(Json(ScanResponse {
             scanned: discovered,
@@ -476,8 +472,8 @@ pub async fn scan_accounts(
         }));
     }
 
-    // 3. auto_import: crear accounts vía el mismo path OAuth que
-    //    `resolve_or_create_oauth_account` (handlers/admin/oauth.rs).
+    // auto_import: mismo path OAuth que `resolve_or_create_oauth_account`
+    // (handlers/admin/oauth.rs).
     let mut imported = Vec::with_capacity(discovered.len());
     for entry in discovered {
         let id = s.services().accounts.create(

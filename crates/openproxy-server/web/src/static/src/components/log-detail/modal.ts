@@ -1,19 +1,9 @@
-// components/log-detail/modal.ts — the log-detail modal lifecycle, template
-// and tab UI. Owns `renderLogDetailModal` (the public template), the
-// open/close/re-render lifecycle (openLogDetail, closeLogDetailModal,
-// removeLogDetailModal, renderModal, updateOpenLogDetail, showLogDetail),
-// the tab click handling (logDetailTabClick / initializeLogDetailTabs), the
-// clock-tick re-render subscription, and the E2E test window hook.
+// Log-detail modal: `renderLogDetailModal` template, open/close/re-render lifecycle,
+// tab click handling, the clock-tick re-render subscription, and the E2E test hook.
 //
-// KNOWN CYCLE (index ↔ modal): this module imports the tab-body renderers
-// (renderRequestTab, renderResponseTab, jsonSection, statusPillClass,
-// readString) from index.ts to compose the modal template; index.ts only
-// references this module via `export { ... }` re-export statements (it never
-// *calls* anything here). The cycle is safe because modal.ts calls those
-// hoisted function declarations only at render time (never during module
-// evaluation) and index.ts makes no runtime calls into modal.ts.
-//
-// Split out of the former components/log-detail.ts monolith (Q19).
+// KNOWN CYCLE (index ↔ modal): the tab-body renderers come from index.ts, which only
+// re-exports this module; the cycle resolves because those hoisted function declarations
+// run at render time, not during module evaluation.
 
 import { html, render, type TemplateResult } from "lit-html";
 import { state } from "../../state/index.js";
@@ -40,26 +30,19 @@ import {
 } from "./index.js";
 
 export function renderLogDetailModal(log: LogDetailLog): TemplateResult {
-  // Normalize the row shape: the backend's /usage/detail returns
-  // status_code, total_ms, upstream_model_id, etc., but the modal
-  // originally assumed a richer payload (status, latency_ms, model,
-  // cost, requests, response, errors, meta). Map the backend's
-  // canonical field names onto the modal's expected shape so a row
-  // from the table — which only has the live-update shape — looks
-  // the same in the modal as a row from /usage/detail.
+  // /usage/detail returns canonical names (status_code, total_ms, upstream_model_id) while the
+  // modal expects richer ones (status, latency_ms, model, cost, requests, response, errors, meta),
+  // so a table row and a detail row render identically.
   const detail: Record<string, unknown> = (log.detail as Record<string, unknown>) || {};
   const meta: Record<string, unknown> = (log.meta as Record<string, unknown>) || (detail["meta"] as Record<string, unknown>) || (log as Record<string, unknown>);
   const response: unknown = log.response ?? detail["response"] ?? log.response_body_json ?? null;
   const isStreaming: boolean = !!((log as Record<string, unknown>)["is_streaming"]);
-  // A streaming request that didn't complete is "partial" — the
-  // backend persisted whatever was accumulated up to the point of
-  // failure. Pass this to renderResponseTab so it shows a banner.
+  // A stream that never completed is "partial": the backend persisted what it had.
+  // renderResponseTab shows a banner for it.
   const streamComplete: boolean = !!((log as Record<string, unknown>)["stream_complete"]);
   const isPartial: boolean = isStreaming && !streamComplete;
-  // Read from the most specific to the least specific. `log.error_message`
-  // comes from the recent-rows endpoint (RecentUsageRow.error_message
-  // in usage.rs); `log.error_msg` / `log.error_msg_redacted` come from
-  // the detail endpoint (UsageDetailRow.error_msg in usage.rs).
+  // `log.error_message` comes from the recent-rows endpoint; `log.error_msg` and
+  // `log.error_msg_redacted` from the detail endpoint (usage.rs).
   const detailErrors: unknown = (detail as Record<string, unknown>)["errors"];
 
   const isInflight: boolean = log.id === 0 || log.id == null;
@@ -77,10 +60,8 @@ export function renderLogDetailModal(log: LogDetailLog): TemplateResult {
     || detailErrors
     || synthesizedError
     || null;
-  // The backend's UsageDetailRow has a flat shape: it exposes
-  // `request_body_json` (a serde_json::Value, already parsed) instead of
-  // the older `requests[]` / `stages[]` arrays, which the UsageDetailRow
-  // struct never had. We display the request body as a pretty JSON viewer.
+  // UsageDetailRow is flat: `request_body_json` is already a parsed serde_json::Value, and the
+  // `requests[]` / `stages[]` arrays it never had are not fabricated here.
   const requestBody: unknown = log.request_body_json != null
     ? log.request_body_json
     : (detail["request_body_json"] != null ? detail["request_body_json"] : null);
@@ -114,7 +95,7 @@ export function renderLogDetailModal(log: LogDetailLog): TemplateResult {
     ? "/v1/video/generations"
     : "/v1/chat/completions";
 
-  // TTFT & Latency calculation: "3,277 ms (ttft 8ms)"
+  // Latency: "3,277 ms (ttft 8ms)"
   const ttftMs = (log as Record<string, unknown>)["time_to_first_token_ms"]
     ?? (log as Record<string, unknown>)["ttft_ms"]
     ?? (attempt as Record<string, unknown> | undefined)?.["ttft_ms"]
@@ -124,7 +105,7 @@ export function renderLogDetailModal(log: LogDetailLog): TemplateResult {
     ? `${latVal} ms${ttftMs != null ? ` (ttft ${ttftMs}ms)` : ""}`
     : "—";
 
-  // Tokens calculation: "6,897↓ 150↑ (7,047 tot)"
+  // Tokens: "6,897↓ 150↑ (7,047 tot)"
   const promptTokens = log.prompt_tokens;
   const compTokens = log.completion_tokens;
   const totalTokens = (log as Record<string, unknown>)["total_tokens"] as number | undefined
@@ -135,17 +116,17 @@ export function renderLogDetailModal(log: LogDetailLog): TemplateResult {
     ? `${promptEstimated}${promptTokens != null ? promptTokens.toLocaleString() : "0"}↓ ${compEstimated}${compTokens != null ? compTokens.toLocaleString() : "0"}↑ (${totalTokens != null ? totalTokens.toLocaleString() : "0"} tot)`
     : "—";
 
-  // Speed calculation: "45.9 tok/s"
+  // Speed: "45.9 tok/s"
   const speedDisplay = log.tokens_per_sec != null ? `${log.tokens_per_sec.toFixed(1)} tok/s` : "—";
 
-  // Cost calculation: "$0.0000"
+  // Cost: "$0.0000"
   const costDisplay = costRaw != null
     ? (typeof costRaw === "number" ? `$${costRaw.toFixed(4)}` : `$${Number(costRaw).toFixed(4)}`)
     : "$0.0000";
 
   const apiKeyDisplay = apiKeyId != null ? `#${String(apiKeyId)}` : "—";
 
-  // Compression savings info
+
   const pct = log.compression_savings_pct ?? null;
   const tech = log.compression_techniques ?? "";
   const pctTextVal = pct != null ? (pct < 1 ? pct.toFixed(2) : Math.round(pct).toString()) : "";
@@ -166,7 +147,6 @@ export function renderLogDetailModal(log: LogDetailLog): TemplateResult {
           <button type="button" class="close-btn" @click=${(e: Event) => closeLogDetailModal(e)} aria-label="Close">${icons.close()}</button>
         </div>
         <div class="modal-body">
-          <!-- Resumen: Desktop 4 columnas -->
           <div class="log-detail-summary desktop-summary">
             <div><strong>Status:</strong> <span class="status-pill ${statusClass}">${String(status)}</span></div>
             <div><strong>Endpoint:</strong> <span title="HTTP Entry: POST ${endpointPath} (${endpointKind})"><code style="font-size:0.85em;padding:1px 4px;background:var(--color-surface-2);border-radius:0;">POST ${endpointPath}</code> <span class="log-type-tag log-type-tag--${endpointKind}" style="font-size:0.75em;padding:1px 5px;margin-left:4px;">${endpointIcon(endpointKind)} ${endpointKind}</span></span></div>
@@ -183,7 +163,6 @@ export function renderLogDetailModal(log: LogDetailLog): TemplateResult {
             ${log.pii_redacted ? html`<div><strong>PII:</strong> <span class="status-pill" style="background:rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); font-weight: 500; display: inline-flex; align-items: center; gap: 4px;" title="Entities redacted before upstream">${icons.eye()} ${log.pii_redacted}</span></div>` : ""}
           </div>
 
-          <!-- Resumen: Mobile 2x2 Mini-Cards -->
           <div class="mobile-modal-kpi-grid">
             <div class="m-kpi-card">
               <span class="kpi-label">Petición & Estado</span>
@@ -243,45 +222,37 @@ function renderLogDetailTabs(currentTab: string, rawJson: unknown): TemplateResu
   `;
 }
 
-/** Click handler for the `.detail-tab` buttons. Toggles which
- *  `#log-detail-content [data-log-tab]` section is visible (mutually
- *  exclusive) AND marks the clicked button as `.active`. */
+/** Click handler for the `.detail-tab` buttons: toggles which `[data-log-tab]` section is
+ *  visible (mutually exclusive) and marks the clicked button `.active`. */
 export function logDetailTabClick(which: string, _e?: Event): void {
   setActiveLogDetailTab(which);
-  // Update section visibility in DOM
+
   document.querySelectorAll("#log-detail-content [data-log-tab]").forEach((sec) => {
     const el = sec as HTMLElement;
     el.style.display = (sec.getAttribute("data-log-tab") === which) ? "" : "none";
   });
-  // Update active tab buttons
+
   document.querySelectorAll(".tabs-toolbar .detail-tab, .tabs-and-actions-bar .detail-tab, .log-detail-tabs .detail-tab").forEach((btn) => {
     const b = btn as HTMLElement;
     b.classList.toggle("active", b.getAttribute("data-arg1") === which);
   });
 }
 
-// Initialize the log-detail tab UI: show only the first [data-log-tab]
-// section, hide the remaining ones, and mark the first detail-tab as active.
+// Show only the first [data-log-tab] section, hide the rest, and mark the first tab active.
 export function initializeLogDetailTabs(): void {
   setActiveLogDetailTab("request");
   logDetailTabClick("request");
 }
 
-/** Remove a `.log-detail-modal` element AND its wrapper parent (the
- *  empty `<div>` we created in `showLogDetail` to host the rendered
- *  TemplateResult). Keeps `#modal-root` clean so the next modal
- *  opens in a fresh wrapper. */
+/** Remove the `.log-detail-modal` element AND its wrapper host div, keeping `#modal-root`
+ *  clean so the next modal opens in a fresh wrapper. */
 function removeLogDetailModal(m: HTMLElement): void {
   const wrapper = m.parentElement;
   m.remove();
   if (wrapper && wrapper.children.length === 0 && wrapper.parentElement?.id === "modal-root") {
     wrapper.remove();
   }
-  // Clear the pinned identity so subsequent WS events don't try to
-  // update a now-closed modal. Without this, `updateOpenLogDetail`
-  // would see no `.log-detail-modal` in the DOM and bail early
-  // anyway, but clearing the pin is belt-and-suspenders and makes
-  // the lifecycle explicit.
+  // Clear the pin so later WS events skip the closed modal.
   clearPinnedIdentity();
   state.logs.selectedIdentity = null;
 }
@@ -320,7 +291,7 @@ export async function openLogDetail(
     root.appendChild(wrapper);
   }
 
-  // We re-render immediately.
+
   renderModal();
   initializeLogDetailTabs();
 }
@@ -333,11 +304,8 @@ function renderModal() {
   const wrapper = document.querySelector(".log-detail-modal-wrapper");
   if (!wrapper) return;
 
-  // Create a LogDetailLog compatible object for the modal view
-  // The WS `log` row is the SSOT for live state, while `attempt.detail`
-  // contains the heavy payloads from the `/usage/detail` snapshot. We merge
-  // them, ensuring `log` properties take precedence, except for payloads which
-  // might be omitted (null) in WS events.
+  // The WS `log` row is the SSOT for live state; `attempt.detail` carries the heavy
+  // /usage/detail payloads. Merge with `log` winning, except where a payload is null in the WS event.
   const detailObj = attempt?.detail as Record<string, unknown> | undefined;
   const log = attempt.row;
   const safeAttempt = { ...attempt, detail: undefined, row: undefined };
@@ -366,7 +334,7 @@ function renderModal() {
   render(renderLogDetailModal(logObj as LogDetailLog), wrapper as HTMLElement);
 }
 
-// Re-render modal on clock tick so live latency updates
+// Re-render on clock tick so live latency updates
 clockStore.subscribe(() => {
   if (state.logs.selectedIdentity) {
     renderModal();
@@ -374,36 +342,26 @@ clockStore.subscribe(() => {
 });
 
 export function showLogDetail(_log: LogDetailLog): void {
-  // Legacy compatibility, unused in new flow
+
 }
 
 export function closeLogDetailModal(e: Event | null): void {
-  // Close only if the click was on the backdrop itself or on the
-  // explicit X button. With lit-html's `@click` wiring, the handler
-  // is bound to BOTH the backdrop and the close button — we use
-  // `e.target === closest('.log-detail-modal')` (strict identity,
-  // so clicks on descendants like the <pre> text body or the JSON
-  // viewer don't bubble up and close the modal) and
-  // `closest('.close-btn')` to detect the two valid close origins.
+  // lit-html binds the handler to both the backdrop and the X button, so `target ===
+  // closest('.log-detail-modal')` and `closest('.close-btn')` distinguish the two valid origins.
   if (!e || !e.target) return;
   const target: EventTarget = e.target;
   if (!(target instanceof Element)) return;
   const m: HTMLElement | null = target.closest(".log-detail-modal");
   if (!m) return;
-  // Case 1: click was directly on the backdrop (the wrapper itself).
-  // Use `target === m` (strict identity) so clicks on descendants
-  // like the <pre> text body or the JSON viewer don't bubble up and
-  // close the modal — only an actual click on the empty wrapper area
-  // should close it.
+  // Case 1: the backdrop itself. Strict identity, so clicks on a descendant (<pre> body,
+  // JSON viewer) do not close.
   if (target === m) { removeLogDetailModal(m); return; }
-  // Case 2: click was on the explicit X close button in the header.
+  // Case 2: the header's X button.
   const closeBtn: HTMLElement | null = target.closest(".close-btn");
   if (closeBtn && m.contains(closeBtn)) {
     removeLogDetailModal(m); return;
   }
-  // Case 3: click was inside .modal on something else (tabs, content,
-  // summary, etc.) with a different click handler — do nothing; the
-  // other handler (e.g. logDetailTabClick) already handled the click.
+  // Case 3: anything else inside .modal; its own handler already ran.
 }
 
 export function updateOpenLogDetail(_row: LogDetailLog | null | undefined): void {
@@ -412,11 +370,9 @@ export function updateOpenLogDetail(_row: LogDetailLog | null | undefined): void
   }
 }
 
-// Expose for E2E tests so they can simulate WS events arriving while
-// the modal is open (regression coverage for the "modal se bugea" bug).
-// Declared via `declare global` so tests get type-safe access without
-// their own `as any` cast, consistent with the `__openproxyState` /
-// `__openproxyLogsGoPage` hooks in app.ts.
+// E2E hook for simulating WS events while the modal is open. `declare global` gives the tests
+// type-safe access without their own cast, matching the `__openproxyState` / `__openproxyLogsGoPage`
+// hooks in app.ts.
 declare global {
   interface Window {
     __openproxyUpdateLogDetail?: typeof updateOpenLogDetail;
