@@ -372,4 +372,50 @@ mod tests {
             "100% exploration must rotate untried Target 2 to head"
         );
     }
+
+    #[test]
+    fn test_load_balancing_shuffle() {
+        let registry = SelectionRegistry::new();
+        let mut combo = make_combo(PriorityMode::Strict);
+        combo.strategy = Strategy::Shuffle;
+
+        let targets = vec![make_target(1, 1), make_target(2, 2), make_target(3, 3)];
+        let rr_counters = std::sync::Arc::new(dashmap::DashMap::new());
+
+        let mut seen_orders = std::collections::HashSet::new();
+        for _ in 0..100 {
+            let res = execute_load_balancing(targets.clone(), &combo, &rr_counters, &registry);
+            assert_eq!(res.len(), 3);
+            let order: Vec<i64> = res.iter().map(|t| t.id.0).collect();
+            seen_orders.insert(order);
+        }
+
+        // With 3 items and 100 trials, shuffle should generate multiple distinct permutations.
+        assert!(
+            seen_orders.len() > 1,
+            "Strategy::Shuffle must produce distinct permutations across trials"
+        );
+    }
+
+    #[test]
+    fn test_load_balancing_round_robin() {
+        let registry = SelectionRegistry::new();
+        let mut combo = make_combo(PriorityMode::Strict);
+        combo.strategy = Strategy::RoundRobin;
+
+        let targets = vec![make_target(1, 1), make_target(2, 2), make_target(3, 3)];
+        let rr_counters = std::sync::Arc::new(dashmap::DashMap::new());
+
+        let res1 = execute_load_balancing(targets.clone(), &combo, &rr_counters, &registry);
+        assert_eq!(res1.iter().map(|t| t.id.0).collect::<Vec<_>>(), vec![1, 2, 3]);
+
+        let res2 = execute_load_balancing(targets.clone(), &combo, &rr_counters, &registry);
+        assert_eq!(res2.iter().map(|t| t.id.0).collect::<Vec<_>>(), vec![2, 3, 1]);
+
+        let res3 = execute_load_balancing(targets.clone(), &combo, &rr_counters, &registry);
+        assert_eq!(res3.iter().map(|t| t.id.0).collect::<Vec<_>>(), vec![3, 1, 2]);
+
+        let res4 = execute_load_balancing(targets, &combo, &rr_counters, &registry);
+        assert_eq!(res4.iter().map(|t| t.id.0).collect::<Vec<_>>(), vec![1, 2, 3]);
+    }
 }

@@ -94,6 +94,17 @@ fn create_combo_with_targets_then_list() {
     assert_eq!(c.race_size, 3);
     assert_eq!(c.strategy, openproxy_types::combos::Strategy::RoundRobin);
 
+    let mut shuf = ci("shuf", "shuffle");
+    shuf.race_size = Some(2);
+    let combo_shuf = create_combo(&conn, &shuf).expect("create shuf");
+    let c_shuf = list_combos(&conn)
+        .expect("list")
+        .into_iter()
+        .find(|c| c.id == combo_shuf)
+        .unwrap();
+    assert_eq!(c_shuf.race_size, 2);
+    assert_eq!(c_shuf.strategy, openproxy_types::combos::Strategy::Shuffle);
+
     let t1 = add_target_to_combo(&conn, combo_id, ati("p1", m1, 10)).expect("add t1");
     let t2 = add_target_to_combo(&conn, combo_id, ati("p2", m2, 20)).expect("add t2");
 

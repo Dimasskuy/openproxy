@@ -51,10 +51,9 @@ fn test_create_combo_validation() {
         matches!(dup_err, CoreError::Validation(ref msg) if msg.contains("combo name already exists"))
     );
 
-    let shuffle_err = create_combo(&conn, "shuf", Strategy::Shuffle, 1).unwrap_err();
-    assert!(
-        matches!(shuffle_err, CoreError::Database { ref message, .. } if message.contains("insert combo"))
-    );
+    let shuf_id = create_combo(&conn, "shuf", Strategy::Shuffle, 1).unwrap();
+    let shuf = get_combo(&conn, shuf_id).unwrap().unwrap();
+    assert_eq!(shuf.strategy, Strategy::Shuffle);
 }
 
 #[test]
@@ -69,11 +68,17 @@ fn test_update_strategy() {
         Strategy::RoundRobin
     );
 
+    update_strategy(&conn, id, "shuffle").unwrap();
+    assert_eq!(
+        get_combo(&conn, id).unwrap().unwrap().strategy,
+        Strategy::Shuffle
+    );
+
     let err = update_strategy(&conn, id, "fifo").unwrap_err();
     assert!(matches!(err, CoreError::Validation(ref msg) if msg.contains("invalid strategy")));
     assert_eq!(
         get_combo(&conn, id).unwrap().unwrap().strategy,
-        Strategy::RoundRobin
+        Strategy::Shuffle
     );
 
     assert!(matches!(

@@ -224,6 +224,7 @@ struct TargetWithQuota {
     status: QuotaStatus,
     remaining_fraction: f64,
     priority: i32,
+    target_position: usize,
 }
 
 fn enrich_target_with_quota(
@@ -233,6 +234,7 @@ fn enrich_target_with_quota(
     repo: &dyn crate::repository::PipelineRepository,
     master_key: &MasterKey,
     requested_model: &str,
+    target_position: usize,
 ) -> TargetWithQuota {
     let Some(aid) = t.target.account_id else {
         return TargetWithQuota {
@@ -240,6 +242,7 @@ fn enrich_target_with_quota(
             status: QuotaStatus::Available,
             remaining_fraction: 1.0,
             priority: 0,
+            target_position,
         };
     };
 
@@ -257,6 +260,7 @@ fn enrich_target_with_quota(
                 status,
                 remaining_fraction,
                 priority: account.priority,
+                target_position,
             }
         }
         _ => TargetWithQuota {
@@ -264,22 +268,14 @@ fn enrich_target_with_quota(
             status: QuotaStatus::Available,
             remaining_fraction: 1.0,
             priority: 0,
+            target_position,
         },
     }
 }
 
 fn compare_targets_with_quota(a: &TargetWithQuota, b: &TargetWithQuota) -> std::cmp::Ordering {
-    a.resolved_target
-        .target
-        .priority_order
-        .cmp(&b.resolved_target.target.priority_order)
-        .then_with(|| {
-            a.resolved_target
-                .target
-                .id
-                .0
-                .cmp(&b.resolved_target.target.id.0)
-        })
+    a.target_position
+        .cmp(&b.target_position)
         .then_with(|| a.priority.cmp(&b.priority))
         .then_with(|| {
             b.remaining_fraction
@@ -296,9 +292,20 @@ pub(crate) fn apply_quota_routing(
     targets: Vec<crate::context::ResolvedTarget>,
     requested_model: &str,
 ) -> Vec<crate::context::ResolvedTarget> {
+    let mut target_positions = std::collections::HashMap::new();
+    let mut next_pos = 0usize;
+    for t in &targets {
+        target_positions.entry(t.target.id).or_insert_with(|| {
+            let pos = next_pos;
+            next_pos += 1;
+            pos
+        });
+    }
+
     let processed_targets: Vec<TargetWithQuota> = targets
         .into_iter()
         .map(|t| {
+            let target_position = *target_positions.get(&t.target.id).unwrap_or(&0);
             enrich_target_with_quota(
                 t,
                 quota_protection_enabled,
@@ -306,6 +313,7 @@ pub(crate) fn apply_quota_routing(
                 repo,
                 master_key,
                 requested_model,
+                target_position,
             )
         })
         .collect();
@@ -521,6 +529,7 @@ mod tests {
             status: QuotaStatus::Available,
             remaining_fraction: fraction,
             priority: 10,
+            target_position: 0,
         };
 
         let t_high = make_target(1, 0.8);
@@ -533,6 +542,66 @@ mod tests {
         );
         assert_eq!(
             compare_targets_with_quota(&t_low, &t_high),
+            std::cmp::Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn test_compare_targets_with_quota_preserves_target_routing_order() {
+        use crate::context::ResolvedTarget;
+        use openproxy_types::combos::ComboTarget;
+        use openproxy_types::ids::{ComboId, ComboTargetId, ModelId, ModelRowId};
+        use openproxy_types::models::Model;
+        use openproxy_types::{RateLimitScope, TargetFormat};
+
+        let make_target_with_pos = |target_id: i64, prio_order: i32, pos: usize| TargetWithQuota {
+            resolved_target: ResolvedTarget {
+                target: ComboTarget {
+                    id: ComboTargetId(target_id),
+                    combo_id: ComboId(1),
+                    provider_id: ProviderId("minimax".into()),
+                    account_id: None,
+                    model_row_id: Some(ModelRowId(10)),
+                    priority_order: prio_order,
+                    sub_combo_id: None,
+                    weight: 1,
+                    active: true,
+                    rate_limit_scope: RateLimitScope::Account,
+                    cooldown_mode: None,
+                    cooldown_base_secs: None,
+                    cooldown_max_secs: None,
+                    cooldown_factor: None,
+                    thinking_effort: None,
+                    ..Default::default()
+                },
+                model: Model {
+                    row_id: ModelRowId(10),
+                    provider_id: ProviderId("minimax".into()),
+                    model_id: ModelId::new("MiniMax-M3"),
+                    target_format: TargetFormat::Openai,
+                    ..Default::default()
+                },
+                api_key: "key".into(),
+                api_key_label: None,
+                custom_meta: None,
+            },
+            status: QuotaStatus::Available,
+            remaining_fraction: 1.0,
+            priority: 0,
+            target_position: pos,
+        };
+
+        // Target B was placed at position 0 (e.g. by Shuffle or RoundRobin),
+        // even though its priority_order is 20 (higher number = lower strict priority).
+        let t_first = make_target_with_pos(2, 20, 0);
+        let t_second = make_target_with_pos(1, 10, 1);
+
+        assert_eq!(
+            compare_targets_with_quota(&t_first, &t_second),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            compare_targets_with_quota(&t_second, &t_first),
             std::cmp::Ordering::Greater
         );
     }
