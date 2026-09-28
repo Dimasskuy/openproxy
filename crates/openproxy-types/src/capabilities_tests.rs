@@ -241,7 +241,8 @@ fn test_contains_delimited_token() {
 
 #[test]
 fn test_model_capabilities_flexible_deserialization() {
-    let json_int = r#"{"vision":1,"tool_calling":1,"reasoning":1,"thinking":true,"temperature":true}"#;
+    let json_int =
+        r#"{"vision":1,"tool_calling":1,"reasoning":1,"thinking":true,"temperature":true}"#;
     let caps = ModelCapabilities::from_json(Some(json_int));
     assert_eq!(caps.vision, Some(true));
     assert_eq!(caps.tool_calling, Some(true));
@@ -256,3 +257,35 @@ fn test_model_capabilities_flexible_deserialization() {
     assert_eq!(caps_zero.reasoning, Some(false));
 }
 
+#[test]
+fn test_model_capabilities_to_json_and_merge_union() {
+    let empty_caps = ModelCapabilities::empty();
+    assert_eq!(empty_caps.to_json(), None);
+
+    let mut caps_a = ModelCapabilities {
+        vision: Some(true),
+        ..ModelCapabilities::empty()
+    };
+    let caps_b = ModelCapabilities {
+        tool_calling: Some(true),
+        reasoning: Some(true),
+        ..ModelCapabilities::empty()
+    };
+
+    assert!(caps_a.to_json().is_some());
+    caps_a.merge_union(&caps_b);
+
+    assert_eq!(caps_a.vision, Some(true));
+    assert_eq!(caps_a.tool_calling, Some(true));
+    assert_eq!(caps_a.reasoning, Some(true));
+}
+
+#[test]
+fn test_infer_modality_json_helpers() {
+    let input_json = infer_input_modalities_json("openai/gpt-4o");
+    assert!(input_json.contains("text"));
+    assert!(input_json.contains("image"));
+
+    let output_json = infer_output_modalities_json("dall-e-3");
+    assert_eq!(output_json, r#"["image"]"#);
+}
