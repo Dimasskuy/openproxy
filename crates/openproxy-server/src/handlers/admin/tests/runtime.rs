@@ -382,14 +382,38 @@ async fn get_formats_returns_descriptors() {
         .with_state(state);
     let (status, json) = test_req(&app, "GET", "/admin/api/formats", Some(&plaintext), None).await;
     assert_eq!(status, StatusCode::OK);
-    let target_formats = json["target_formats"].as_array().expect("target_formats array");
+    let target_formats = json["target_formats"]
+        .as_array()
+        .expect("target_formats array");
     assert!(!target_formats.is_empty());
-    assert!(target_formats.iter().any(|f| f["id"] == "responses" && f["endpoint"] == "/v1/responses"));
-    assert!(target_formats.iter().any(|f| f["id"] == "openai" && f["endpoint"] == "/v1/chat/completions"));
-    assert!(target_formats.iter().any(|f| f["id"] == "anthropic" && f["endpoint"] == "/v1/messages"));
+    assert!(
+        target_formats
+            .iter()
+            .any(|f| f["id"] == "responses" && f["endpoint"] == "/v1/responses")
+    );
+    assert!(
+        target_formats
+            .iter()
+            .any(|f| f["id"] == "openai" && f["endpoint"] == "/v1/chat/completions")
+    );
+    assert!(
+        target_formats
+            .iter()
+            .any(|f| f["id"] == "anthropic" && f["endpoint"] == "/v1/messages")
+    );
 
-    let provider_formats = json["provider_formats"].as_array().expect("provider_formats array");
+    let provider_formats = json["provider_formats"]
+        .as_array()
+        .expect("provider_formats array");
     assert!(!provider_formats.is_empty());
-    assert!(provider_formats.iter().any(|f| f["id"] == "responses" && f["default_target_format"] == "responses"));
-    assert!(provider_formats.iter().any(|f| f["id"] == "mixed" && f["default_target_format"] == "openai"));
+    assert!(
+        provider_formats
+            .iter()
+            .any(|f| f["id"] == "responses" && f["default_target_format"] == "responses")
+    );
+    assert!(
+        provider_formats
+            .iter()
+            .any(|f| f["id"] == "mixed" && f["default_target_format"] == "openai")
+    );
 }

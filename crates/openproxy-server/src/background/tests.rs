@@ -99,9 +99,8 @@ async fn memory_cleanup_service_prunes_abandoned_inflight_and_trims() {
     use openproxy_db::DbPool;
     use openproxy_types::usage::InflightAttempt;
 
-    let pool = Arc::new(
-        DbPool::test_pool_with_prefix("openproxy-mem-cleanup-test").expect("open pool"),
-    );
+    let pool =
+        Arc::new(DbPool::test_pool_with_prefix("openproxy-mem-cleanup-test").expect("open pool"));
     let selection_registry = Arc::new(openproxy_types::SelectionRegistry::new());
     let circuit_breaker = openproxy_pipeline::circuit_breaker::CircuitBreakerRegistry::new(
         &openproxy_types::config::CircuitBreakerConfig {
