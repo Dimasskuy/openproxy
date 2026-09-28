@@ -270,3 +270,51 @@ async fn test_backup_restore_with_existing_satellite_tables_and_missing_proxy() 
     assert_eq!(prov_count, 1);
     assert!(proxy_id.is_none());
 }
+
+#[tokio::test]
+async fn test_backup_endpoints_reject_read_only_scope() {
+    let tmp = tempdir();
+    let (state, _manage_token) = make_state_with_key(tmp.path()).await;
+
+    // Insert an API key with ONLY "read" scope (not "manage")
+    let read_only_token = format!("sk-read-{}", "y".repeat(40));
+    {
+        let w = state.db_pool().writer();
+        let key_hash = core_api_keys::hash_key(&read_only_token);
+        w.execute(
+            "INSERT INTO api_keys (key_hash, key_prefix, label, scopes_json, is_active, created_at) \
+             VALUES (?1, 'sk-read-yyyy', 'Read Only Key', '[\"read\"]', 1, datetime('now'))",
+            rusqlite::params![key_hash],
+        )
+        .unwrap();
+    }
+
+    let app = crate::router::build_router(state.clone()).layer(axum::Extension(
+        axum::extract::connect_info::ConnectInfo(
+            "127.0.0.1:12345".parse::<std::net::SocketAddr>().unwrap(),
+        ),
+    ));
+
+    // 1. Calling export with read-only key must be rejected (401)
+    let req = Request::builder()
+        .method("GET")
+        .uri("/admin/api/backup/export")
+        .header("authorization", format!("Bearer {read_only_token}"))
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+    // 2. Calling restore with read-only key must also be rejected (401)
+    let req = Request::builder()
+        .method("POST")
+        .uri("/admin/api/backup/restore")
+        .header("authorization", format!("Bearer {read_only_token}"))
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"bundle":{"version":1,"encrypted":false}}"#))
+        .unwrap();
+
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}

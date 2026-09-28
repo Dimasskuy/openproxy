@@ -70,8 +70,10 @@ fn extract_header_passphrase(headers: &HeaderMap) -> Option<String> {
 /// If `?passphrase=...` is provided, encrypts the bundle with AES-256-GCM.
 pub async fn export_backup_handler(
     State(s): State<AppState>,
+    identity: super::auth::Identity,
     Query(q): Query<ExportQuery>,
 ) -> Result<Response, ApiError> {
+    super::auth::audit_secret_read(&identity, "backup_bundle", "export");
     let pool = Arc::clone(s.db_pool());
     let master_key = Arc::clone(s.master_key());
     let passphrase = q.passphrase;
@@ -120,9 +122,11 @@ pub async fn validate_backup_handler(
 /// Generates a safety backup of the database before applying changes.
 pub async fn restore_backup_handler(
     State(s): State<AppState>,
+    identity: super::auth::Identity,
     headers: HeaderMap,
     Json(body): Json<BackupRequestBody>,
 ) -> Result<Json<RestoreReport>, ApiError> {
+    super::auth::audit_secret_read(&identity, "backup_bundle", "restore");
     let header_pass = extract_header_passphrase(&headers);
     let (bundle, passphrase, mode) = body.into_parts(header_pass);
 
