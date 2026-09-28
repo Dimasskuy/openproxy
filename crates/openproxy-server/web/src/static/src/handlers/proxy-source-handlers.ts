@@ -262,15 +262,15 @@ export async function deleteProxySource(id: string): Promise<void> {
   }
 }
 
-export async function toggleProxySourceActive(id: string, e: Event): Promise<void> {
-  const checkbox = e.target as HTMLInputElement;
-  const newValue = checkbox.checked;
+export async function toggleProxySourceActive(id: string, _e?: Event): Promise<void> {
   const src = state.proxySources.find((s) => s.id === id);
   if (!src) return;
 
-  // Deliberately not mutateAndRefresh (Tier 3): an optimistic checkbox toggle with rollback
-  // (the catch restores `checkbox.checked`) is not expressible through the helper's uniform
-  // error path.
+  const prevValue = src.active;
+  const newValue = !prevValue;
+  src.active = newValue;
+  requestUpdate();
+
   try {
     const payload = {
       name: src.name,
@@ -282,11 +282,10 @@ export async function toggleProxySourceActive(id: string, e: Event): Promise<voi
       method: "PUT",
       body: JSON.stringify(payload),
     });
-    src.active = newValue;
-    requestUpdate();
     showToast(`Proxy source ${newValue ? 'enabled' : 'disabled'}`, "success");
   } catch (err: unknown) {
-    checkbox.checked = !newValue;
+    src.active = prevValue;
+    requestUpdate();
     showApiError(err, "Failed to toggle proxy source");
   }
 }

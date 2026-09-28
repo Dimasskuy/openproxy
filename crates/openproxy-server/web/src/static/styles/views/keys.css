@@ -167,10 +167,11 @@
   border-radius: 50%;
   transition: transform var(--t-fast);
 }
-.switch input:checked + ::before,
+.switch:has(input:checked)::before,
 .switch.is-on::before {
   background: var(--color-primary);
 }
+.switch:has(input:checked)::after,
 .switch.is-on::after {
   transform: translateX(18px);
 }

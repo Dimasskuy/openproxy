@@ -4,7 +4,7 @@ import { html, type TemplateResult } from 'lit-html';
 import { state } from "../state/index.js";
 import { createView } from "../lib/view-utils.js";
 import { icons } from "../lib/icons.js";
-import { reloadProxySources, moveProxySource, reorderProxySources } from "../handlers/proxy-source-handlers.js";
+import { reloadProxySources, moveProxySource, reorderProxySources, toggleProxySourceActive } from "../handlers/proxy-source-handlers.js";
 import type { ProxySource } from "../lib/types/api.js";
 
 let loadError: string | null = null;
@@ -167,15 +167,16 @@ function renderProxySourcesList(sources: ProxySource[]): TemplateResult {
                 </td>
                 <td class="col-source-priority" data-label="Priority"><span class="badge">${s.priority}</span></td>
                 <td class="col-source-active" data-label="Active">
-                  <label class="switch" title="Toggle source active state">
-                    <input
-                      type="checkbox"
-                      .checked=${s.active}
-                      data-action="toggleProxySourceActive"
-                      data-arg1=${s.id}
-                    />
-                    <span class="slider round"></span>
-                  </label>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked=${s.active ? "true" : "false"}
+                    class="toggle-btn ${s.active ? "on" : "off"}"
+                    title="${s.active ? "Disable" : "Enable"} proxy source"
+                    @click=${() => void toggleProxySourceActive(s.id)}
+                  >
+                    <span class="toggle-thumb"></span>
+                  </button>
                 </td>
                 <td class="col-source-stats" data-label="Stats">
                   <span class="badge" title="Total Proxies">${s.proxies_total}</span>
@@ -233,15 +234,16 @@ function renderProxySourcesList(sources: ProxySource[]): TemplateResult {
                     <div class="s-card-controls">
                       <button type="button" class="s-card-reorder-btn" title="Move up" @click=${() => void moveProxySource(s.id, -1)}>▲</button>
                       <button type="button" class="s-card-reorder-btn" title="Move down" @click=${() => void moveProxySource(s.id, 1)}>▼</button>
-                      <label class="switch" title="Toggle source active state">
-                        <input 
-                          type="checkbox" 
-                          .checked=${s.active} 
-                          data-action="toggleProxySourceActive"
-                          data-arg1=${s.id}
-                        />
-                        <span class="slider round"></span>
-                      </label>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked=${s.active ? "true" : "false"}
+                        class="toggle-btn ${s.active ? "on" : "off"}"
+                        title="${s.active ? "Disable" : "Enable"} proxy source"
+                        @click=${() => void toggleProxySourceActive(s.id)}
+                      >
+                        <span class="toggle-thumb"></span>
+                      </button>
                     </div>
                   </div>
 

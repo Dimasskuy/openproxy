@@ -66,7 +66,7 @@ import { logsPrevPage, logsNextPage, logsGoPage, logsSetFollow, toggleColumnsMen
 import { configSaveTimeouts, configSaveRecordingTtl, configSaveIdleChunkRetryable, configSaveCompression } from "../views/config/index.js";
 import { closeLogDetailModal, copyDebugBundle } from "../components/log-detail/index.js";
 import { syncProxies, testProxy, testAllProxies, deleteProxy, showAddCustomProxy } from "./proxy-handlers.js";
-import { showAddProxySource, showEditProxySource, deleteProxySource, testProxySource } from "./proxy-source-handlers.js";
+import { showAddProxySource, showEditProxySource, deleteProxySource, testProxySource, toggleProxySourceActive } from "./proxy-source-handlers.js";
 
 // -- Action registry --------------------------------------------------------
 // Keys are the data-action values; each maps to the function to invoke. Positional args come
@@ -307,6 +307,7 @@ export const HANDLERS = {
   showEditProxySource,
   deleteProxySource,
   testProxySource,
+  toggleProxySourceActive,
 };
 
 // Collect positional data-arg-N attrs from an element, skipping the "action" key, in arg1..argN
