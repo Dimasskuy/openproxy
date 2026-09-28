@@ -413,6 +413,62 @@ impl_client_crud_methods! {
     analytics usage_races("/admin/usage/races") -> RaceStats;
 }
 
+impl Client {
+    // Backup & Restore
+
+    /// `GET /admin/api/backup/export` (or `?passphrase=...`).
+    ///
+    /// Exports all providers, accounts, credentials, models, combos, targets,
+    /// proxy sources, API keys, and runtime configuration into a [`BackupBundle`].
+    pub async fn export_backup(
+        &self,
+        passphrase: Option<&str>,
+    ) -> Result<openproxy_types::backup::BackupBundle, ClientError> {
+        let path = match passphrase {
+            Some(p) if !p.is_empty() => {
+                format!("/admin/api/backup/export?passphrase={}", urlencoded(p))
+            }
+            _ => "/admin/api/backup/export".to_string(),
+        };
+        self.get_json(&path).await
+    }
+
+    /// `POST /admin/api/backup/validate`.
+    ///
+    /// Validates a backup bundle (and passphrase if encrypted) without modifying
+    /// any database state.
+    pub async fn validate_backup(
+        &self,
+        bundle: &openproxy_types::backup::BackupBundle,
+        passphrase: Option<&str>,
+    ) -> Result<openproxy_types::backup::BackupValidationSummary, ClientError> {
+        let body = serde_json::json!({
+            "passphrase": passphrase,
+            "bundle": bundle,
+        });
+        self.post_json_resp("/admin/api/backup/validate", body)
+            .await
+    }
+
+    /// `POST /admin/api/backup/restore`.
+    ///
+    /// Atomically restores database state from a backup bundle inside a transaction.
+    /// Creates a safety backup before applying changes.
+    pub async fn restore_backup(
+        &self,
+        bundle: &openproxy_types::backup::BackupBundle,
+        passphrase: Option<&str>,
+        mode: Option<&str>,
+    ) -> Result<openproxy_types::backup::RestoreReport, ClientError> {
+        let body = serde_json::json!({
+            "passphrase": passphrase,
+            "mode": mode,
+            "bundle": bundle,
+        });
+        self.post_json_resp("/admin/api/backup/restore", body).await
+    }
+}
+
 // Error type
 
 /// Errores que puede devolver cualquier método del [`Client`].

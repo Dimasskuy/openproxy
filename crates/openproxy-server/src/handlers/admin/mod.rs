@@ -3,6 +3,7 @@
 pub mod accounts;
 pub mod api_keys;
 pub mod auth;
+pub mod backup;
 pub mod combo_targets;
 pub mod combos;
 pub mod debug;
@@ -30,6 +31,7 @@ pub(crate) use openproxy_types::combos as types_combos;
 pub fn admin_api_routes() -> axum::Router<AppState> {
     axum::Router::new()
         .nest("/config", runtime::router())
+        .nest("/backup", backup::router())
         .nest("/providers", providers::router())
         .nest("/accounts", accounts::router())
         .nest("/combos", combos::router())

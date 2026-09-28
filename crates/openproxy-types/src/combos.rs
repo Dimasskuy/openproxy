@@ -1,4 +1,4 @@
-use crate::config::CooldownMode;
+pub use crate::config::CooldownMode;
 use crate::ids::{AccountId, ComboId, ComboTargetId, ModelRowId, ProviderId};
 use serde::{Deserialize, Serialize};
 

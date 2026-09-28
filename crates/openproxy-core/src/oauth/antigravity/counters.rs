@@ -36,9 +36,9 @@ pub(crate) const MAX_INVALID_GRANT_ENTRIES: usize = 500;
 
 /// Prune entries that have reached saturation (threshold) or evict excess entries
 /// so that `INVALID_GRANT_COUNTERS` is strictly bounded to `MAX_INVALID_GRANT_ENTRIES`.
-pub(crate) fn prune_invalid_grant_counters() -> usize {
+pub(crate) fn prune_invalid_grant_counters(map: &DashMap<i64, AtomicU32>) -> usize {
     let mut pruned = 0;
-    INVALID_GRANT_COUNTERS.retain(|_, count| {
+    map.retain(|_, count| {
         if count.load(Ordering::Relaxed) >= ANTIGRAVITY_INVALID_GRANT_THRESHOLD {
             pruned += 1;
             false
@@ -46,10 +46,10 @@ pub(crate) fn prune_invalid_grant_counters() -> usize {
             true
         }
     });
-    while INVALID_GRANT_COUNTERS.len() >= MAX_INVALID_GRANT_ENTRIES {
-        let key_to_remove = INVALID_GRANT_COUNTERS.iter().next().map(|e| *e.key());
+    while map.len() >= MAX_INVALID_GRANT_ENTRIES {
+        let key_to_remove = map.iter().next().map(|e| *e.key());
         if let Some(k) = key_to_remove {
-            INVALID_GRANT_COUNTERS.remove(&k);
+            map.remove(&k);
             pruned += 1;
         } else {
             break;
@@ -69,14 +69,14 @@ pub(crate) fn prune_invalid_grant_counters() -> usize {
 /// concurrent bumps for the same account converge on
 /// `threshold`, not `N × threshold` (BUG-2).
 pub(crate) fn bump(account_id: AccountId) -> u32 {
-    if !INVALID_GRANT_COUNTERS.contains_key(&account_id.0)
-        && INVALID_GRANT_COUNTERS.len() >= MAX_INVALID_GRANT_ENTRIES
-    {
-        prune_invalid_grant_counters();
+    bump_in_map(&INVALID_GRANT_COUNTERS, account_id)
+}
+
+pub(crate) fn bump_in_map(map: &DashMap<i64, AtomicU32>, account_id: AccountId) -> u32 {
+    if !map.contains_key(&account_id.0) && map.len() >= MAX_INVALID_GRANT_ENTRIES {
+        prune_invalid_grant_counters(map);
     }
-    let counter = INVALID_GRANT_COUNTERS
-        .entry(account_id.0)
-        .or_insert_with(|| AtomicU32::new(0));
+    let counter = map.entry(account_id.0).or_insert_with(|| AtomicU32::new(0));
     // `fetch_update` is a CAS loop returning the pre-update value, so the new
     // value is `previous + 1` unless the closure left it at the threshold. The
     // cap makes concurrent bumps converge on the threshold (BUG-2) and keeps
@@ -155,89 +155,70 @@ pub(crate) fn mark_account_unhealthy(db: DbRef<'_>, account_id: AccountId) {
 mod tests {
     use super::*;
 
-    static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     #[test]
     fn test_invalid_grant_counters_capacity_bounding() {
-        let _guard = TEST_MUTEX.lock().unwrap();
-        INVALID_GRANT_COUNTERS.clear();
+        let map = DashMap::new();
         for i in 0..MAX_INVALID_GRANT_ENTRIES {
-            bump(AccountId(i as i64));
+            bump_in_map(&map, AccountId(i as i64));
         }
-        assert_eq!(INVALID_GRANT_COUNTERS.len(), MAX_INVALID_GRANT_ENTRIES);
+        assert_eq!(map.len(), MAX_INVALID_GRANT_ENTRIES);
 
-        bump(AccountId(0));
-        bump(AccountId(0)); // count == 3 (threshold)
+        bump_in_map(&map, AccountId(0));
+        bump_in_map(&map, AccountId(0)); // count == 3 (threshold)
 
         // a new entry triggers pruning of the saturated ones
-        bump(AccountId((MAX_INVALID_GRANT_ENTRIES + 1) as i64));
-        assert!(INVALID_GRANT_COUNTERS.len() <= MAX_INVALID_GRANT_ENTRIES);
-
-        INVALID_GRANT_COUNTERS.clear();
+        bump_in_map(&map, AccountId((MAX_INVALID_GRANT_ENTRIES + 1) as i64));
+        assert!(map.len() <= MAX_INVALID_GRANT_ENTRIES);
     }
 
     #[test]
     fn test_invalid_grant_counters_saturation_600_accounts() {
-        let _guard = TEST_MUTEX.lock().unwrap();
-        INVALID_GRANT_COUNTERS.clear();
+        let map = DashMap::new();
         // 600 distinct accounts, each below threshold
         for i in 0..600 {
-            bump(AccountId(i));
+            bump_in_map(&map, AccountId(i));
             assert!(
-                INVALID_GRANT_COUNTERS.len() <= MAX_INVALID_GRANT_ENTRIES,
+                map.len() <= MAX_INVALID_GRANT_ENTRIES,
                 "Capacity exceeded at index {}: len is {}",
                 i,
-                INVALID_GRANT_COUNTERS.len()
+                map.len()
             );
         }
-        assert_eq!(INVALID_GRANT_COUNTERS.len(), MAX_INVALID_GRANT_ENTRIES);
-        INVALID_GRANT_COUNTERS.clear();
+        assert_eq!(map.len(), MAX_INVALID_GRANT_ENTRIES);
     }
 
     #[test]
     fn test_invalid_grant_counters_eviction_order_threshold_first() {
-        let _guard = TEST_MUTEX.lock().unwrap();
-        INVALID_GRANT_COUNTERS.clear();
+        let map = DashMap::new();
         for i in 0..MAX_INVALID_GRANT_ENTRIES {
-            bump(AccountId(i as i64));
+            bump_in_map(&map, AccountId(i as i64));
         }
-        assert_eq!(INVALID_GRANT_COUNTERS.len(), MAX_INVALID_GRANT_ENTRIES);
+        assert_eq!(map.len(), MAX_INVALID_GRANT_ENTRIES);
 
         // account 10 saturates to threshold
-        bump(AccountId(10));
-        bump(AccountId(10));
+        bump_in_map(&map, AccountId(10));
+        bump_in_map(&map, AccountId(10));
         assert_eq!(
-            INVALID_GRANT_COUNTERS
-                .get(&10)
-                .unwrap()
-                .load(Ordering::Relaxed),
+            map.get(&10).unwrap().load(Ordering::Relaxed),
             ANTIGRAVITY_INVALID_GRANT_THRESHOLD
         );
 
-        assert_eq!(
-            INVALID_GRANT_COUNTERS
-                .get(&20)
-                .unwrap()
-                .load(Ordering::Relaxed),
-            1
-        );
+        assert_eq!(map.get(&20).unwrap().load(Ordering::Relaxed), 1);
 
         // a new account evicts the saturated one before an active one
-        bump(AccountId(9999));
-        assert!(INVALID_GRANT_COUNTERS.len() <= MAX_INVALID_GRANT_ENTRIES);
+        bump_in_map(&map, AccountId(9999));
+        assert!(map.len() <= MAX_INVALID_GRANT_ENTRIES);
         assert!(
-            !INVALID_GRANT_COUNTERS.contains_key(&10),
+            !map.contains_key(&10),
             "Saturated account 10 should have been evicted first"
         );
         assert!(
-            INVALID_GRANT_COUNTERS.contains_key(&20),
+            map.contains_key(&20),
             "Active account 20 should be retained"
         );
         assert!(
-            INVALID_GRANT_COUNTERS.contains_key(&9999),
+            map.contains_key(&9999),
             "New account 9999 should be inserted"
         );
-
-        INVALID_GRANT_COUNTERS.clear();
     }
 }

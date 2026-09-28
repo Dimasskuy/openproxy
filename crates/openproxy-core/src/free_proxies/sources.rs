@@ -137,10 +137,11 @@ pub fn create_proxy_source(
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
     let priority = input.priority.unwrap_or(0);
+    let active = input.active.unwrap_or(true);
 
     conn.execute(
-        "INSERT INTO proxy_sources (id, name, url, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![id, input.name, input.url, priority, now, now],
+        "INSERT INTO proxy_sources (id, name, url, priority, active, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![id, input.name, input.url, priority, active as i32, now, now],
     )
     .map_err(|e| crate::error::CoreError::Database {
         message: e.to_string(),
@@ -162,11 +163,12 @@ pub fn update_proxy_source(
     let name = input.name.unwrap_or(existing.name);
     let url = input.url.unwrap_or(existing.url);
     let priority = input.priority.unwrap_or(existing.priority);
+    let active = input.active.unwrap_or(existing.active);
     let now = chrono::Utc::now().to_rfc3339();
 
     conn.execute(
-        "UPDATE proxy_sources SET name = ?1, url = ?2, priority = ?3, updated_at = ?4 WHERE id = ?5",
-        rusqlite::params![name, url, priority, now, id],
+        "UPDATE proxy_sources SET name = ?1, url = ?2, priority = ?3, active = ?4, updated_at = ?5 WHERE id = ?6",
+        rusqlite::params![name, url, priority, active as i32, now, id],
     )
     .map_err(|e| crate::error::CoreError::Database {
         message: e.to_string(),

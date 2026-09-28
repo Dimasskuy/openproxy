@@ -271,7 +271,40 @@ fn test_proxy_sources_crud() {
 
     assert_eq!(updated.name, "Updated Source");
     assert_eq!(updated.priority, 10);
+    assert!(updated.active);
+
+    // Verify active can be toggled off
+    let toggled_off = update_proxy_source(
+        &conn,
+        &src.id,
+        UpdateProxySourceInput {
+            name: None,
+            url: None,
+            priority: None,
+            active: Some(false),
+        },
+    )
+    .unwrap();
+    assert!(!toggled_off.active);
+
+    let fetched_off = get_proxy_source(&conn, &src.id).unwrap().unwrap();
+    assert!(!fetched_off.active);
+
+    // Verify active can be toggled back on
+    let toggled_on = update_proxy_source(
+        &conn,
+        &src.id,
+        UpdateProxySourceInput {
+            name: None,
+            url: None,
+            priority: None,
+            active: Some(true),
+        },
+    )
+    .unwrap();
+    assert!(toggled_on.active);
 
     let list_after = list_proxy_sources(&conn).unwrap();
     assert_eq!(list_after.len(), 1);
+    assert!(list_after[0].active);
 }

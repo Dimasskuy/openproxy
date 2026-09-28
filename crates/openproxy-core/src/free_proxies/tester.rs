@@ -158,16 +158,16 @@ pub(crate) fn fetch_background_test_proxies_with_limit(
         SELECT id, type, host, port, username, password FROM free_proxies 
         ORDER BY 
             CASE 
-                WHEN status = 'alive' AND last_validated IS NOT NULL AND last_validated < datetime('now', '-30 minutes') THEN 1
+                WHEN status = 'alive' AND last_validated IS NOT NULL AND datetime(last_validated) < datetime('now', '-30 minutes') THEN 1
                 WHEN status = 'unknown' THEN 2
                 WHEN status = 'alive' AND last_validated IS NULL THEN 3
-                WHEN status = 'dead' AND last_validated IS NOT NULL AND last_validated < datetime('now', '-2 hours') THEN 4
+                WHEN status = 'dead' AND last_validated IS NOT NULL AND datetime(last_validated) < datetime('now', '-2 hours') THEN 4
                 WHEN status = 'alive' THEN 5
                 ELSE 6
             END ASC,
             priority DESC,
             CASE WHEN last_validated IS NULL THEN 0 ELSE 1 END ASC,
-            last_validated ASC
+            datetime(last_validated) ASC
         LIMIT ?1
     ",
     ) {

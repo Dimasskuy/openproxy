@@ -28,6 +28,7 @@ pub use systemone::execute_system_one;
 pub mod unary;
 
 pub mod api_keys;
+pub mod backup;
 pub mod bootstrap;
 
 pub mod discovery_scheduler;

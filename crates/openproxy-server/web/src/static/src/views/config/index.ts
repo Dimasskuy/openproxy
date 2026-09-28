@@ -17,11 +17,13 @@ import {
   renderRecordingTtlCard, renderTimeoutsCard,
 } from "./editable-cards.js";
 import { loadMaintenanceState, pollVacuumStatus, renderMaintenanceCard } from "./maintenance.js";
+import { renderBackupCard } from "./backup.js";
 
 export {
   configSaveTimeouts, configSaveRecordingTtl,
   configSaveCompression, configSaveIdleChunkRetryable,
 } from "./editable-cards.js";
+export { downloadBackup } from "./backup.js";
 
 // ── View state ──────────────────────────────────────────────────────
 
@@ -104,6 +106,7 @@ function renderConfig(): TemplateResult {
         ${renderQuotaCard()}
         ${renderPiiCard()}
         ${renderMaintenanceCard()}
+        ${renderBackupCard()}
       </div>
       ${renderStaticRegion(cfg)}
       <details class="config-details">

@@ -388,4 +388,29 @@ impl AppState {
         st.last_run = Some(chrono::Utc::now().to_rfc3339());
         st.last_result = Some(result.to_string());
     }
+
+    /// Reload runtime configuration cells from the `app_config` SQLite table.
+    pub fn reload_runtime_config(&self, conn: &rusqlite::Connection) {
+        if let Ok(Some(timeouts)) = db::app_config::load_timeouts_override_from_db(conn) {
+            self.set_timeouts(timeouts);
+        }
+        if let Ok(Some(ttl)) = db::app_config::load_recording_ttl_from_db(conn) {
+            self.set_recording_ttl_secs(ttl);
+        }
+        if let Ok(Some(comp)) = db::app_config::load_compression_override_from_db(conn) {
+            self.set_compression_mode(comp);
+        }
+        if let Ok(Some(qp)) = db::app_config::load_quota_protection_override_from_db(conn) {
+            self.set_quota_protection(qp);
+        }
+        if let Ok(Some(idle)) = db::app_config::load_idle_chunk_retryable_from_db(conn) {
+            self.set_idle_chunk_retryable(idle);
+        }
+        if let Ok(Some(pii)) = db::app_config::load_pii_config_from_db(conn) {
+            self.set_pii_config(pii);
+        }
+        if let Ok(Some(notif)) = db::app_config::load_notifications_enabled_from_db(conn) {
+            self.set_notifications_enabled(notif);
+        }
+    }
 }
