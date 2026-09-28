@@ -100,6 +100,10 @@ pub(crate) fn spawn_background_tasks(
         db_pool: Arc::clone(&db_pool),
     });
 
+    supervisor.spawn(crate::background::FreeProxiesValidatorService {
+        db_pool: Arc::clone(&db_pool),
+    });
+
     supervisor.spawn(crate::background::MaintenanceVacuumService {
         db_pool,
         maintenance_cell,

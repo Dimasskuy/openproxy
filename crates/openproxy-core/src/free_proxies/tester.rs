@@ -157,12 +157,17 @@ pub(crate) fn fetch_background_test_proxies_with_limit(
         "
         SELECT id, type, host, port, username, password FROM free_proxies 
         ORDER BY 
-            CASE status 
-                WHEN 'unknown' THEN 1 
-                WHEN 'alive' THEN 2 
-                ELSE 3 
+            CASE 
+                WHEN status = 'alive' AND last_validated IS NOT NULL AND last_validated < datetime('now', '-30 minutes') THEN 1
+                WHEN status = 'unknown' THEN 2
+                WHEN status = 'alive' AND last_validated IS NULL THEN 3
+                WHEN status = 'dead' AND last_validated IS NOT NULL AND last_validated < datetime('now', '-2 hours') THEN 4
+                WHEN status = 'alive' THEN 5
+                ELSE 6
             END ASC,
-            priority DESC
+            priority DESC,
+            CASE WHEN last_validated IS NULL THEN 0 ELSE 1 END ASC,
+            last_validated ASC
         LIMIT ?1
     ",
     ) {
@@ -220,10 +225,35 @@ fn execute_proxy_batch_update(
     })
 }
 
+static TESTING_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+struct ActiveGuard;
+impl Drop for ActiveGuard {
+    fn drop(&mut self) {
+        TESTING_ACTIVE.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 pub fn test_all_proxies_background(db_pool: Arc<DbPool>) {
+    if TESTING_ACTIVE
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+        )
+        .is_err()
+    {
+        tracing::debug!(
+            "test_all_proxies_background: validation pass already running, skipping duplicate spawn"
+        );
+        return;
+    }
+
     const READER_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
     tokio::spawn(async move {
+        let _guard = ActiveGuard;
         let initial = {
             let pool = Arc::clone(&db_pool);
             tokio::task::spawn_blocking(move || -> crate::error::Result<_> {

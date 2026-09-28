@@ -86,6 +86,9 @@ export async function testAllProxies(): Promise<void> {
   try {
     await api("/proxies/test-all", { method: "POST" });
     showToast(t("proxies.toast.test_all_started"), "info");
+    setTimeout(() => {
+      void reloadProxies();
+    }, 4000);
   } catch (e: unknown) {
     showApiError(e, "Test All failed");
   }
