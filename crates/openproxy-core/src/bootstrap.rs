@@ -34,8 +34,8 @@ pub struct BootstrapResult {
 
 /// If `api_keys` is empty, insert a single bootstrap key with
 /// `["manage", "chat"]` scope. The plaintext is returned to the
-/// caller and printed to logs (WARN level) so the operator can save
-/// it. A non-empty table is a no-op.
+/// caller so the application layer can deliver it through its configured
+/// operator channel. A non-empty table is a no-op.
 pub fn ensure_bootstrap_key(conn: &Connection, label: &str) -> Result<Option<BootstrapResult>> {
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM api_keys", [], |r| r.get(0))
@@ -56,15 +56,6 @@ pub fn ensure_bootstrap_key(conn: &Connection, label: &str) -> Result<Option<Boo
         },
         "system",
     )?;
-
-    // Log the generated API key plaintext so the operator can see it in server logs.
-    tracing::warn!(
-        key_id = key.id.0,
-        prefix = ?key.key_prefix,
-        api_key = %plaintext,
-        "Bootstrap API key created: {}",
-        plaintext
-    );
 
     match write_bootstrap_key_file(conn, &plaintext) {
         Ok(Some(path)) => tracing::warn!(
