@@ -100,8 +100,14 @@ pub trait AccountRepository: Send + Sync {
 /// Combo repository trait.
 pub trait ComboRepository: Send + Sync {
     fn list_combos(&self) -> Result<Vec<Combo>, CoreError>;
-    fn compute_effective_context_window(&self, combo_id: ComboId)
-    -> Result<Option<i64>, CoreError>;
+    fn compute_effective_context_window(
+        &self,
+        combo_id: ComboId,
+    ) -> Result<Option<i64>, CoreError>;
+    fn compute_effective_capabilities(
+        &self,
+        combo_id: ComboId,
+    ) -> Result<Option<openproxy_types::capabilities::ModelCapabilities>, CoreError>;
 }
 
 /// Model repository trait.
@@ -227,6 +233,14 @@ impl ComboRepository for SqliteRepository {
     ) -> Result<Option<i64>, CoreError> {
         let r = self.reader();
         db::combos::compute_effective_context_window(&r, combo_id)
+    }
+
+    fn compute_effective_capabilities(
+        &self,
+        combo_id: ComboId,
+    ) -> Result<Option<openproxy_types::capabilities::ModelCapabilities>, CoreError> {
+        let r = self.reader();
+        db::combos::compute_effective_capabilities(&r, combo_id)
     }
 }
 

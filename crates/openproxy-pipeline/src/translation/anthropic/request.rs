@@ -24,31 +24,58 @@ pub fn openai_to_anthropic(
         .filter(|t: &Vec<serde_json::Value>| !t.is_empty());
 
     let mut extra = serde_json::Map::new();
+    let reasoning_obj = req.extra.get("reasoning").and_then(|v| v.as_object());
+    let reasoning_enabled = reasoning_obj
+        .and_then(|o| o.get("enabled"))
+        .and_then(|v| v.as_bool());
+    let effort_from_obj = reasoning_obj
+        .and_then(|o| o.get("effort"))
+        .and_then(|v| v.as_str());
+
     let effort_opt = req
         .extra
         .get("reasoning_effort")
         .and_then(|v| v.as_str())
-        .or_else(|| req.extra.get("thinking_effort").and_then(|v| v.as_str()));
+        .or(effort_from_obj)
+        .or_else(|| req.extra.get("reasoningEffort").and_then(|v| v.as_str()))
+        .or_else(|| req.extra.get("thinking_effort").and_then(|v| v.as_str()))
+        .or_else(|| {
+            if reasoning_enabled == Some(false) {
+                Some("none")
+            } else if reasoning_enabled == Some(true) {
+                Some("medium")
+            } else {
+                None
+            }
+        });
 
     let (max_tokens_override, thinking_val) = if let Some(effort) = effort_opt {
         let (val, budget) = match effort {
-            "none" => (json!({"type": "disabled"}), 0u32),
-            "low" => (json!({"type": "enabled", "budget_tokens": 2048}), 2048),
-            "medium" => (json!({"type": "enabled", "budget_tokens": 8192}), 8192),
-            "high" => (json!({"type": "enabled", "budget_tokens": 16384}), 16384),
-            "max" | "xhigh" => (json!({"type": "enabled", "budget_tokens": 32768}), 32768),
+            "none" => (None, 0u32),
+            "low" => (Some(json!({"type": "enabled", "budget_tokens": 2048})), 2048),
+            "medium" => (Some(json!({"type": "enabled", "budget_tokens": 8192})), 8192),
+            "high" => (Some(json!({"type": "enabled", "budget_tokens": 16384})), 16384),
+            "max" | "xhigh" => (Some(json!({"type": "enabled", "budget_tokens": 32768})), 32768),
             s => {
                 let b = s.parse::<u32>().unwrap_or(8192);
-                (json!({"type": "enabled", "budget_tokens": b}), b)
+                (Some(json!({"type": "enabled", "budget_tokens": b})), b)
             }
         };
-        (budget, Some(val))
+        (budget, val)
     } else if let Some(client_thinking) = req.extra.get("thinking") {
-        let budget = client_thinking
-            .get("budget_tokens")
-            .and_then(|v| v.as_u64())
-            .map_or(0, |b| b as u32);
-        (budget, Some(client_thinking.clone()))
+        let is_disabled = client_thinking
+            .get("type")
+            .and_then(|v| v.as_str())
+            .is_some_and(|t| t == "disabled");
+        if is_disabled {
+            (0, None)
+        } else {
+            let budget = client_thinking
+                .get("budget_tokens")
+                .and_then(|v| v.as_u64())
+                .map_or(0, |b| b as u32);
+            (budget, Some(client_thinking.clone()))
+        }
     } else {
         (0, None)
     };

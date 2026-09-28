@@ -238,3 +238,21 @@ fn test_contains_delimited_token() {
     assert!(!contains_delimited_token("o10", "o1"));
     assert!(!contains_delimited_token("solo123", "o1"));
 }
+
+#[test]
+fn test_model_capabilities_flexible_deserialization() {
+    let json_int = r#"{"vision":1,"tool_calling":1,"reasoning":1,"thinking":true,"temperature":true}"#;
+    let caps = ModelCapabilities::from_json(Some(json_int));
+    assert_eq!(caps.vision, Some(true));
+    assert_eq!(caps.tool_calling, Some(true));
+    assert_eq!(caps.reasoning, Some(true));
+    assert_eq!(caps.thinking, Some(true));
+    assert_eq!(caps.temperature, Some(true));
+
+    let json_zero = r#"{"vision":0,"tool_calling":1,"reasoning":0}"#;
+    let caps_zero = ModelCapabilities::from_json(Some(json_zero));
+    assert_eq!(caps_zero.vision, Some(false));
+    assert_eq!(caps_zero.tool_calling, Some(true));
+    assert_eq!(caps_zero.reasoning, Some(false));
+}
+

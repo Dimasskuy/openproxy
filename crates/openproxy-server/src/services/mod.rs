@@ -143,6 +143,13 @@ impl ComboService {
     ) -> Result<Option<i64>, CoreError> {
         self.repo.compute_effective_context_window(combo_id)
     }
+
+    pub fn compute_effective_capabilities(
+        &self,
+        combo_id: ComboId,
+    ) -> Result<Option<openproxy_types::capabilities::ModelCapabilities>, CoreError> {
+        self.repo.compute_effective_capabilities(combo_id)
+    }
 }
 
 /// Service for managing Model business logic.

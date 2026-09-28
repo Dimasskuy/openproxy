@@ -125,7 +125,14 @@ pub async fn list_models(
             .ok()
             .flatten()
             .or(c.context_window);
-        data.push(build_combo_entry(c, effective_cw));
+        let effective_caps = state
+            .services()
+            .combos
+            .compute_effective_capabilities(c.id)
+            .ok()
+            .flatten();
+        data.push(build_combo_entry(c, None, effective_cw, effective_caps.as_ref()));
+        data.push(build_combo_entry(c, Some(&c.name), effective_cw, effective_caps.as_ref()));
     }
 
     let is_anthropic =
@@ -182,18 +189,46 @@ fn authenticate_chat_or_anonymous(
     Ok(Some(key))
 }
 
+fn build_supported_parameters(caps: &capabilities::ModelCapabilities) -> Vec<&'static str> {
+    let mut params = vec![
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "stream",
+        "stop",
+    ];
+    if caps.tool_calling == Some(true) {
+        params.push("tools");
+        params.push("tool_choice");
+    }
+    if caps.reasoning == Some(true) || caps.thinking == Some(true) {
+        params.push("reasoning_effort");
+        params.push("thinking");
+    }
+    if caps.structured_output == Some(true) {
+        params.push("response_format");
+    }
+    params
+}
+
 /// Project a combo into a synthetic catalog entry shaped like `build_model_entry`
-/// so the catalog stays homogeneous. Capability fields are `null`: a combo aliases
-/// an operator-chosen target list, so per-model metadata would mislead.
+/// so the catalog stays homogeneous. Capabilities are populated from its effective targets.
 fn build_combo_entry(
     c: &openproxy_types::Combo,
+    id_override: Option<&str>,
     effective_context_window: Option<i64>,
+    effective_caps: Option<&capabilities::ModelCapabilities>,
 ) -> serde_json::Value {
-    let id = format!("combo:{}", c.name);
+    let id = id_override.map_or_else(
+        || format!("combo:{}", c.name),
+        std::string::ToString::to_string,
+    );
     let combo_type = capabilities::infer_model_type(&c.name);
     let empty_caps = capabilities::ModelCapabilities::empty();
+    let caps_ref = effective_caps.unwrap_or(&empty_caps);
+
     let input_modalities: Vec<String> =
-        capabilities::infer_input_modalities_for_model(&c.name, &empty_caps)
+        capabilities::infer_input_modalities_for_model(&c.name, caps_ref)
             .into_iter()
             .map(std::string::ToString::to_string)
             .collect();
@@ -201,6 +236,9 @@ fn build_combo_entry(
         .into_iter()
         .map(std::string::ToString::to_string)
         .collect();
+
+    let is_reasoning = caps_ref.reasoning == Some(true) || caps_ref.thinking == Some(true);
+    let supported_params = build_supported_parameters(caps_ref);
 
     serde_json::json!({
         "id": id,
@@ -215,7 +253,9 @@ fn build_combo_entry(
         "max_output_tokens": null,
         "input_modalities": input_modalities,
         "output_modalities": output_modalities,
-        "capabilities": serde_json::json!({}),
+        "capabilities": build_capabilities_object(caps_ref),
+        "supports_reasoning": is_reasoning,
+        "supported_parameters": supported_params,
         "type": combo_type,
         "family": "combo",
     })
@@ -275,6 +315,9 @@ fn build_model_entry(m: &models::Model) -> serde_json::Value {
         .clone()
         .or_else(|| capabilities::infer_family(model_id).map(Into::into));
 
+    let is_reasoning = caps.reasoning == Some(true) || caps.thinking == Some(true);
+    let supported_params = build_supported_parameters(&caps);
+
     serde_json::json!({
         "id": full_id,
         "object": "model",
@@ -289,6 +332,8 @@ fn build_model_entry(m: &models::Model) -> serde_json::Value {
         "input_modalities": input_modalities,
         "output_modalities": output_modalities,
         "capabilities": build_capabilities_object(&caps),
+        "supports_reasoning": is_reasoning,
+        "supported_parameters": supported_params,
         "type": effective_type,
         "family": family,
     })
@@ -514,4 +559,65 @@ mod tests {
         assert_eq!(obj.get("vision"), Some(&serde_json::Value::Bool(true)));
         assert_eq!(obj.get("thinking"), None);
     }
+
+    #[test]
+    fn test_reasoning_and_supported_parameters_populated() {
+        let mut m = empty_model();
+        m.capabilities_json = Some(r#"{"reasoning": true, "tool_calling": true}"#.into());
+        let v = build_model_entry(&m);
+
+        assert_eq!(v.get("supports_reasoning"), Some(&serde_json::Value::Bool(true)));
+        let params: Vec<&str> = v
+            .get("supported_parameters")
+            .and_then(|p| p.as_array())
+            .unwrap()
+            .iter()
+            .filter_map(|s| s.as_str())
+            .collect();
+        assert!(params.contains(&"reasoning_effort"));
+        assert!(params.contains(&"thinking"));
+        assert!(params.contains(&"tools"));
+    }
+
+    #[test]
+    fn test_combo_entry_reasoning_and_supported_parameters() {
+        let combo = openproxy_types::Combo {
+            id: openproxy_types::ComboId(1),
+            name: "test-ninja".into(),
+            strategy: openproxy_types::combos::Strategy::Priority,
+            race_size: 1,
+            preventive_rate_limit: false,
+            created_at: "2024-01-01".into(),
+            context_window: None,
+            priority_mode: Default::default(),
+            cooldown_mode: Default::default(),
+            cooldown_base_secs: None,
+            cooldown_max_secs: None,
+            cooldown_factor: None,
+            lkgp_exploration_rate: None,
+            selection_window_secs: None,
+            decision_model: None,
+            decision_timeout_ms: None,
+        };
+        let mut caps = capabilities::ModelCapabilities::empty();
+        caps.thinking = Some(true);
+        caps.tool_calling = Some(true);
+
+        let v = build_combo_entry(&combo, Some("test-ninja"), Some(128_000), Some(&caps));
+        assert_eq!(v.get("id"), Some(&serde_json::Value::String("test-ninja".into())));
+        assert_eq!(v.get("supports_reasoning"), Some(&serde_json::Value::Bool(true)));
+        let params: Vec<&str> = v
+            .get("supported_parameters")
+            .and_then(|p| p.as_array())
+            .unwrap()
+            .iter()
+            .filter_map(|s| s.as_str())
+            .collect();
+        assert!(params.contains(&"reasoning_effort"));
+        assert!(params.contains(&"thinking"));
+        assert!(params.contains(&"tools"));
+        let caps_obj = v.get("capabilities").and_then(|c| c.as_object()).unwrap();
+        assert_eq!(caps_obj.get("thinking"), Some(&serde_json::Value::Bool(true)));
+    }
 }
+
