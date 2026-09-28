@@ -71,7 +71,7 @@
 Run the official multi-arch image (`linux/amd64`, `linux/arm64`):
 
 ```bash
-# Pull the latest image
+# Pull the latest image (or use your custom build tag, e.g. ghcr.io/<your-username>/openproxy:latest)
 docker pull ghcr.io/soyelmismo/openproxy:latest
 
 # Run with a mounted config file and volume for SQLite data
