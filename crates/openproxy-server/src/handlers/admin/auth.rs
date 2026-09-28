@@ -238,7 +238,56 @@ pub async fn admin_auth_middleware(
         Ok(identity) => {
             req.extensions_mut().insert(identity);
         }
-        Err(e) => return e.into_response(),
+        Err(e) => {
+            let path = req.uri().path().to_string();
+            let method = req.method().to_string();
+            let client_ip = crate::client_ip::resolve_client_ip(
+                req.headers(),
+                Some(&addr),
+                &state.config().server.trusted_proxies,
+            );
+
+            let existing_key =
+                extract_bearer_token(req.headers())
+                    .ok()
+                    .flatten()
+                    .and_then(|token| {
+                        let key_hash = core_api_keys::hash_key(token);
+                        state.get_cached_api_key(&key_hash).or_else(|| {
+                            let r = state.db_pool().reader();
+                            core_api_keys::get_by_hash(&r, &key_hash)
+                                .ok()
+                                .flatten()
+                                .map(Arc::new)
+                        })
+                    });
+
+            if let Some(key) = existing_key {
+                tracing::warn!(
+                    target: "openproxy::security::audit",
+                    key_id = key.id.0,
+                    key_prefix = key.key_prefix.as_deref(),
+                    key_label = key.label.as_deref(),
+                    scopes = ?key.scopes,
+                    ip = client_ip.map(|a| a.to_string()),
+                    path = %path,
+                    method = %method,
+                    error = %e.0,
+                    "unauthorized admin access attempt with existing api key"
+                );
+            } else {
+                tracing::warn!(
+                    target: "openproxy::security::audit",
+                    ip = client_ip.map(|a| a.to_string()),
+                    path = %path,
+                    method = %method,
+                    error = %e.0,
+                    "admin access attempt rejected"
+                );
+            }
+
+            return e.into_response();
+        }
     }
     next.run(req).await
 }
