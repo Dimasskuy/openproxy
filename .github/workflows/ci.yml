@@ -496,7 +496,9 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ needs.prepare-version.outputs.version }}"
-          REPO="ghcr.io/soyelmismo/openproxy"
+          # Convert github.repository to lowercase for docker image naming
+          REPO_LOWER="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          REPO="ghcr.io/${REPO_LOWER}"
           # On master: tag both :<version> and :latest. On PRs: skip push
           # entirely (handled by the `push` flag below), but we still
           # build for cache validation.
