@@ -238,6 +238,9 @@ async function rehydrateInitial(): Promise<void> {
     }
     if (validRows.length > 0) {
       recentRows.push(...validRows);
+      for (const row of validRows) {
+        writeRowToBuckets(row);
+      }
       recentRows.sort((a, b) => {
         const ta = new Date(a.created_at!).getTime();
         const tb = new Date(b.created_at!).getTime();
