@@ -142,6 +142,14 @@ fn process_models_dev_sync_payload(db_pool: &openproxy_db::DbPool, body: &[u8]) 
                 Err(e) => tracing::warn!(error = %e, "models.dev sync auto-combo failed"),
             }
         }
+        {
+            let conn = db_pool.writer();
+            match recompute_costs(&conn) {
+                Ok(n) if n > 0 => tracing::info!(updated = n, "models.dev sync: re-priced usage rows"),
+                Ok(_) => {}
+                Err(e) => tracing::warn!(error = %e, "models.dev sync cost backfill failed"),
+            }
+        }
     }
     count
 }
