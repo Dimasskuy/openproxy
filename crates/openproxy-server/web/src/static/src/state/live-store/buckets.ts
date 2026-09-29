@@ -1,8 +1,10 @@
 import type { RecentUsageRow } from "../../lib/types/api.js";
 import type { Bucket, SnapshotWindow } from "./types.js";
 
-export function emptyBucket(): Bucket {
+export function emptyBucket(bucketStartSec = -1): Bucket {
   return {
+    bucket_start_sec: bucketStartSec,
+    rows: new Map<string, RecentUsageRow>(),
     count: 0,
     tokens_in: 0,
     tokens_out: 0,
@@ -16,7 +18,7 @@ export function emptyBucket(): Bucket {
   };
 }
 
-export function resetBucketInPlace(b: Bucket): void {
+function resetBucketMetrics(b: Bucket): void {
   b.count = 0;
   b.tokens_in = 0;
   b.tokens_out = 0;
@@ -29,11 +31,18 @@ export function resetBucketInPlace(b: Bucket): void {
   b.race_total = 0;
 }
 
+export function resetBucketInPlace(b: Bucket): void {
+  b.bucket_start_sec = -1;
+  b.rows.clear();
+  resetBucketMetrics(b);
+}
+
 export const WINDOW_1S = 300;   // 5 min
 export const WINDOW_5S = 360;   // 30 min
 export const WINDOW_1M = 1440;  // 24h
 export const MAX_LATENCIES_PER_BUCKET = 1000;
 export const MAX_RECENT_ROWS = 1000;
+const MAX_TRACKED_ROWS = 10_000;
 
 export const buckets1s: Bucket[] = [];
 export const buckets5s: Bucket[] = [];
@@ -42,19 +51,37 @@ for (let i = 0; i < WINDOW_1S; i++) buckets1s.push(emptyBucket());
 for (let i = 0; i < WINDOW_5S; i++) buckets5s.push(emptyBucket());
 for (let i = 0; i < WINDOW_1M; i++) buckets1m.push(emptyBucket());
 
-let lastBucket1s = -1;
-let lastBucket5s = -1;
-let lastBucket1m = -1;
-
-function bucketIndexFromNow(windowSecs: number, totalBuckets: number): number {
-  const nowSec = Math.floor(Date.now() / 1000);
-  return ((Math.floor(nowSec / windowSecs) % totalBuckets) + totalBuckets) % totalBuckets;
+function bucketIndexFromSec(bucketStartSec: number, bucketSecs: number, totalBuckets: number): number {
+  return ((Math.floor(bucketStartSec / bucketSecs) % totalBuckets) + totalBuckets) % totalBuckets;
 }
 
-function incrementBucket(b: Bucket, row: RecentUsageRow): void {
+function rowTimestampSec(row: RecentUsageRow): number {
+  const timestampMs = Date.parse(row.created_at);
+  return Number.isFinite(timestampMs) ? Math.floor(timestampMs / 1000) : Math.floor(Date.now() / 1000);
+}
+
+function requestKey(row: RecentUsageRow): string {
+  if (row.request_id) return row.request_id;
+  return `row:${row.id}:${row.created_at}`;
+}
+
+function isSuccessful(row: RecentUsageRow): boolean {
+  return row.status_code >= 200 && row.status_code < 400;
+}
+
+function shouldReplace(existing: RecentUsageRow, incoming: RecentUsageRow): boolean {
+  const existingSuccess = isSuccessful(existing);
+  const incomingSuccess = isSuccessful(incoming);
+  if (existingSuccess !== incomingSuccess) return incomingSuccess;
+  const existingMs = Date.parse(existing.created_at);
+  const incomingMs = Date.parse(incoming.created_at);
+  if (existingMs !== incomingMs) return incomingMs > existingMs;
+  return (incoming.id ?? 0) >= (existing.id ?? 0);
+}
+
+function addRowMetrics(b: Bucket, row: RecentUsageRow): void {
   b.count++;
-  const isSuccess = row.status_code >= 200 && row.status_code < 400;
-  if (isSuccess) {
+  if (isSuccessful(row)) {
     b.tokens_in += row.prompt_tokens ?? 0;
     b.tokens_out += row.completion_tokens ?? 0;
     b.cost_usd += row.cost_usd ?? 0;
@@ -74,25 +101,61 @@ function incrementBucket(b: Bucket, row: RecentUsageRow): void {
   }
 }
 
+function rebuildBucket(b: Bucket): void {
+  resetBucketMetrics(b);
+  for (const row of b.rows.values()) addRowMetrics(b, row);
+}
+
+function removeTrackedRow(key: string): void {
+  for (const collection of [buckets1s, buckets5s, buckets1m]) {
+    for (const bucket of collection) {
+      if (bucket.rows.delete(key)) rebuildBucket(bucket);
+    }
+  }
+}
+
+function bucketFor(collection: Bucket[], bucketSecs: number, rowSec: number): Bucket {
+  const bucketStartSec = Math.floor(rowSec / bucketSecs) * bucketSecs;
+  const index = bucketIndexFromSec(bucketStartSec, bucketSecs, collection.length);
+  const bucket = collection[index]!;
+  if (bucket.bucket_start_sec !== bucketStartSec) {
+    resetBucketInPlace(bucket);
+    bucket.bucket_start_sec = bucketStartSec;
+  }
+  return bucket;
+}
+
+const trackedRows = new Map<string, RecentUsageRow>();
+
+export function clearBucketsForTest(): void {
+  for (const collection of [buckets1s, buckets5s, buckets1m]) {
+    for (const bucket of collection) resetBucketInPlace(bucket);
+  }
+  trackedRows.clear();
+}
+
+function pruneTrackedRows(nowSec: number): void {
+  if (trackedRows.size <= MAX_TRACKED_ROWS) return;
+  const cutoffSec = nowSec - WINDOW_1M * 60;
+  for (const [key, row] of trackedRows) {
+    if (rowTimestampSec(row) < cutoffSec) trackedRows.delete(key);
+  }
+}
+
 export function writeRowToBuckets(row: RecentUsageRow): void {
-  const idx1s = bucketIndexFromNow(1, WINDOW_1S);
-  if (idx1s !== lastBucket1s) {
-    resetBucketInPlace(buckets1s[idx1s]!);
-    lastBucket1s = idx1s;
+  const key = requestKey(row);
+  const existing = trackedRows.get(key);
+  if (existing && !shouldReplace(existing, row)) return;
+  if (existing) removeTrackedRow(key);
+  trackedRows.set(key, row);
+
+  const rowSec = rowTimestampSec(row);
+  for (const [collection, bucketSecs] of [[buckets1s, 1], [buckets5s, 5], [buckets1m, 60]] as const) {
+    const bucket = bucketFor(collection, bucketSecs, rowSec);
+    bucket.rows.set(key, row);
+    rebuildBucket(bucket);
   }
-  const idx5s = bucketIndexFromNow(5, WINDOW_5S);
-  if (idx5s !== lastBucket5s) {
-    resetBucketInPlace(buckets5s[idx5s]!);
-    lastBucket5s = idx5s;
-  }
-  const idx1m = bucketIndexFromNow(60, WINDOW_1M);
-  if (idx1m !== lastBucket1m) {
-    resetBucketInPlace(buckets1m[idx1m]!);
-    lastBucket1m = idx1m;
-  }
-  incrementBucket(buckets1s[idx1s]!, row);
-  incrementBucket(buckets5s[idx5s]!, row);
-  incrementBucket(buckets1m[idx1m]!, row);
+  pruneTrackedRows(Math.floor(Date.now() / 1000));
 }
 
 export interface WindowBuckets {
@@ -119,12 +182,14 @@ export function collectWindow(windowSecs: SnapshotWindow): CollectedWindow {
   const { buckets, bucketSecs, count } = getWindowBuckets(windowSecs);
   const totalBuckets = buckets.length;
   const nowSec = Math.floor(Date.now() / 1000);
-  const currentIdx = ((Math.floor(nowSec / bucketSecs) % totalBuckets) + totalBuckets) % totalBuckets;
   const currentBucketStartSec = Math.floor(nowSec / bucketSecs) * bucketSecs;
+  const currentIdx = bucketIndexFromSec(currentBucketStartSec, bucketSecs, totalBuckets);
   const out: Bucket[] = [];
   for (let i = count - 1; i >= 0; i--) {
+    const expectedStartSec = currentBucketStartSec - i * bucketSecs;
     const idx = (((currentIdx - i) % totalBuckets) + totalBuckets) % totalBuckets;
-    out.push(buckets[idx]!);
+    const bucket = buckets[idx]!;
+    out.push(bucket.bucket_start_sec === expectedStartSec ? bucket : emptyBucket(expectedStartSec));
   }
   const startMs = (currentBucketStartSec - (count - 1) * bucketSecs) * 1000;
   return { buckets: out, bucketSecs, startMs };
