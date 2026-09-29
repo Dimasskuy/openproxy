@@ -185,7 +185,12 @@ pub fn lookup_by_normalized(conn: &Connection, normalized: &str) -> Option<Price
                 "WHERE model_id_normalized = ?1 \
                  AND pricing_input_per_1m IS NOT NULL \
                  AND pricing_output_per_1m IS NOT NULL \
-                 LIMIT 1"
+                 ORDER BY \
+                   CASE WHEN pricing_input_per_1m > 0 OR pricing_output_per_1m > 0 \
+                        THEN 0 ELSE 1 END, \
+                   (pricing_input_per_1m + pricing_output_per_1m) ASC, \
+                   provider_id ASC, model_id ASC \
+                  LIMIT 1"
             ),
             rusqlite::params![normalized],
             |row| crate::map_row_tuple!(row => ((0, f64), (1, f64))),
