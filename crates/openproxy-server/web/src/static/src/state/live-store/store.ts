@@ -278,6 +278,7 @@ async function rehydrateGap(sinceId: number): Promise<void> {
     for (const row of rows) {
       if (!isRecentUsageRowShape(row)) continue;
       prependRow(row);
+      writeRowToBuckets(row);
       if (typeof row.id === "number" && row.id > maxId) maxId = row.id;
     }
     if (maxId > lastSeenRowId) lastSeenRowId = maxId;
