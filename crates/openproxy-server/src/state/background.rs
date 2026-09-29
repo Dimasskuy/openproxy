@@ -68,8 +68,7 @@ pub(crate) fn spawn_background_tasks(
     });
 
     let models_dev_enabled = std::env::var("MODELS_DEV_SYNC_ENABLED")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(true);
+        .map_or(true, |v| v == "1" || v.eq_ignore_ascii_case("true"));
     if models_dev_enabled {
         let interval_secs: u64 = std::env::var("MODELS_DEV_SYNC_INTERVAL_SECS")
             .ok()
