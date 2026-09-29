@@ -1,6 +1,8 @@
 import type { RecentUsageRow } from "../../lib/types/api.js";
 
 export interface Bucket {
+  bucket_start_sec: number;
+  rows: Map<string, RecentUsageRow>;
   count: number;
   tokens_in: number;
   tokens_out: number;
